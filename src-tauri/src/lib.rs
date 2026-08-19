@@ -1,3 +1,4 @@
+pub mod atomic_save;
 pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
