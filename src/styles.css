@@ -1,13 +1,223 @@
 :root {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light dark;
+  --bg: #f5f5f5;
+  --panel: #ffffff;
+  --border: #ddd;
+  --text: #1a1a1a;
+  --accent: #2d6cdf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1e;
+    --panel: #252526;
+    --border: #3c3c3c;
+    --text: #e8e8e8;
+    --accent: #4a8af4;
+  }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
 }
 
-.app {
-  padding: 2rem;
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.toolbar button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dirty-indicator {
+  margin-left: auto;
+  color: #e0a800;
+}
+
+.main-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 240px;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  background: var(--panel);
+  padding: 8px 0;
+}
+
+.file-tree {
+  font-size: 13px;
+}
+
+.tree-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-item:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.tree-item.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tree-dir {
+  font-weight: 600;
+}
+
+.document-area {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text);
+}
+
+.preview-only {
+  position: relative;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.edit-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.split-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  height: 100%;
+}
+
+.markdown-editor {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 14px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.markdown-preview {
+  max-width: 800px;
+  line-height: 1.7;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+}
+
+.binary-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.binary-view img {
+  max-width: 100%;
+  max-height: 70vh;
+}
+
+.file-info {
+  color: var(--text);
+  opacity: 0.7;
+}
+
+.error-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+}
+
+.error-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.error-actions button,
+.error-dialog button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.status-bar {
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  background: var(--panel);
+  color: var(--text);
+  opacity: 0.8;
 }
