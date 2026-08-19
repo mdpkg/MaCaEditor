@@ -1,0 +1,13 @@
+{
+  "format": "mdpkg",
+  "version": "1.0",
+  "entrypoint": "README.md",
+  "title": "Example Document",
+  "resources": [
+    {
+      "source": "diagrams/architecture.puml",
+      "rendered": "diagrams/architecture.svg",
+      "type": "plantuml"
+    }
+  ]
+}

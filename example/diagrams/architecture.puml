@@ -1,0 +1,4 @@
+@startuml
+actor User
+User -> System
+@enduml
