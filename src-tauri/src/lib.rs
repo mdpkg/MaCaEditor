@@ -2,6 +2,7 @@ pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
 pub mod package_validation;
+pub mod package_writer;
 pub mod path_validator;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
