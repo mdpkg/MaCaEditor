@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { DocumentState } from "../document";
 import type { DrawingDocument } from "./model";
 import {
+  DEFAULT_DRAWING_DIR,
   addDrawingToDocument,
   findDrawingResources,
   findResourceByRendered,
@@ -32,6 +33,10 @@ function drawing(): DrawingDocument {
 }
 
 describe("docIntegration", () => {
+  test("default drawing directory is diagrams", () => {
+    expect(DEFAULT_DRAWING_DIR).toBe("diagrams");
+  });
+
   test("adds drawing files to document", () => {
     const { state: next } = addDrawingToDocument(state(), drawing(), "diagrams", "Drawing");
     expect(next.files.some((f) => f.path === "diagrams/drawing-1.draw.json")).toBe(true);

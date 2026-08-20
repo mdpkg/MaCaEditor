@@ -21,6 +21,7 @@ import {
 } from "./lib/tauri";
 import type { DrawingDocument } from "./lib/drawing/model";
 import {
+  DEFAULT_DRAWING_DIR,
   addDrawingToDocument,
   parseDrawingFile,
   saveDrawingToDocument,
@@ -209,7 +210,7 @@ export default function App() {
 
   const handleInsertDrawing = () => {
     if (!doc) return;
-    const baseDir = entrypointDir();
+    const baseDir = DEFAULT_DRAWING_DIR;
     const empty: DrawingDocument = {
       format: "maca-drawing",
       version: "1.0",

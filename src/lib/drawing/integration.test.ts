@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { DrawingDocument } from "./model";
 import {
+  DEFAULT_DRAWING_DIR,
   generateDrawingFiles,
   markdownImageRef,
   nextDrawingName,
@@ -16,6 +17,10 @@ function doc(): DrawingDocument {
 }
 
 describe("integration", () => {
+  test("default drawing directory is diagrams", () => {
+    expect(DEFAULT_DRAWING_DIR).toBe("diagrams");
+  });
+
   test("generates draw and svg paths", () => {
     const files = generateDrawingFiles(doc(), "diagrams", "architecture");
     expect(files.drawPath).toBe("diagrams/architecture.draw.json");

@@ -9,6 +9,9 @@ export interface DrawingFiles {
   svgContent: string;
 }
 
+/** Drawing を配置する既定ディレクトリ。 */
+export const DEFAULT_DRAWING_DIR = "diagrams";
+
 /** Drawing Document から `.draw.json` と `.svg` の両方を生成する。 */
 export function generateDrawingFiles(
   doc: DrawingDocument,

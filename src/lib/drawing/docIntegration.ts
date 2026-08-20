@@ -1,6 +1,8 @@
 import type { DocumentState } from "../document";
 import type { DrawingDocument } from "./model";
-import { generateDrawingFiles, nextDrawingName } from "./integration";
+import { DEFAULT_DRAWING_DIR, generateDrawingFiles, nextDrawingName } from "./integration";
+
+export { DEFAULT_DRAWING_DIR };
 import { parseAndValidate } from "./drawing";
 
 export interface DrawingResource {
