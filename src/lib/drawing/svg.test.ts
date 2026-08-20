@@ -150,6 +150,29 @@ describe("svg renderer", () => {
     expect(svg).toContain('stroke-width="2"');
   });
 
+  test("renders a file shape with a folded corner", () => {
+    const svg = renderSvg(doc([{
+      id: "file-1", type: "file", x: 100, y: 80, width: 120, height: 80,
+      rotation: 0, zIndex: 1, text: "File", style: {},
+    }]));
+
+    expect(svg).toContain('data-shape="file"');
+    expect(svg).toContain('M 100 80 H 196 L 220 104 V 160 H 100 Z');
+    expect(svg).toContain('points="196,80 196,104 220,104"');
+    expect(svg).toContain(">File</text>");
+  });
+
+  test("renders a user shape with head and shoulders", () => {
+    const svg = renderSvg(doc([{
+      id: "user-1", type: "user", x: 100, y: 80, width: 120, height: 80,
+      rotation: 0, zIndex: 1, text: "", style: {},
+    }]));
+
+    expect(svg).toContain('data-shape="user"');
+    expect(svg).toContain('cx="160" cy="101.6" r="14.4"');
+    expect(svg).toContain('<path d="M 118 160');
+  });
+
   test("renders text", () => {
     const svg = renderSvg(
       doc([

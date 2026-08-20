@@ -74,6 +74,8 @@ function isKnownType(type: string): boolean {
     "rectangle",
     "roundedRectangle",
     "ellipse",
+    "file",
+    "user",
     "text",
     "line",
     "arrow",

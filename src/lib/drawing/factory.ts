@@ -17,6 +17,8 @@ export type ToolKind =
   | "rectangle"
   | "roundedRectangle"
   | "ellipse"
+  | "file"
+  | "user"
   | "text"
   | "line"
   | "arrow"
@@ -194,6 +196,20 @@ export function createObject(
         y,
         width: 120,
         height: 60,
+        rotation: 0,
+        zIndex,
+        style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+        text: "",
+      };
+    case "file":
+    case "user":
+      return {
+        id,
+        type: tool,
+        x,
+        y,
+        width: 120,
+        height: 80,
         rotation: 0,
         zIndex,
         style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },

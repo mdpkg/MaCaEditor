@@ -41,6 +41,8 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "rectangle", label: "Rect" },
   { id: "roundedRectangle", label: "Round Rect" },
   { id: "ellipse", label: "Ellipse" },
+  { id: "file", label: "File" },
+  { id: "user", label: "User" },
   { id: "text", label: "Text" },
   { id: "line", label: "Line" },
   { id: "arrow", label: "Arrow" },
@@ -48,7 +50,7 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "curveConnector", label: "Curve" },
 ];
 
-const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse"];
+const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse", "file", "user"];
 
 function isTextShapeType(type: string): boolean {
   return TEXT_SHAPE_TYPES.includes(type);
@@ -538,7 +540,7 @@ export function DrawingEditor({
   };
 
   const updateShapeHorizontalAlign = (align: "left" | "center" | "right") => {
-    if (!selected || !["rectangle", "roundedRectangle", "ellipse"].includes(selected.type)) return;
+    if (!selected || !isTextShapeType(selected.type)) return;
     const verticalAlign = "textStyle" in selected
       ? selected.textStyle?.verticalAlign ?? "middle"
       : "middle";
@@ -546,7 +548,7 @@ export function DrawingEditor({
   };
 
   const updateShapeVerticalAlign = (verticalAlign: "top" | "middle" | "bottom") => {
-    if (!selected || !["rectangle", "roundedRectangle", "ellipse"].includes(selected.type)) return;
+    if (!selected || !isTextShapeType(selected.type)) return;
     const align = "textStyle" in selected ? selected.textStyle?.align ?? "center" : "center";
     commit(updateShapeTextAlignment(doc, selected.id, align, verticalAlign));
   };
@@ -660,7 +662,7 @@ export function DrawingEditor({
               const obj = doc.objects.find((o) => o.id === id);
               if (
                 !obj ||
-                !["rectangle", "roundedRectangle", "ellipse", "text", "image"].includes(obj.type)
+                ![...TEXT_SHAPE_TYPES, "text", "image"].includes(obj.type)
               ) return null;
               return (
                 <g key={id} className="selection-box">
@@ -783,7 +785,7 @@ export function DrawingEditor({
                 onChange={(e) => updateSize("height", Number(e.target.value))}
               />
             </div></>}
-            {(["rectangle", "roundedRectangle", "ellipse"] as string[]).includes(selected.type) && (
+            {isTextShapeType(selected.type) && (
               <div className="inspector-row">
                 <label>Fill</label>
                 <input
@@ -793,7 +795,7 @@ export function DrawingEditor({
                 />
               </div>
             )}
-            {(["rectangle", "roundedRectangle", "ellipse", "line", "arrow", "connector"] as string[]).includes(selected.type) && (
+            {([...TEXT_SHAPE_TYPES, "line", "arrow", "connector"] as string[]).includes(selected.type) && (
               <>
                 <div className="inspector-row">
                   <label>Color</label>
@@ -830,10 +832,7 @@ export function DrawingEditor({
                 </div>
               </>
             )}
-            {(selected.type === "rectangle" ||
-              selected.type === "roundedRectangle" ||
-              selected.type === "ellipse" ||
-              selected.type === "text") && (
+            {(isTextShapeType(selected.type) || selected.type === "text") && (
               <div className="inspector-row">
                 <label>Text</label>
                 <textarea
@@ -844,7 +843,7 @@ export function DrawingEditor({
                 />
               </div>
             )}
-            {(["rectangle", "roundedRectangle", "ellipse"] as string[]).includes(selected.type) && (
+            {isTextShapeType(selected.type) && (
               <>
                 <div className="inspector-row">
                   <label>H Align</label>

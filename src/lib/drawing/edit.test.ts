@@ -213,7 +213,7 @@ describe("resizeCanvasFromDrag", () => {
 });
 
 describe("updateShapeText", () => {
-  test.each(["rectangle", "roundedRectangle", "ellipse"] as const)(
+  test.each(["rectangle", "roundedRectangle", "ellipse", "file", "user"] as const)(
     "writes text into a %s shape",
     (type) => {
       const shape = {

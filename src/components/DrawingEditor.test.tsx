@@ -41,6 +41,22 @@ function pointerEvent(type: string, x: number, y: number): MouseEvent {
 }
 
 describe("DrawingEditor", () => {
+  test("offers File and User shape tools", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+
+    const labels = Array.from(container.querySelectorAll(".drawing-toolbar button"))
+      .map((button) => button.textContent);
+    expect(labels).toContain("File");
+    expect(labels).toContain("User");
+
+    act(() => root.unmount());
+  });
+
   test("prevents browser text selection when dragging on the SVG canvas", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

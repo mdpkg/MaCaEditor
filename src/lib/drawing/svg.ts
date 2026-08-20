@@ -4,12 +4,14 @@ import type {
   DrawingDocument,
   DrawingObject,
   EllipseObject,
+  FileObject,
   GroupObject,
   ImageObject,
   LineObject,
   RectangleObject,
   RoundedRectangleObject,
   TextObject,
+  UserObject,
 } from "./model";
 import { svgLineStyle } from "./lineStyle";
 import { connectorGeometry } from "./connector";
@@ -57,7 +59,7 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-type TextShape = RectangleObject | RoundedRectangleObject | EllipseObject;
+type TextShape = RectangleObject | RoundedRectangleObject | EllipseObject | FileObject | UserObject;
 
 function renderShapeText(obj: TextShape): string {
   if (!obj.text) return "";
@@ -116,6 +118,36 @@ function renderEllipse(obj: EllipseObject): string {
   return `${ellipse}${renderShapeText(obj)}`;
 }
 
+function renderFile(obj: FileObject): string {
+  const fill = obj.style.fill ?? "#ffffff";
+  const fold = Math.min(24, obj.width * 0.25, obj.height * 0.3);
+  const right = obj.x + obj.width;
+  const bottom = obj.y + obj.height;
+  const foldX = right - fold;
+  const foldY = obj.y + fold;
+  const page = `<path data-shape="file" d="M ${obj.x} ${obj.y} H ${foldX} L ${right} ${foldY} V ${bottom} H ${obj.x} Z" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const corner = `<polyline points="${foldX},${obj.y} ${foldX},${foldY} ${right},${foldY}" fill="none" ${svgLineStyle(obj.style)} />`;
+  return `${page}${corner}${renderShapeText(obj)}`;
+}
+
+function renderUser(obj: UserObject): string {
+  const fill = obj.style.fill ?? "#ffffff";
+  const rounded = (value: number) => Number(value.toFixed(4));
+  const cx = rounded(obj.x + obj.width / 2);
+  const radius = rounded(Math.min(obj.width, obj.height) * 0.18);
+  const headY = rounded(obj.y + obj.height * 0.27);
+  const shoulderY = rounded(obj.y + obj.height * 0.58);
+  const left = rounded(obj.x + obj.width * 0.15);
+  const right = rounded(obj.x + obj.width * 0.85);
+  const bottom = rounded(obj.y + obj.height);
+  const leftControlY = rounded(obj.y + obj.height * 0.75);
+  const leftShoulderX = rounded(obj.x + obj.width * 0.27);
+  const rightShoulderX = rounded(obj.x + obj.width * 0.73);
+  const head = `<circle data-shape="user" cx="${cx}" cy="${headY}" r="${radius}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const body = `<path d="M ${left} ${bottom} C ${left} ${leftControlY}, ${leftShoulderX} ${shoulderY}, ${cx} ${shoulderY} C ${rightShoulderX} ${shoulderY}, ${right} ${leftControlY}, ${right} ${bottom} Z" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  return `${head}${body}${renderShapeText(obj)}`;
+}
+
 function renderImage(obj: ImageObject): string {
   if (!obj.src || obj.src.length === 0) return "";
   const x = obj.x;
@@ -171,6 +203,10 @@ function renderGroup(obj: GroupObject): string {
           return renderRoundedRectangle(member);
         case "ellipse":
           return renderEllipse(member);
+        case "file":
+          return renderFile(member);
+        case "user":
+          return renderUser(member);
         case "text":
           return renderText(member);
         case "image":
@@ -219,6 +255,10 @@ export function renderSvg(
           return renderRoundedRectangle(obj);
         case "ellipse":
           return renderEllipse(obj);
+        case "file":
+          return renderFile(obj);
+        case "user":
+          return renderUser(obj);
         case "text":
           return renderText(obj);
         case "image":

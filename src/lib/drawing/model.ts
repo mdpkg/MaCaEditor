@@ -66,6 +66,20 @@ export interface EllipseObject extends BaseObject {
   textStyle?: ShapeTextStyle;
 }
 
+export interface FileObject extends BaseObject {
+  type: "file";
+  style: ObjectStyle;
+  text?: string;
+  textStyle?: ShapeTextStyle;
+}
+
+export interface UserObject extends BaseObject {
+  type: "user";
+  style: ObjectStyle;
+  text?: string;
+  textStyle?: ShapeTextStyle;
+}
+
 export interface TextObject extends BaseObject {
   type: "text";
   text: string;
@@ -111,6 +125,8 @@ export type DrawingObject =
   | RectangleObject
   | RoundedRectangleObject
   | EllipseObject
+  | FileObject
+  | UserObject
   | TextObject
   | LineObject
   | ArrowObject

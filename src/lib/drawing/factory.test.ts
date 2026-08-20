@@ -50,6 +50,20 @@ describe("createObject", () => {
     });
   });
 
+  test.each(["file", "user"] as const)("creates a %s shape", (type) => {
+    const obj = createObject(emptyDoc(), type, 100, 100);
+
+    expect(obj).toMatchObject({
+      type,
+      x: 100,
+      y: 100,
+      width: 120,
+      height: 80,
+      text: "",
+      style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+    });
+  });
+
   test("createEllipseObject creates ellipse with default size and style", () => {
     const obj = createEllipseObject(emptyDoc(), 100, 100);
     expect(obj.type).toBe("ellipse");

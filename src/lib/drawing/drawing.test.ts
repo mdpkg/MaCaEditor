@@ -72,6 +72,16 @@ describe("drawing document parsing", () => {
     expect(parsed.objects[0]).toEqual(doc.objects[0]);
   });
 
+  test.each(["file", "user"] as const)("validates a %s shape", (type) => {
+    const doc = parseDrawingDocument(validJson);
+    doc.objects = [{
+      id: `${type}-1`, type, x: 10, y: 20, width: 120, height: 80,
+      rotation: 0, zIndex: 1, text: "", style: {},
+    }];
+
+    expect(() => validateDrawingDocument(doc)).not.toThrow();
+  });
+
   test("rejects invalid json", () => {
     expect(() => parseDrawingDocument("not json")).toThrow();
   });
