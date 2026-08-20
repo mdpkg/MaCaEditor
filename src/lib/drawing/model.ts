@@ -64,6 +64,12 @@ export interface ArrowObject extends BaseObject {
   style: ObjectStyle;
 }
 
+export interface ImageObject extends BaseObject {
+  type: "image";
+  src: string;
+  style: ObjectStyle;
+}
+
 export interface ConnectorObject extends BaseObject {
   type: "connector";
   from: { objectId: string };
@@ -77,6 +83,7 @@ export type DrawingObject =
   | TextObject
   | LineObject
   | ArrowObject
+  | ImageObject
   | ConnectorObject;
 
 export interface DrawingDocument {

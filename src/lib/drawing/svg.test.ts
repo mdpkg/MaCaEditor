@@ -129,6 +129,29 @@ describe("svg renderer", () => {
     expect(svg).toContain("arrowhead");
   });
 
+  test("renders image with src and dimensions", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "img1",
+          type: "image",
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 80,
+          rotation: 0,
+          zIndex: 1,
+          src: "data:image/png;base64,AAAA",
+          style: {},
+        },
+      ]),
+    );
+    expect(svg).toContain("<image");
+    expect(svg).toContain('width="200"');
+    expect(svg).toContain('height="80"');
+    expect(svg).toContain("AAAA");
+  });
+
   test("renders connector as line", () => {
     const svg = renderSvg(
       doc([

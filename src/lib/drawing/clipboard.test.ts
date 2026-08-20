@@ -51,6 +51,28 @@ describe("clipboard", () => {
     expect(newObj!.y).toBe(20);
   });
 
+  test("paste copies image object", () => {
+    const d = doc([
+      {
+        id: "img1",
+        type: "image",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+        rotation: 0,
+        zIndex: 1,
+        src: "data:image/png;base64,AAAA",
+        style: {},
+      },
+    ]);
+    const copied = copyObjects(d, ["img1"]);
+    const pasted = pasteObjects(d, copied);
+    const newObj = pasted.objects.find((o) => o.id !== "img1");
+    expect(newObj?.type).toBe("image");
+    expect(newObj?.src).toBe("data:image/png;base64,AAAA");
+  });
+
   test("paste remaps connector references", () => {
     const d = doc([
       rect("r1", 0, 0),

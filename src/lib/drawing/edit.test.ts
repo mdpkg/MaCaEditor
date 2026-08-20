@@ -72,6 +72,27 @@ describe("deleteObjects", () => {
     expect(deleted.objects[0].id).toBe("r2");
   });
 
+  test("moves image object", () => {
+    const d = doc([
+      {
+        id: "img1",
+        type: "image",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 80,
+        rotation: 0,
+        zIndex: 1,
+        src: "data:image/png;base64,AAAA",
+        style: {},
+      },
+    ]);
+    const moved = moveObject(d, "img1", 20, 30);
+    const obj = moved.objects.find((o) => o.id === "img1");
+    expect(obj?.x).toBe(120);
+    expect(obj?.y).toBe(130);
+  });
+
   test("deletes connectors referencing deleted objects", () => {
     const d = doc([
       rect("r1", 0, 0),

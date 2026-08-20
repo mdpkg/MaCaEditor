@@ -4,10 +4,12 @@ import type {
   DrawingDocument,
   DrawingObject,
   EllipseObject,
+  ImageObject,
   LineObject,
   RectangleObject,
   TextObject,
 } from "./model";
+import { sanitizeImageSrc } from "../sanitize";
 
 export const DRAWING_FORMAT = "maca-drawing";
 export const DRAWING_VERSION = "1.0";
@@ -67,9 +69,15 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
 }
 
 function isKnownType(type: string): boolean {
-  return ["rectangle", "ellipse", "text", "line", "arrow", "connector"].includes(
-    type,
-  );
+  return [
+    "rectangle",
+    "ellipse",
+    "text",
+    "line",
+    "arrow",
+    "image",
+    "connector",
+  ].includes(type);
 }
 
 function validateNumeric(obj: DrawingObject): void {
@@ -93,6 +101,15 @@ function validateNumeric(obj: DrawingObject): void {
       throw new DrawingError("invalid line endpoint");
     }
   }
+  if (obj.type === "image") {
+    const img = obj as ImageObject;
+    if (typeof img.src !== "string" || img.src.length === 0) {
+      throw new DrawingError("image src is required");
+    }
+    if (sanitizeImageSrc(img.src) !== img.src) {
+      throw new DrawingError("image src is invalid");
+    }
+  }
 }
 
 /** Drawing Document を検証付きでパースする。 */
@@ -112,6 +129,7 @@ export type {
   ConnectorObject,
   DrawingObject,
   EllipseObject,
+  ImageObject,
   LineObject,
   RectangleObject,
   TextObject,

@@ -111,6 +111,76 @@ describe("drawing document parsing", () => {
     );
   });
 
+  test("accepts image object type", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withImage = doc.objects[0]
+      ? {
+          ...doc,
+          objects: [
+            ...doc.objects,
+            {
+              id: "img-1",
+              type: "image",
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 80,
+              rotation: 0,
+              zIndex: 2,
+              src: "data:image/png;base64,AAAA",
+              style: {},
+            },
+          ],
+        }
+      : doc;
+    expect(() => validateDrawingDocument(withImage)).not.toThrow();
+  });
+
+  test("rejects image with non-data src", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withImage = {
+      ...doc,
+      objects: [
+        ...doc.objects,
+        {
+          id: "img-1",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 80,
+          rotation: 0,
+          zIndex: 2,
+          src: "javascript:alert(1)",
+          style: {},
+        },
+      ],
+    };
+    expect(() => validateDrawingDocument(withImage)).toThrow("src");
+  });
+
+  test("rejects image without src", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withImage = {
+      ...doc,
+      objects: [
+        ...doc.objects,
+        {
+          id: "img-1",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 80,
+          rotation: 0,
+          zIndex: 2,
+          style: {},
+        },
+      ],
+    };
+    expect(() => validateDrawingDocument(withImage)).toThrow("src");
+  });
+
   test("rejects unknown object type", () => {
     const bad = validJson.replace('"type": "rectangle"', '"type": "bogus"');
     expect(() => validateDrawingDocument(parseDrawingDocument(bad))).toThrow(

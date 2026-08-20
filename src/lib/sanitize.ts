@@ -28,3 +28,15 @@ export function sanitizeHtml(html: string): string {
 
   return doc.body.innerHTML;
 }
+
+/**
+ * 画像オブジェクトの src を検証・サニタイズする。
+ * data:image のみ許可し、それ以外（javascript: 等）は空文字に置き換える。
+ */
+export function sanitizeImageSrc(src: string): string {
+  if (!src || src.length === 0) return "";
+  // 許可するスキーム: http, https, data:image
+  if (/^https?:\/\//i.test(src)) return src;
+  if (/^data:image\//i.test(src)) return src;
+  return "";
+}

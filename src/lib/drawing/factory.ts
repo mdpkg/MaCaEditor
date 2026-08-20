@@ -18,6 +18,7 @@ export type ToolKind =
   | "text"
   | "line"
   | "arrow"
+  | "image"
   | "connector";
 
 /** ツールに応じた新しいオブジェクトを生成する。 */
@@ -98,6 +99,19 @@ export function createObject(
         x2: x + 100,
         y2: y + 100,
         style: { stroke: "#000000", strokeWidth: 1 },
+      };
+    case "image":
+      return {
+        id,
+        type: "image",
+        x,
+        y,
+        width: 160,
+        height: 120,
+        rotation: 0,
+        zIndex,
+        src: "",
+        style: {},
       };
     case "connector":
       return {

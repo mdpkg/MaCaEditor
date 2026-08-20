@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { sanitizeHtml } from "./sanitize";
+import { sanitizeHtml, sanitizeImageSrc } from "./sanitize";
 
 describe("sanitizeHtml", () => {
   test("removes script tags", () => {
@@ -27,5 +27,39 @@ describe("sanitizeHtml", () => {
     const result = sanitizeHtml("<p>hello <strong>world</strong></p>");
     expect(result).toContain("hello");
     expect(result).toContain("world");
+  });
+});
+
+describe("sanitizeImageSrc", () => {
+  test("keeps data:image src", () => {
+    const src = "data:image/png;base64,AAAA";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("keeps http src", () => {
+    const src = "http://example.com/image.png";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("keeps https src", () => {
+    const src = "https://example.com/image.png";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("rejects javascript: src", () => {
+    expect(sanitizeImageSrc("javascript:alert(1)")).toBe("");
+  });
+
+  test("rejects non-image data src", () => {
+    expect(sanitizeImageSrc("data:text/html;base64,PHNjcmlwdD4=")).toBe("");
+  });
+
+  test("rejects unsafe schemes like file: and vbscript:", () => {
+    expect(sanitizeImageSrc("file:///etc/passwd")).toBe("");
+    expect(sanitizeImageSrc("vbscript:msgbox(1)")).toBe("");
+  });
+
+  test("rejects empty src", () => {
+    expect(sanitizeImageSrc("")).toBe("");
   });
 });

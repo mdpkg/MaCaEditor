@@ -45,6 +45,17 @@ describe("createObject", () => {
     expect(obj.type).toBe("arrow");
   });
 
+  test("creates image", () => {
+    const obj = createObject(emptyDoc(), "image", 100, 100);
+    expect(obj.type).toBe("image");
+    if (obj.type === "image") {
+      expect(obj.width).toBe(160);
+      expect(obj.height).toBe(120);
+      expect(obj.src).toBe("");
+      expect(obj.style).toEqual({});
+    }
+  });
+
   test("creates connector", () => {
     const obj = createObject(emptyDoc(), "connector", 100, 100);
     expect(obj.type).toBe("connector");

@@ -4,6 +4,7 @@ import type {
   DrawingDocument,
   DrawingObject,
   EllipseObject,
+  ImageObject,
   LineObject,
   RectangleObject,
   TextObject,
@@ -62,6 +63,14 @@ function renderEllipse(obj: EllipseObject): string {
   return `${ellipse}<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
 }
 
+function renderImage(obj: ImageObject): string {
+  const x = obj.x;
+  const y = obj.y;
+  const width = obj.width;
+  const height = obj.height;
+  return `<image x="${x}" y="${y}" width="${width}" height="${height}" href="${escapeXml(obj.src)}" preserveAspectRatio="xMidYMid meet" />`;
+}
+
 function renderText(obj: TextObject): string {
   const fontSize = obj.style.fontSize ?? 16;
   const fontFamily = obj.style.fontFamily ?? "sans-serif";
@@ -115,6 +124,8 @@ export function renderSvg(doc: DrawingDocument): string {
           return renderEllipse(obj);
         case "text":
           return renderText(obj);
+        case "image":
+          return renderImage(obj);
         case "line":
           return renderLine(obj);
         case "arrow":
