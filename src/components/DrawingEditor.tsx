@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { DrawingDocument, DrawingObject } from "../lib/drawing/model";
+import type { DrawingDocument, DrawingObject, LineDashStyle } from "../lib/drawing/model";
 import { renderSvg } from "../lib/drawing/svg";
 import { createConnector, createObject, type ToolKind } from "../lib/drawing/factory";
 import {
@@ -16,6 +16,7 @@ import {
 } from "../lib/drawing/edit";
 import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
+import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
 
 export interface DrawingEditorProps {
   doc: DrawingDocument;
@@ -150,7 +151,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
         const conn = createConnector(doc, connectorStart, hit.id, tool === "curveConnector");
         commit({ ...doc, objects: [...doc.objects, conn] });
         setConnectorStart(null);
-        setSelectedIds([hit.id]);
+        setSelectedIds([conn.id]);
         return;
       }
       setConnectorStart(null);
@@ -356,6 +357,18 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     commit(next);
   };
 
+  const updateDashStyle = (dashStyle: LineDashStyle) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id)
+          ? { ...o, style: { ...(o.style as Record<string, unknown>), dashStyle } }
+          : o,
+      ),
+    } as DrawingDocument;
+    commit(next);
+  };
+
   const updateFontSize = (fontSize: number) => {
     const next = {
       ...doc,
@@ -483,7 +496,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
             <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
             {selectedIds.map((id) => {
               const obj = doc.objects.find((o) => o.id === id);
-              if (!obj) return null;
+              if (!obj || obj.type === "connector") return null;
               return (
                 <g key={id} className="selection-box">
                   <rect
@@ -576,36 +589,53 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
                 onChange={(e) => updateSize("height", Number(e.target.value))}
               />
             </div>
-            {selected.type !== "line" &&
-              selected.type !== "arrow" &&
-              selected.type !== "connector" && (
-                <>
-                  <div className="inspector-row">
-                    <label>Fill</label>
-                    <input
-                      type="color"
-                      value={toColor((selected as DrawingObject & { style: { fill?: string } }).style.fill)}
-                      onChange={(e) => updateFill(e.target.value)}
-                    />
-                  </div>
-                  <div className="inspector-row">
-                    <label>Stroke</label>
-                    <input
-                      type="color"
-                      value={toColor((selected as DrawingObject & { style: { stroke?: string } }).style.stroke)}
-                      onChange={(e) => updateStroke(e.target.value)}
-                    />
-                  </div>
-                  <div className="inspector-row">
-                    <label>Width</label>
-                    <input
-                      type="number"
-                      value={(selected as DrawingObject & { style: { strokeWidth?: number } }).style.strokeWidth ?? 1}
-                      onChange={(e) => updateStrokeWidth(Number(e.target.value))}
-                    />
-                  </div>
-                </>
-              )}
+            {(selected.type === "rectangle" || selected.type === "ellipse") && (
+              <div className="inspector-row">
+                <label>Fill</label>
+                <input
+                  type="color"
+                  value={toColor(selected.style.fill)}
+                  onChange={(e) => updateFill(e.target.value)}
+                />
+              </div>
+            )}
+            {(["rectangle", "ellipse", "line", "arrow", "connector"] as string[]).includes(selected.type) && (
+              <>
+                <div className="inspector-row">
+                  <label>Color</label>
+                  <input
+                    type="color"
+                    value={toColor((selected.style as { stroke?: string }).stroke)}
+                    onChange={(e) => updateStroke(e.target.value)}
+                  />
+                </div>
+                <div className="inspector-row">
+                  <label>Weight</label>
+                  <input
+                    type="number"
+                    min="0.25"
+                    step="0.25"
+                    list="line-weight-options"
+                    value={(selected.style as { strokeWidth?: number }).strokeWidth ?? 1}
+                    onChange={(e) => updateStrokeWidth(Number(e.target.value))}
+                  />
+                  <datalist id="line-weight-options">
+                    {LINE_WEIGHT_OPTIONS.map((weight) => <option key={weight} value={weight} />)}
+                  </datalist>
+                </div>
+                <div className="inspector-row">
+                  <label>Dashes</label>
+                  <select
+                    value={(selected.style as { dashStyle?: LineDashStyle }).dashStyle ?? "solid"}
+                    onChange={(e) => updateDashStyle(e.target.value as LineDashStyle)}
+                  >
+                    {LINE_DASH_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
             {(selected.type === "rectangle" ||
               selected.type === "ellipse" ||
               selected.type === "text") && (

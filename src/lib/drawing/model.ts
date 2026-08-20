@@ -6,10 +6,15 @@ export interface CanvasConfig {
   gridSize: number;
 }
 
+export type LineDashStyle =
+  | "solid" | "squareDot" | "roundDot" | "dash" | "dashDot" | "dashDotDot"
+  | "longDash" | "longDashDot" | "longDashDotDot" | "sysDash" | "sysDot" | "sysDashDot";
+
 export interface ObjectStyle {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  dashStyle?: LineDashStyle;
 }
 
 export interface TextStyle {

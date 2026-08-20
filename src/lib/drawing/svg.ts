@@ -10,6 +10,7 @@ import type {
   RectangleObject,
   TextObject,
 } from "./model";
+import { svgLineStyle } from "./lineStyle";
 
 /** テキストを SVG に埋め込む前にエスケープする。 */
 function escapeXml(text: string): string {
@@ -62,9 +63,7 @@ function connectionSite(obj: DrawingObject, toward: { x: number; y: number }): C
 
 function renderRectangle(obj: RectangleObject): string {
   const fill = obj.style.fill ?? "#ffffff";
-  const stroke = obj.style.stroke ?? "#000000";
-  const sw = obj.style.strokeWidth ?? 1;
-  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" />`;
+  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
   if (!obj.text) return rect;
   const cx = obj.x + obj.width / 2;
   const cy = obj.y + obj.height / 2;
@@ -73,13 +72,11 @@ function renderRectangle(obj: RectangleObject): string {
 
 function renderEllipse(obj: EllipseObject): string {
   const fill = obj.style.fill ?? "#ffffff";
-  const stroke = obj.style.stroke ?? "#000000";
-  const sw = obj.style.strokeWidth ?? 1;
   const cx = obj.x + obj.width / 2;
   const cy = obj.y + obj.height / 2;
   const rx = obj.width / 2;
   const ry = obj.height / 2;
-  const ellipse = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" />`;
+  const ellipse = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
   if (!obj.text) return ellipse;
   return `${ellipse}<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
 }
@@ -107,15 +104,11 @@ function renderText(obj: TextObject): string {
 }
 
 function renderLine(obj: LineObject): string {
-  const stroke = obj.style.stroke ?? "#000000";
-  const sw = obj.style.strokeWidth ?? 1;
-  return `<line x1="${obj.x}" y1="${obj.y}" x2="${obj.x2}" y2="${obj.y2}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" />`;
+  return `<line x1="${obj.x}" y1="${obj.y}" x2="${obj.x2}" y2="${obj.y2}" ${svgLineStyle(obj.style)} />`;
 }
 
 function renderArrow(obj: ArrowObject): string {
-  const stroke = obj.style.stroke ?? "#000000";
-  const sw = obj.style.strokeWidth ?? 1;
-  return `<line x1="${obj.x}" y1="${obj.y}" x2="${obj.x2}" y2="${obj.y2}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
+  return `<line x1="${obj.x}" y1="${obj.y}" x2="${obj.x2}" y2="${obj.y2}" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
 }
 
 function renderConnector(
@@ -131,8 +124,6 @@ function renderConnector(
   const toSite = connectionSite(toObj, fromCenter);
   const from = fromSite.point;
   const to = toSite.point;
-  const stroke = obj.style.stroke ?? "#000000";
-  const sw = obj.style.strokeWidth ?? 1;
   if (obj.curve) {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
@@ -145,9 +136,9 @@ function renderConnector(
       x: to.x + toSite.outward.x * handle,
       y: to.y + toSite.outward.y * handle,
     };
-    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
+    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
   }
-  return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
+  return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
 }
 
 /** グループを SVG の <g> として描画する。 */
