@@ -195,6 +195,31 @@ describe("svg renderer", () => {
     );
   });
 
+  test("renders multiline shape text as vertically centered tspans", () => {
+    const svg = renderSvg(doc([{
+      id: "r1", type: "rectangle", x: 100, y: 80, width: 200, height: 60,
+      rotation: 0, zIndex: 1, text: "First line\nSecond & line", style: {},
+    }]));
+
+    expect(svg).toContain(
+      '<text x="200" y="110" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">',
+    );
+    expect(svg).toContain('<tspan x="200" dy="-0.6em">First line</tspan>');
+    expect(svg).toContain('<tspan x="200" dy="1.2em">Second &amp; line</tspan>');
+  });
+
+  test("keeps blank lines in multiline shape text", () => {
+    const svg = renderSvg(doc([{
+      id: "r1", type: "rectangle", x: 0, y: 0, width: 200, height: 100,
+      rotation: 0, zIndex: 1, text: "First\n\nThird", style: {},
+      textStyle: { align: "left", verticalAlign: "top" },
+    }]));
+
+    expect(svg).toContain('<tspan x="8" dy="0">First</tspan>');
+    expect(svg).toContain('<tspan x="8" dy="1.2em"></tspan>');
+    expect(svg).toContain('<tspan x="8" dy="1.2em">Third</tspan>');
+  });
+
   test("renders line", () => {
     const svg = renderSvg(
       doc([

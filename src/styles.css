@@ -391,6 +391,7 @@ body {
 }
 
 .inspector-row input,
+.inspector-row textarea,
 .inspector-row select {
   flex: 1;
   border: 1px solid var(--border);
@@ -398,6 +399,12 @@ body {
   padding: 2px 4px;
   background: var(--panel);
   color: var(--text);
+}
+
+.inspector-row textarea {
+  min-height: 64px;
+  resize: vertical;
+  font: inherit;
 }
 
 .inspector-empty {

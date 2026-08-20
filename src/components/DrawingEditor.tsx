@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DrawingDocument, DrawingObject, LineDashStyle } from "../lib/drawing/model";
 import { renderSvg } from "../lib/drawing/svg";
@@ -48,6 +48,12 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "curveConnector", label: "Curve" },
 ];
 
+const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse"];
+
+function isTextShapeType(type: string): boolean {
+  return TEXT_SHAPE_TYPES.includes(type);
+}
+
 export function DrawingEditor({
   doc,
   onChange,
@@ -64,6 +70,7 @@ export function DrawingEditor({
   const [redoStack, setRedoStack] = useState<History>([]);
   const [clipboard, setClipboard] = useState<DrawingObject[]>([]);
   const [connectorStart, setConnectorStart] = useState<string | null>(null);
+  const [textFocusRequest, setTextFocusRequest] = useState(0);
   const [dragging, setDragging] = useState<{
     type: "move" | "resize" | "create" | "canvasResize";
     id?: string;
@@ -77,7 +84,17 @@ export function DrawingEditor({
     before?: DrawingDocument;
   } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const shapeTextRef = useRef<HTMLTextAreaElement>(null);
   const dragPreviewRef = useRef<DrawingDocument | null>(null);
+
+  useEffect(() => {
+    if (textFocusRequest === 0 || !shapeTextRef.current) return;
+    shapeTextRef.current.focus();
+    shapeTextRef.current.setSelectionRange(
+      shapeTextRef.current.value.length,
+      shapeTextRef.current.value.length,
+    );
+  }, [textFocusRequest]);
 
   const selectedObjects = useMemo(
     () => doc.objects.filter((o) => selectedIds.includes(o.id)),
@@ -434,12 +451,9 @@ export function DrawingEditor({
   const handleDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
     const hit = hitTest(x, y);
-    if (!hit || !["rectangle", "roundedRectangle", "ellipse"].includes(hit.type)) return;
-    const currentText = "text" in hit && typeof hit.text === "string" ? hit.text : "";
-    const text = window.prompt("Shape text", currentText);
-    if (text === null || text === currentText) return;
-    commit(updateShapeText(doc, hit.id, text));
+    if (!hit || !isTextShapeType(hit.type)) return;
     setSelectedIds([hit.id]);
+    setTextFocusRequest((request) => request + 1);
   };
 
   const updateText = (text: string) => {
@@ -821,8 +835,9 @@ export function DrawingEditor({
               selected.type === "text") && (
               <div className="inspector-row">
                 <label>Text</label>
-                <input
-                  type="text"
+                <textarea
+                  ref={shapeTextRef}
+                  rows={4}
                   value={(selected as DrawingObject & { text?: string }).text ?? ""}
                   onChange={(e) => updateText(e.target.value)}
                 />

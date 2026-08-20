@@ -76,7 +76,21 @@ function renderShapeText(obj: TextShape): string {
       : obj.y + obj.height / 2;
   const anchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
   const baseline = verticalAlign === "top" ? "hanging" : verticalAlign === "bottom" ? "auto" : "middle";
-  return `<text x="${x}" y="${y}" text-anchor="${anchor}" dominant-baseline="${baseline}" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+  const lines = obj.text.replace(/\r\n?/g, "\n").split("\n");
+  if (lines.length === 1) {
+    return `<text x="${x}" y="${y}" text-anchor="${anchor}" dominant-baseline="${baseline}" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+  }
+  const firstOffset = verticalAlign === "top"
+    ? 0
+    : verticalAlign === "bottom"
+      ? -(lines.length - 1) * 1.2
+      : -(lines.length - 1) * 0.6;
+  const formatEm = (value: number) => Number(value.toFixed(4));
+  const tspans = lines.map((line, index) => {
+    const dy = index === 0 && firstOffset === 0 ? "0" : `${index === 0 ? formatEm(firstOffset) : 1.2}em`;
+    return `<tspan x="${x}" dy="${dy}">${escapeXml(line)}</tspan>`;
+  }).join("");
+  return `<text x="${x}" y="${y}" text-anchor="${anchor}" dominant-baseline="${baseline}" font-family="sans-serif">${tspans}</text>`;
 }
 
 function renderRectangle(obj: RectangleObject): string {

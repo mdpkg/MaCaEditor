@@ -250,4 +250,74 @@ describe("DrawingEditor", () => {
 
     act(() => root.unmount());
   });
+
+  test("writes multiline text into a selected shape", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 110, 110)));
+
+    const textarea = container.querySelector(".inspector-row textarea") as HTMLTextAreaElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(textarea, "First line\nSecond line");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const persisted = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(persisted.objects[0]).toMatchObject({ text: "First line\nSecond line" });
+
+    act(() => root.unmount());
+  });
+
+  test("focuses the multiline Properties editor when a shape is double-clicked", async () => {
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("single line");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => root.render(
+      <DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+
+    await act(async () => {
+      canvas.dispatchEvent(new MouseEvent("dblclick", {
+        bubbles: true,
+        clientX: 110,
+        clientY: 110,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(prompt).not.toHaveBeenCalled();
+    expect(document.activeElement?.tagName).toBe("TEXTAREA");
+
+    act(() => root.unmount());
+    prompt.mockRestore();
+  });
 });
