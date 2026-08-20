@@ -150,6 +150,28 @@ describe("svg renderer", () => {
     expect(svg).toContain('width="200"');
     expect(svg).toContain('height="80"');
     expect(svg).toContain("AAAA");
+    expect(svg).toContain('href="data:image/png;base64,AAAA"');
+    expect(svg).toContain('preserveAspectRatio="xMidYMid meet"');
+  });
+
+  test("skips image with empty src", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "img1",
+          type: "image",
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 80,
+          rotation: 0,
+          zIndex: 1,
+          src: "",
+          style: {},
+        },
+      ]),
+    );
+    expect(svg).not.toContain("<image");
   });
 
   test("renders connector as line", () => {

@@ -64,6 +64,7 @@ function renderEllipse(obj: EllipseObject): string {
 }
 
 function renderImage(obj: ImageObject): string {
+  if (!obj.src || obj.src.length === 0) return "";
   const x = obj.x;
   const y = obj.y;
   const width = obj.width;
