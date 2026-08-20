@@ -1,6 +1,36 @@
 import type { DrawingDocument, DrawingObject } from "./model";
+import { createImageObject } from "./factory";
 
 export type AlignKind = "left" | "center" | "right" | "top" | "middle" | "bottom";
+
+/** 画像オブジェクトを挿入する。src はサニタイズされる。 */
+export function insertImageObject(
+  doc: DrawingDocument,
+  x: number,
+  y: number,
+  src: string,
+): DrawingDocument {
+  const obj = createImageObject(doc, x, y, src);
+  return { ...doc, objects: [...doc.objects, obj] };
+}
+
+/** 指定位置にある最前面のオブジェクトを返す。無ければ undefined。 */
+export function selectObject(
+  doc: DrawingDocument,
+  x: number,
+  y: number,
+): DrawingObject | undefined {
+  const hit = doc.objects
+    .filter(
+      (o) =>
+        x >= o.x &&
+        x <= o.x + o.width &&
+        y >= o.y &&
+        y <= o.y + o.height,
+    )
+    .sort((a, b) => a.zIndex - b.zIndex);
+  return hit[hit.length - 1];
+}
 
 /** オブジェクトを移動する。 */
 export function moveObject(

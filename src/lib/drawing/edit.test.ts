@@ -5,9 +5,11 @@ import {
   bringForward,
   bringToFront,
   deleteObjects,
+  insertImageObject,
   moveObject,
   resizeObject,
   redo,
+  selectObject,
   sendBackward,
   sendToBack,
   undo,
@@ -61,6 +63,88 @@ describe("resizeObject", () => {
     const obj = resized.objects.find((o) => o.id === "r1");
     expect(obj?.width).toBe(200);
     expect(obj?.height).toBe(80);
+  });
+
+  test("resizes image object", () => {
+    const d = doc([
+      {
+        id: "img1",
+        type: "image",
+        x: 100,
+        y: 100,
+        width: 160,
+        height: 120,
+        rotation: 0,
+        zIndex: 1,
+        src: "https://example.com/a.png",
+        style: {},
+      },
+    ]);
+    const resized = resizeObject(d, "img1", 320, 240);
+    const obj = resized.objects.find((o) => o.id === "img1");
+    expect(obj?.width).toBe(320);
+    expect(obj?.height).toBe(240);
+    if (obj?.type === "image") {
+      expect(obj.src).toBe("https://example.com/a.png");
+    }
+  });
+});
+
+describe("insertImageObject", () => {
+  test("inserts image object with sanitized src", () => {
+    const d = doc([]);
+    const out = insertImageObject(d, 100, 100, "https://example.com/a.png");
+    const img = out.objects.find((o) => o.type === "image");
+    expect(img).toBeDefined();
+    expect(img?.x).toBe(100);
+    expect(img?.y).toBe(100);
+    expect(img?.src).toBe("https://example.com/a.png");
+  });
+
+  test("sanitizes unsafe src on insert", () => {
+    const d = doc([]);
+    const out = insertImageObject(d, 100, 100, "javascript:alert(1)");
+    const img = out.objects.find((o) => o.type === "image");
+    expect(img?.src).toBe("");
+  });
+});
+
+describe("selectObject", () => {
+  test("selects object at position", () => {
+    const d = doc([rect("r1", 100, 100)]);
+    const selected = selectObject(d, 150, 120);
+    expect(selected?.id).toBe("r1");
+  });
+
+  test("selects image object at position", () => {
+    const d = doc([
+      {
+        id: "img1",
+        type: "image",
+        x: 100,
+        y: 100,
+        width: 160,
+        height: 120,
+        rotation: 0,
+        zIndex: 1,
+        src: "https://example.com/a.png",
+        style: {},
+      },
+    ]);
+    const selected = selectObject(d, 150, 120);
+    expect(selected?.id).toBe("img1");
+  });
+
+  test("returns undefined when nothing is hit", () => {
+    const d = doc([rect("r1", 100, 100)]);
+    const selected = selectObject(d, 500, 500);
+    expect(selected).toBeUndefined();
+  });
+
+  test("picks topmost object on overlap", () => {
+    const d = doc([rect("r1", 0, 0), rect("r2", 0, 0)]);
+    const selected = selectObject(d, 10, 10);
+    expect(selected?.id).toBe("r2");
   });
 });
 
