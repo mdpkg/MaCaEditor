@@ -8,6 +8,7 @@ import type {
   ImageObject,
   LineObject,
   RectangleObject,
+  RoundedRectangleObject,
   TextObject,
 } from "./model";
 import { svgLineStyle } from "./lineStyle";
@@ -25,6 +26,16 @@ function escapeXml(text: string): string {
 function renderRectangle(obj: RectangleObject): string {
   const fill = obj.style.fill ?? "#ffffff";
   const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  if (!obj.text) return rect;
+  const cx = obj.x + obj.width / 2;
+  const cy = obj.y + obj.height / 2;
+  return `${rect}<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+}
+
+function renderRoundedRectangle(obj: RoundedRectangleObject): string {
+  const fill = obj.style.fill ?? "#ffffff";
+  const radius = Math.max(0, Math.min(obj.cornerRadius, obj.width / 2, obj.height / 2));
+  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" rx="${radius}" ry="${radius}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
   if (!obj.text) return rect;
   const cx = obj.x + obj.width / 2;
   const cy = obj.y + obj.height / 2;
@@ -93,6 +104,8 @@ function renderGroup(obj: GroupObject): string {
       switch (member.type) {
         case "rectangle":
           return renderRectangle(member);
+        case "roundedRectangle":
+          return renderRoundedRectangle(member);
         case "ellipse":
           return renderEllipse(member);
         case "text":
@@ -123,6 +136,8 @@ export function renderSvg(doc: DrawingDocument): string {
       switch (obj.type) {
         case "rectangle":
           return renderRectangle(obj);
+        case "roundedRectangle":
+          return renderRoundedRectangle(obj);
         case "ellipse":
           return renderEllipse(obj);
         case "text":

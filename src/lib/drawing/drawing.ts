@@ -72,6 +72,7 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
 function isKnownType(type: string): boolean {
   return [
     "rectangle",
+    "roundedRectangle",
     "ellipse",
     "text",
     "line",

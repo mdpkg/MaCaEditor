@@ -15,6 +15,7 @@ export function newId(prefix: string, existing: Set<string>): string {
 export type ToolKind =
   | "select"
   | "rectangle"
+  | "roundedRectangle"
   | "ellipse"
   | "text"
   | "line"
@@ -166,6 +167,20 @@ export function createObject(
         y,
         width: 120,
         height: 60,
+        rotation: 0,
+        zIndex,
+        style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+        text: "",
+      };
+    case "roundedRectangle":
+      return {
+        id,
+        type: "roundedRectangle",
+        x,
+        y,
+        width: 120,
+        height: 60,
+        cornerRadius: 12,
         rotation: 0,
         zIndex,
         style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },

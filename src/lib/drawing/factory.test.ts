@@ -38,6 +38,18 @@ describe("createObject", () => {
     expect(obj.type).toBe("ellipse");
   });
 
+  test("creates a rounded rectangle", () => {
+    const obj = createObject(emptyDoc(), "roundedRectangle", 100, 100);
+    expect(obj).toMatchObject({
+      type: "roundedRectangle",
+      x: 100,
+      y: 100,
+      width: 120,
+      height: 60,
+      cornerRadius: 12,
+    });
+  });
+
   test("createEllipseObject creates ellipse with default size and style", () => {
     const obj = createEllipseObject(emptyDoc(), 100, 100);
     expect(obj.type).toBe("ellipse");

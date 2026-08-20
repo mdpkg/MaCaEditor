@@ -63,6 +63,24 @@ describe("svg renderer", () => {
     expect(svg).toContain('stroke-width="1"');
   });
 
+  test("renders a rounded rectangle with rx and ry", () => {
+    const svg = renderSvg(doc([{
+      id: "round-1",
+      type: "roundedRectangle",
+      x: 10,
+      y: 20,
+      width: 200,
+      height: 80,
+      cornerRadius: 16,
+      rotation: 0,
+      zIndex: 1,
+      style: { fill: "#fff", stroke: "#000", strokeWidth: 1 },
+      text: "",
+    }]));
+    expect(svg).toContain('rx="16"');
+    expect(svg).toContain('ry="16"');
+  });
+
   test("renders ellipse", () => {
     const svg = renderSvg(
       doc([

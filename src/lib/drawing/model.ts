@@ -43,6 +43,13 @@ export interface RectangleObject extends BaseObject {
   text?: string;
 }
 
+export interface RoundedRectangleObject extends BaseObject {
+  type: "roundedRectangle";
+  cornerRadius: number;
+  style: ObjectStyle;
+  text?: string;
+}
+
 export interface EllipseObject extends BaseObject {
   type: "ellipse";
   style: ObjectStyle;
@@ -92,6 +99,7 @@ export interface GroupObject extends BaseObject {
 
 export type DrawingObject =
   | RectangleObject
+  | RoundedRectangleObject
   | EllipseObject
   | TextObject
   | LineObject

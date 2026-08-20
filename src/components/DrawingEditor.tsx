@@ -31,6 +31,7 @@ type Tool = ToolKind;
 const TOOLS: { id: Tool; label: string }[] = [
   { id: "select", label: "Select" },
   { id: "rectangle", label: "Rect" },
+  { id: "roundedRectangle", label: "Round Rect" },
   { id: "ellipse", label: "Ellipse" },
   { id: "text", label: "Text" },
   { id: "line", label: "Line" },
@@ -596,17 +597,17 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
                 onChange={(e) => updateSize("height", Number(e.target.value))}
               />
             </div></>}
-            {(selected.type === "rectangle" || selected.type === "ellipse") && (
+            {(["rectangle", "roundedRectangle", "ellipse"] as string[]).includes(selected.type) && (
               <div className="inspector-row">
                 <label>Fill</label>
                 <input
                   type="color"
-                  value={toColor(selected.style.fill)}
+                  value={toColor((selected.style as { fill?: string }).fill)}
                   onChange={(e) => updateFill(e.target.value)}
                 />
               </div>
             )}
-            {(["rectangle", "ellipse", "line", "arrow", "connector"] as string[]).includes(selected.type) && (
+            {(["rectangle", "roundedRectangle", "ellipse", "line", "arrow", "connector"] as string[]).includes(selected.type) && (
               <>
                 <div className="inspector-row">
                   <label>Color</label>
@@ -644,6 +645,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
               </>
             )}
             {(selected.type === "rectangle" ||
+              selected.type === "roundedRectangle" ||
               selected.type === "ellipse" ||
               selected.type === "text") && (
               <div className="inspector-row">
