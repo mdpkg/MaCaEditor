@@ -94,6 +94,51 @@ export function resizeObject(
   };
 }
 
+export type ObjectResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+export function resizeObjectFromDragStart(
+  original: DrawingDocument,
+  id: string,
+  handle: ObjectResizeHandle,
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  snap: boolean,
+  minimumSize = 10,
+): DrawingDocument {
+  const object = original.objects.find((candidate) => candidate.id === id);
+  if (!object) return original;
+  const snapValue = (value: number) =>
+    snap ? Math.round(value / original.canvas.gridSize) * original.canvas.gridSize : value;
+  const left = object.x;
+  const top = object.y;
+  const right = object.x + object.width;
+  const bottom = object.y + object.height;
+  let x = left;
+  let y = top;
+  let width = object.width;
+  let height = object.height;
+
+  if (handle.includes("w")) {
+    x = Math.min(right - minimumSize, snapValue(left + current.x - start.x));
+    width = right - x;
+  } else if (handle.includes("e")) {
+    width = Math.max(minimumSize, snapValue(right + current.x - start.x) - left);
+  }
+  if (handle.includes("n")) {
+    y = Math.min(bottom - minimumSize, snapValue(top + current.y - start.y));
+    height = bottom - y;
+  } else if (handle.includes("s")) {
+    height = Math.max(minimumSize, snapValue(bottom + current.y - start.y) - top);
+  }
+
+  return {
+    ...original,
+    objects: original.objects.map((candidate) =>
+      candidate.id === id ? { ...candidate, x, y, width, height } : candidate,
+    ),
+  };
+}
+
 export type CanvasResizeEdge = "width" | "height" | "both";
 
 /** Resize the SVG canvas from its right, bottom, or bottom-right edge. */

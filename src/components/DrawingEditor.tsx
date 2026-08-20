@@ -12,6 +12,7 @@ import {
   moveObjectFromDragStart,
   moveObjectFromDragStartSnapped,
   resizeCanvasFromDrag,
+  resizeObjectFromDragStart,
   sendBackward,
   sendToBack,
   type AlignKind,
@@ -183,6 +184,28 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const objectResize = (e.target as SVGElement).dataset.objectResize;
+    const objectId = (e.target as SVGElement).dataset.objectId;
+    if (objectResize && objectId) {
+      const object = doc.objects.find((candidate) => candidate.id === objectId);
+      if (object) {
+        setSelectedIds([objectId]);
+        setDragging({
+          type: "resize",
+          id: objectId,
+          handle: objectResize,
+          startX: x,
+          startY: y,
+          origX: object.x,
+          origY: object.y,
+          origW: object.width,
+          origH: object.height,
+          before: doc,
+        });
+        dragPreviewRef.current = doc;
+        return;
+      }
+    }
     const hit = hitTest(x, y);
 
     if (tool === "connector" || tool === "curveConnector") {
@@ -263,6 +286,20 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
 
+    if (dragging.type === "resize" && dragging.id && dragging.handle && dragging.before) {
+      const next = resizeObjectFromDragStart(
+        dragging.before,
+        dragging.id,
+        dragging.handle as "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w",
+        { x: dragging.startX, y: dragging.startY },
+        { x, y },
+        snap,
+      );
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "move" && dragging.id) {
       const original = dragging.before ?? doc;
       const start = { x: dragging.startX, y: dragging.startY };
@@ -303,6 +340,12 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
       onChange(after);
       onDirty(after);
     } else if (dragging?.type === "canvasResize" && dragging.before) {
+      const after = dragPreviewRef.current ?? doc;
+      setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
+      setRedoStack([]);
+      onChange(after);
+      onDirty(after);
+    } else if (dragging?.type === "resize" && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -577,7 +620,10 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
             <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
             {selectedIds.map((id) => {
               const obj = doc.objects.find((o) => o.id === id);
-              if (!obj || obj.type === "connector") return null;
+              if (
+                !obj ||
+                !["rectangle", "roundedRectangle", "ellipse", "text", "image"].includes(obj.type)
+              ) return null;
               return (
                 <g key={id} className="selection-box">
                   <rect
@@ -615,6 +661,9 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
                     return (
                       <rect
                         key={h}
+                        className="object-resize-handle"
+                        data-object-resize={h}
+                        data-object-id={obj.id}
                         x={hx - 4}
                         y={hy - 4}
                         width={8}

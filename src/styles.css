@@ -317,6 +317,26 @@ body {
   cursor: nwse-resize;
 }
 
+.object-resize-handle[data-object-resize="n"],
+.object-resize-handle[data-object-resize="s"] {
+  cursor: ns-resize;
+}
+
+.object-resize-handle[data-object-resize="e"],
+.object-resize-handle[data-object-resize="w"] {
+  cursor: ew-resize;
+}
+
+.object-resize-handle[data-object-resize="nw"],
+.object-resize-handle[data-object-resize="se"] {
+  cursor: nwse-resize;
+}
+
+.object-resize-handle[data-object-resize="ne"],
+.object-resize-handle[data-object-resize="sw"] {
+  cursor: nesw-resize;
+}
+
 .drawing-statusbar {
   display: flex;
   gap: 16px;

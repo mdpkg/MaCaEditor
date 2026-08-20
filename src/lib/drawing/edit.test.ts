@@ -12,6 +12,7 @@ import {
   moveObjectFromDragStartSnapped,
   resizeCanvasFromDrag,
   resizeObject,
+  resizeObjectFromDragStart,
   redo,
   selectGroup,
   selectObject,
@@ -114,6 +115,79 @@ describe("resizeObject", () => {
     if (obj?.type === "image") {
       expect(obj.src).toBe("https://example.com/a.png");
     }
+  });
+});
+
+describe("resizeObjectFromDragStart", () => {
+  test("resizes from the bottom-right handle", () => {
+    const original = doc([rect("r1", 100, 100)]);
+    const resized = resizeObjectFromDragStart(
+      original,
+      "r1",
+      "se",
+      { x: 200, y: 150 },
+      { x: 247, y: 183 },
+      true,
+    );
+
+    expect(resized.objects[0]).toMatchObject({ x: 100, y: 100, width: 150, height: 80 });
+  });
+
+  test("keeps the opposite corner fixed when resizing from top-left", () => {
+    const original = doc([rect("r1", 100, 100)]);
+    const resized = resizeObjectFromDragStart(
+      original,
+      "r1",
+      "nw",
+      { x: 100, y: 100 },
+      { x: 130, y: 120 },
+      false,
+    );
+
+    expect(resized.objects[0]).toMatchObject({ x: 130, y: 120, width: 70, height: 30 });
+  });
+
+  test("does not invert an object when dragged past its opposite edge", () => {
+    const original = doc([rect("r1", 100, 100)]);
+    const resized = resizeObjectFromDragStart(
+      original,
+      "r1",
+      "w",
+      { x: 100, y: 125 },
+      { x: 250, y: 125 },
+      false,
+    );
+
+    expect(resized.objects[0]).toMatchObject({ x: 190, width: 10 });
+  });
+
+  test("resizes an image without losing its source", () => {
+    const image: DrawingObject = {
+      id: "image-1",
+      type: "image",
+      x: 20,
+      y: 30,
+      width: 160,
+      height: 120,
+      rotation: 0,
+      zIndex: 1,
+      src: "data:image/png;base64,AQID",
+      style: {},
+    };
+    const resized = resizeObjectFromDragStart(
+      doc([image]),
+      "image-1",
+      "e",
+      { x: 180, y: 90 },
+      { x: 240, y: 90 },
+      false,
+    );
+
+    expect(resized.objects[0]).toMatchObject({
+      width: 220,
+      height: 120,
+      src: "data:image/png;base64,AQID",
+    });
   });
 });
 
