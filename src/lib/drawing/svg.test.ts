@@ -361,6 +361,52 @@ describe("svg renderer", () => {
     expect(svg).toContain('y2="70"');
   });
 
+  test("renders group as svg g element", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "g1",
+          type: "group",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 100,
+          rotation: 0,
+          zIndex: 1,
+          style: {},
+          members: [
+            {
+              id: "r1",
+              type: "rectangle",
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 50,
+              rotation: 0,
+              zIndex: 0,
+              style: {},
+            },
+            {
+              id: "r2",
+              type: "rectangle",
+              x: 100,
+              y: 50,
+              width: 100,
+              height: 50,
+              rotation: 0,
+              zIndex: 1,
+              style: {},
+            },
+          ],
+        },
+      ]),
+    );
+    expect(svg).toContain("<g");
+    expect(svg).toContain('id="g1"');
+    expect(svg).toContain("</g>");
+    expect(svg).toContain("<rect");
+  });
+
   test("output is deterministic", () => {
     const d = doc([
       {

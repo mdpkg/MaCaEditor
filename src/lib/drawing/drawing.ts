@@ -4,6 +4,7 @@ import type {
   DrawingDocument,
   DrawingObject,
   EllipseObject,
+  GroupObject,
   ImageObject,
   LineObject,
   RectangleObject,
@@ -77,6 +78,7 @@ function isKnownType(type: string): boolean {
     "arrow",
     "image",
     "connector",
+    "group",
   ].includes(type);
 }
 
@@ -129,6 +131,7 @@ export type {
   ConnectorObject,
   DrawingObject,
   EllipseObject,
+  GroupObject,
   ImageObject,
   LineObject,
   RectangleObject,

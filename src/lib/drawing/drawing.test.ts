@@ -251,6 +251,41 @@ describe("drawing document parsing", () => {
     expect(() => validateDrawingDocument(withImage)).toThrow("src");
   });
 
+  test("accepts group object type", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withGroup: DrawingDocument = {
+      ...doc,
+      objects: [
+        ...doc.objects,
+        {
+          id: "g-1",
+          type: "group",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 2,
+          style: {},
+          members: [
+            {
+              id: "r-2",
+              type: "rectangle",
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 50,
+              rotation: 0,
+              zIndex: 0,
+              style: {},
+            },
+          ],
+        },
+      ],
+    };
+    expect(() => validateDrawingDocument(withGroup)).not.toThrow();
+  });
+
   test("rejects unknown object type", () => {
     const bad = validJson.replace('"type": "rectangle"', '"type": "bogus"');
     expect(() => validateDrawingDocument(parseDrawingDocument(bad))).toThrow(

@@ -4,6 +4,7 @@ import type {
   DrawingDocument,
   DrawingObject,
   EllipseObject,
+  GroupObject,
   ImageObject,
   LineObject,
   RectangleObject,
@@ -111,6 +112,34 @@ function renderConnector(
   return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
 }
 
+/** グループを SVG の <g> として描画する。 */
+function renderGroup(obj: GroupObject): string {
+  const sorted = [...obj.members].sort((a, b) => a.zIndex - b.zIndex);
+  const body = sorted
+    .map((member) => {
+      switch (member.type) {
+        case "rectangle":
+          return renderRectangle(member);
+        case "ellipse":
+          return renderEllipse(member);
+        case "text":
+          return renderText(member);
+        case "image":
+          return renderImage(member);
+        case "line":
+          return renderLine(member);
+        case "arrow":
+          return renderArrow(member);
+        case "connector":
+          return renderConnector(member, obj.members);
+        default:
+          return "";
+      }
+    })
+    .join("\n");
+  return `<g id="${obj.id}">\n${body}\n</g>`;
+}
+
 /** Drawing Document から静的 SVG を生成する。 */
 export function renderSvg(doc: DrawingDocument): string {
   const { width, height } = doc.canvas;
@@ -133,6 +162,8 @@ export function renderSvg(doc: DrawingDocument): string {
           return renderArrow(obj);
         case "connector":
           return renderConnector(obj, doc.objects);
+        case "group":
+          return renderGroup(obj);
         default:
           return "";
       }

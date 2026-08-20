@@ -1,5 +1,9 @@
-import type { DrawingDocument, DrawingObject } from "./model";
-import { createImageObject } from "./factory";
+import type {
+  DrawingDocument,
+  DrawingObject,
+  GroupObject,
+} from "./model";
+import { createImageObject, newId } from "./factory";
 
 export type AlignKind = "left" | "center" | "right" | "top" | "middle" | "bottom";
 
@@ -209,6 +213,84 @@ export function alignObjects(
       };
     }
   }
+}
+
+/** 指定したオブジェクトをグループ化する。 */
+export function groupObjects(
+  doc: DrawingDocument,
+  ids: string[],
+): DrawingDocument {
+  if (ids.length === 0) return doc;
+  const targets = doc.objects.filter((o) => ids.includes(o.id));
+  if (targets.length === 0) return doc;
+
+  const minX = Math.min(...targets.map((o) => o.x));
+  const minY = Math.min(...targets.map((o) => o.y));
+  const maxX = Math.max(...targets.map((o) => o.x + o.width));
+  const maxY = Math.max(...targets.map((o) => o.y + o.height));
+
+  const existing = new Set(doc.objects.map((o) => o.id));
+  const id = newId("group", existing);
+  const zIndex = Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1;
+
+  const group: GroupObject = {
+    id,
+    type: "group",
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+    rotation: 0,
+    zIndex,
+    members: targets,
+    style: {},
+  };
+
+  const idSet = new Set(ids);
+  return {
+    ...doc,
+    objects: [...doc.objects.filter((o) => !idSet.has(o.id)), group],
+  };
+}
+
+/** グループを解除して、メンバーをドキュメントに戻す。 */
+export function ungroupObjects(
+  doc: DrawingDocument,
+  groupId: string,
+): DrawingDocument {
+  const group = doc.objects.find((o) => o.id === groupId);
+  if (!group || group.type !== "group") return doc;
+
+  const members = (group as GroupObject).members;
+  return {
+    ...doc,
+    objects: [
+      ...doc.objects.filter((o) => o.id !== groupId),
+      ...members,
+    ],
+  };
+}
+
+/** グループを選択する（メンバーを含むヒットテスト）。 */
+export function selectGroup(
+  doc: DrawingDocument,
+  x: number,
+  y: number,
+): DrawingObject | undefined {
+  const hit = doc.objects
+    .filter((o) => {
+      if (o.type === "group") {
+        return o.members.some(
+          (m) =>
+            x >= m.x && x <= m.x + m.width && y >= m.y && y <= m.y + m.height,
+        );
+      }
+      return (
+        x >= o.x && x <= o.x + o.width && y >= o.y && y <= o.y + o.height
+      );
+    })
+    .sort((a, b) => a.zIndex - b.zIndex);
+  return hit[hit.length - 1];
 }
 
 /** 履歴エントリ。 */

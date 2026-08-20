@@ -5,13 +5,16 @@ import {
   bringForward,
   bringToFront,
   deleteObjects,
+  groupObjects,
   insertImageObject,
   moveObject,
   resizeObject,
   redo,
+  selectGroup,
   selectObject,
   sendBackward,
   sendToBack,
+  ungroupObjects,
   undo,
   type History,
 } from "./edit";
@@ -279,6 +282,69 @@ describe("alignObjects", () => {
     for (const o of out.objects) {
       expect(o.y + o.height / 2).toBe(75);
     }
+  });
+});
+
+describe("groupObjects", () => {
+  test("groups selected objects into a single group", () => {
+    const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
+    const out = groupObjects(d, ["r1", "r2"]);
+    expect(out.objects.length).toBe(1);
+    const group = out.objects[0];
+    expect(group.type).toBe("group");
+    if (group.type === "group") {
+      expect(group.members.length).toBe(2);
+      expect(group.members.map((m) => m.id).sort()).toEqual(["r1", "r2"]);
+    }
+  });
+
+  test("group bounding box covers all members", () => {
+    const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
+    const out = groupObjects(d, ["r1", "r2"]);
+    const group = out.objects[0];
+    expect(group.x).toBe(0);
+    expect(group.y).toBe(0);
+    expect(group.width).toBe(200);
+    expect(group.height).toBe(100);
+  });
+
+  test("returns doc unchanged when no ids match", () => {
+    const d = doc([rect("r1", 0, 0)]);
+    const out = groupObjects(d, ["missing"]);
+    expect(out).toBe(d);
+  });
+});
+
+describe("ungroupObjects", () => {
+  test("ungroups and restores members", () => {
+    const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
+    const grouped = groupObjects(d, ["r1", "r2"]);
+    const out = ungroupObjects(grouped, grouped.objects[0].id);
+    expect(out.objects.length).toBe(2);
+    expect(out.objects.map((o) => o.id).sort()).toEqual(["r1", "r2"]);
+  });
+
+  test("returns doc unchanged when id is not a group", () => {
+    const d = doc([rect("r1", 0, 0)]);
+    const out = ungroupObjects(d, "r1");
+    expect(out).toBe(d);
+  });
+});
+
+describe("selectGroup", () => {
+  test("selects group when hitting a member", () => {
+    const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
+    const grouped = groupObjects(d, ["r1", "r2"]);
+    const selected = selectGroup(grouped, 150, 75);
+    expect(selected?.type).toBe("group");
+    expect(selected?.id).toBe(grouped.objects[0].id);
+  });
+
+  test("returns undefined when nothing is hit", () => {
+    const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
+    const grouped = groupObjects(d, ["r1", "r2"]);
+    const selected = selectGroup(grouped, 500, 500);
+    expect(selected).toBeUndefined();
   });
 });
 

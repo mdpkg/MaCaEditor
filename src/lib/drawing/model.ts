@@ -77,6 +77,12 @@ export interface ConnectorObject extends BaseObject {
   style: ObjectStyle;
 }
 
+export interface GroupObject extends BaseObject {
+  type: "group";
+  members: DrawingObject[];
+  style: ObjectStyle;
+}
+
 export type DrawingObject =
   | RectangleObject
   | EllipseObject
@@ -84,7 +90,8 @@ export type DrawingObject =
   | LineObject
   | ArrowObject
   | ImageObject
-  | ConnectorObject;
+  | ConnectorObject
+  | GroupObject;
 
 export interface DrawingDocument {
   format: string;
