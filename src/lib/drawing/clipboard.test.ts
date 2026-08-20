@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { DrawingDocument, DrawingObject } from "./model";
+import type { DrawingDocument, DrawingObject, ImageObject } from "./model";
 import { copyObjects, pasteObjects } from "./clipboard";
 
 function rect(id: string, x: number, y: number): DrawingObject {
@@ -70,7 +70,7 @@ describe("clipboard", () => {
     const pasted = pasteObjects(d, copied);
     const newObj = pasted.objects.find((o) => o.id !== "img1");
     expect(newObj?.type).toBe("image");
-    expect(newObj?.src).toBe("data:image/png;base64,AAAA");
+    expect((newObj as ImageObject)?.src).toBe("data:image/png;base64,AAAA");
   });
 
   test("paste remaps connector references", () => {

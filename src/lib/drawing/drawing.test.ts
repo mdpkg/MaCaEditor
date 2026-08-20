@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { DrawingDocument } from "./model";
 import {
   parseDrawingDocument,
   serializeDrawingDocument,
@@ -113,7 +114,7 @@ describe("drawing document parsing", () => {
 
   test("accepts image object type", () => {
     const doc = parseDrawingDocument(validJson);
-    const withImage = doc.objects[0]
+    const withImage: DrawingDocument = doc.objects[0]
       ? {
           ...doc,
           objects: [
@@ -138,7 +139,7 @@ describe("drawing document parsing", () => {
 
   test("rejects image with non-data src", () => {
     const doc = parseDrawingDocument(validJson);
-    const withImage = {
+    const withImage: DrawingDocument = {
       ...doc,
       objects: [
         ...doc.objects,
@@ -177,13 +178,13 @@ describe("drawing document parsing", () => {
           style: {},
         },
       ],
-    };
+    } as unknown as DrawingDocument;
     expect(() => validateDrawingDocument(withImage)).toThrow("src");
   });
 
   test("rejects image with whitespace-only src", () => {
     const doc = parseDrawingDocument(validJson);
-    const withImage = {
+    const withImage: DrawingDocument = {
       ...doc,
       objects: [
         ...doc.objects,
@@ -206,7 +207,7 @@ describe("drawing document parsing", () => {
 
   test("rejects image with empty data url", () => {
     const doc = parseDrawingDocument(validJson);
-    const withImage = {
+    const withImage: DrawingDocument = {
       ...doc,
       objects: [
         ...doc.objects,
@@ -229,7 +230,7 @@ describe("drawing document parsing", () => {
 
   test("rejects image with bare data:image prefix", () => {
     const doc = parseDrawingDocument(validJson);
-    const withImage = {
+    const withImage: DrawingDocument = {
       ...doc,
       objects: [
         ...doc.objects,
