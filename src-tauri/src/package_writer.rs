@@ -103,6 +103,56 @@ mod tests {
     }
 
     #[test]
+    fn end_to_end_save_flow_with_real_package() {
+        // example/drawing-example の実パッケージを読み込んで ZIP を作成する
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../example/drawing-example");
+        let manifest_bytes = std::fs::read(base.join("manifest.json")).unwrap();
+        let readme_bytes = std::fs::read(base.join("README.md")).unwrap();
+        let draw_bytes = std::fs::read(base.join("diagrams/architecture.draw.json")).unwrap();
+        let svg_bytes = std::fs::read(base.join("diagrams/architecture.svg")).unwrap();
+
+        // 実パッケージ相当の ZIP を組み立てる
+        let mut buf = Vec::new();
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        for (name, content) in [
+            ("manifest.json", manifest_bytes.as_slice()),
+            ("README.md", readme_bytes.as_slice()),
+            ("diagrams/architecture.draw.json", draw_bytes.as_slice()),
+            ("diagrams/architecture.svg", svg_bytes.as_slice()),
+        ] {
+            writer
+                .start_file(name, zip::write::FullFileOptions::default())
+                .unwrap();
+            writer.write_all(content).unwrap();
+        }
+        writer.finish().unwrap();
+
+        // load → write → load のエンドツーエンド保存フロー
+        let loaded = load_package(&buf).unwrap();
+        let saved = write_package(&loaded.manifest, &loaded.files).unwrap();
+        let reloaded = load_package(&saved).unwrap();
+
+        // manifest.json は files に含まれず、重複エントリが発生しない
+        assert_eq!(loaded.files.len(), 3); // README + draw + svg
+        assert_eq!(reloaded.files.len(), 3);
+        assert!(
+            reloaded
+                .files
+                .iter()
+                .all(|f| f.path.replace('\\', "/") != "manifest.json"),
+            "manifest.json must not be duplicated"
+        );
+
+        // 再読み込みでも実ファイルの内容が保持されている
+        let draw = reloaded
+            .files
+            .iter()
+            .find(|f| f.path == "diagrams/architecture.draw.json")
+            .unwrap();
+        assert!(draw.text_content().unwrap().contains("\"format\": \"maca-drawing\""));
+    }
+
+    #[test]
     fn written_zip_is_readable_as_zip() {
         let manifest = manifest();
         let files = vec![PackageFile::new_text("README.md".to_string(), "# Hello".to_string())];
