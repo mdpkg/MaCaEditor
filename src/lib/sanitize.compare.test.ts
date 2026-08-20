@@ -70,10 +70,14 @@ describe("sanitizeHtml SVG: definitive root-cause comparison", () => {
     const expected = sampleSvg();
     const actual = sanitizeHtml(expected);
 
-    // 全要素タグが残っている
+    // 全要素タグが残っている（SVG 名前空間では自己閉じタグがそのまま保持される）
     for (const tag of ["svg", "defs", "marker", "polygon", "rect", "text"]) {
       expect(actual).toContain(`<${tag}`);
-      expect(actual).toContain(`</${tag}>`);
+      // 自己閉じタグ（<tag .../>）または閉じタグ（</tag>）のどちらかが存在する
+      expect(
+        actual.includes(`</${tag}>`) ||
+          new RegExp(`<${tag}[^>]*/>`).test(actual),
+      ).toBe(true);
     }
 
     // 全属性が残っている
