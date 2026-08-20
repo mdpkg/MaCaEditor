@@ -94,6 +94,34 @@ export function createCurvedConnector(
   };
 }
 
+/** 2つのシェイプを参照する一意なコネクタを生成する。 */
+export function createConnector(
+  doc: DrawingDocument,
+  fromId: string,
+  toId: string,
+  curve: boolean,
+): DrawingObject {
+  if (fromId === toId) throw new Error("Connector endpoints must be different shapes");
+  const from = doc.objects.find((object) => object.id === fromId && object.type !== "connector");
+  const to = doc.objects.find((object) => object.id === toId && object.type !== "connector");
+  if (!from || !to) throw new Error("Connector endpoints must reference shapes");
+  const existing = new Set(doc.objects.map((object) => object.id));
+  return {
+    id: newId("connector", existing),
+    type: "connector",
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    rotation: 0,
+    zIndex: Math.max(0, ...doc.objects.map((object) => object.zIndex)) + 1,
+    from: { objectId: fromId },
+    to: { objectId: toId },
+    curve,
+    style: { stroke: "#000000", strokeWidth: 1 },
+  };
+}
+
 /** 画像オブジェクトを生成し、src をサニタイズする。 */
 export function createImageObject(
   doc: DrawingDocument,

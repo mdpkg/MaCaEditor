@@ -25,19 +25,39 @@ function center(obj: DrawingObject): { x: number; y: number } {
   return { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 };
 }
 
-/** オブジェクトの右端を返す。 */
-function rightEdge(obj: DrawingObject): number {
-  return obj.x + obj.width;
+interface ConnectionSite {
+  point: { x: number; y: number };
+  outward: { x: number; y: number };
 }
 
-/** 接続元オブジェクトのアンカー（右端中央）を返す。 */
-function fromAnchor(obj: DrawingObject): { x: number; y: number } {
-  return { x: rightEdge(obj), y: center(obj).y };
-}
-
-/** 接続先オブジェクトのアンカー（左端中央）を返す。 */
-function toAnchor(obj: DrawingObject): { x: number; y: number } {
-  return { x: obj.x, y: center(obj).y };
+/** 相手に最も近い接続サイトと、その辺から外へ向かう方向を返す。 */
+function connectionSite(obj: DrawingObject, toward: { x: number; y: number }): ConnectionSite {
+  const own = center(obj);
+  const dx = toward.x - own.x;
+  const dy = toward.y - own.y;
+  if (dx === 0 && dy === 0) return { point: own, outward: { x: 1, y: 0 } };
+  const rx = Math.max(obj.width / 2, 0.001);
+  const ry = Math.max(obj.height / 2, 0.001);
+  if (obj.type === "ellipse") {
+    const scale = 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2);
+    const length = Math.hypot(dx, dy);
+    return {
+      point: { x: own.x + dx * scale, y: own.y + dy * scale },
+      outward: { x: dx / length, y: dy / length },
+    };
+  }
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const direction = Math.sign(dx);
+    return {
+      point: { x: own.x + direction * rx, y: own.y },
+      outward: { x: direction, y: 0 },
+    };
+  }
+  const direction = Math.sign(dy);
+  return {
+    point: { x: own.x, y: own.y + direction * ry },
+    outward: { x: 0, y: direction },
+  };
 }
 
 function renderRectangle(obj: RectangleObject): string {
@@ -105,14 +125,27 @@ function renderConnector(
   const fromObj = objects.find((o) => o.id === obj.from.objectId);
   const toObj = objects.find((o) => o.id === obj.to.objectId);
   if (!fromObj || !toObj) return "";
-  const from = fromAnchor(fromObj);
-  const to = toAnchor(toObj);
+  const fromCenter = center(fromObj);
+  const toCenter = center(toObj);
+  const fromSite = connectionSite(fromObj, toCenter);
+  const toSite = connectionSite(toObj, fromCenter);
+  const from = fromSite.point;
+  const to = toSite.point;
   const stroke = obj.style.stroke ?? "#000000";
   const sw = obj.style.strokeWidth ?? 1;
   if (obj.curve) {
-    const cx = (from.x + to.x) / 2;
-    const cy = (from.y + to.y) / 2;
-    return `<path d="M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const handle = Math.min(120, Math.max(40, Math.max(Math.abs(dx), Math.abs(dy)) * 0.5));
+    const c1 = {
+      x: from.x + fromSite.outward.x * handle,
+      y: from.y + fromSite.outward.y * handle,
+    };
+    const c2 = {
+      x: to.x + toSite.outward.x * handle,
+      y: to.y + toSite.outward.y * handle,
+    };
+    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
   }
   return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
 }

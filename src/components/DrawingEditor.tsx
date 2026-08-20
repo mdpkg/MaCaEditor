@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { DrawingDocument, DrawingObject } from "../lib/drawing/model";
 import { renderSvg } from "../lib/drawing/svg";
-import { createObject, type ToolKind } from "../lib/drawing/factory";
+import { createConnector, createObject, type ToolKind } from "../lib/drawing/factory";
 import {
   alignObjects,
   bringForward,
@@ -143,30 +143,14 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     if (tool === "connector" || tool === "curveConnector") {
       if (connectorStart === null && hit && hit.type !== "connector") {
         setConnectorStart(hit.id);
+        setSelectedIds([hit.id]);
         return;
       }
       if (connectorStart !== null && hit && hit.type !== "connector" && hit.id !== connectorStart) {
-        const existing = new Set(doc.objects.map((o) => o.id));
-        const id = `connector-${existing.size + 1}`;
-        while (existing.has(id)) {
-          existing.add(id);
-        }
-        const conn: DrawingObject = {
-          id,
-          type: "connector",
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
-          rotation: 0,
-          zIndex: Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1,
-          from: { objectId: connectorStart },
-          to: { objectId: hit.id },
-          curve: tool === "curveConnector",
-          style: { stroke: "#000000", strokeWidth: 1 },
-        };
+        const conn = createConnector(doc, connectorStart, hit.id, tool === "curveConnector");
         commit({ ...doc, objects: [...doc.objects, conn] });
         setConnectorStart(null);
+        setSelectedIds([hit.id]);
         return;
       }
       setConnectorStart(null);
@@ -445,7 +429,10 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
           <button
             key={t.id}
             className={tool === t.id ? "active" : ""}
-            onClick={() => setTool(t.id)}
+            onClick={() => {
+              setTool(t.id);
+              setConnectorStart(null);
+            }}
             title={t.label}
           >
             {t.label}

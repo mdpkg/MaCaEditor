@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DrawingDocument } from "./model";
-import { createCurvedConnector, createImageObject, createObject, createRectangleObject, createEllipseObject } from "./factory";
+import { createConnector, createCurvedConnector, createImageObject, createObject, createRectangleObject, createEllipseObject } from "./factory";
 
 function emptyDoc(): DrawingDocument {
   return {
@@ -113,6 +113,27 @@ describe("createObject", () => {
       expect(obj.from.objectId).toBe("r1");
       expect(obj.to.objectId).toBe("r2");
     }
+  });
+
+  test("creates a connector with a unique id between two shapes", () => {
+    const base = emptyDoc();
+    base.objects = [
+      { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "rectangle", x: 200, y: 0, width: 100, height: 50, rotation: 0, zIndex: 2, style: {} },
+      { id: "connector-1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 3, from: { objectId: "a" }, to: { objectId: "b" }, style: {} },
+    ];
+    expect(createConnector(base, "a", "b", false)).toMatchObject({
+      id: "connector-2",
+      from: { objectId: "a" },
+      to: { objectId: "b" },
+      curve: false,
+    });
+  });
+
+  test("rejects connecting a shape to itself", () => {
+    const base = emptyDoc();
+    base.objects = [{ id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} }];
+    expect(() => createConnector(base, "a", "a", false)).toThrow("different shapes");
   });
 
   test("assigns unique ids", () => {
