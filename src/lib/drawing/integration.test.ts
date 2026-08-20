@@ -1,0 +1,54 @@
+import { describe, expect, test } from "vitest";
+import type { DrawingDocument } from "./model";
+import {
+  generateDrawingFiles,
+  markdownImageRef,
+  nextDrawingName,
+} from "./integration";
+
+function doc(): DrawingDocument {
+  return {
+    format: "maca-drawing",
+    version: "1.0",
+    canvas: { width: 1200, height: 800, gridSize: 10 },
+    objects: [],
+  };
+}
+
+describe("integration", () => {
+  test("generates draw and svg paths", () => {
+    const files = generateDrawingFiles(doc(), "diagrams", "architecture");
+    expect(files.drawPath).toBe("diagrams/architecture.draw.json");
+    expect(files.svgPath).toBe("diagrams/architecture.svg");
+  });
+
+  test("draw content is serialized json", () => {
+    const files = generateDrawingFiles(doc(), "diagrams", "architecture");
+    const parsed = JSON.parse(files.drawContent);
+    expect(parsed.format).toBe("maca-drawing");
+  });
+
+  test("svg content is svg", () => {
+    const files = generateDrawingFiles(doc(), "diagrams", "architecture");
+    expect(files.svgContent).toContain("<svg");
+  });
+
+  test("next name avoids existing files", () => {
+    const name = nextDrawingName("diagrams", [
+      "diagrams/drawing-1.draw.json",
+      "diagrams/drawing-1.svg",
+    ]);
+    expect(name).toBe("drawing-2");
+  });
+
+  test("next name starts at drawing-1", () => {
+    const name = nextDrawingName("diagrams", []);
+    expect(name).toBe("drawing-1");
+  });
+
+  test("markdown image ref", () => {
+    expect(markdownImageRef("diagrams/a.svg", "Architecture")).toBe(
+      "![Architecture](diagrams/a.svg)",
+    );
+  });
+});

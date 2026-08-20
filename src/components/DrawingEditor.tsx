@@ -1,0 +1,652 @@
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { DrawingDocument, DrawingObject } from "../lib/drawing/model";
+import { renderSvg } from "../lib/drawing/svg";
+import { createObject, type ToolKind } from "../lib/drawing/factory";
+import {
+  alignObjects,
+  bringForward,
+  bringToFront,
+  deleteObjects,
+  moveObject,
+  resizeObject,
+  sendBackward,
+  sendToBack,
+  type AlignKind,
+  type History,
+} from "../lib/drawing/edit";
+import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
+
+export interface DrawingEditorProps {
+  doc: DrawingDocument;
+  onChange: (doc: DrawingDocument) => void;
+  onDirty: () => void;
+}
+
+type Tool = ToolKind;
+
+const TOOLS: { id: Tool; label: string }[] = [
+  { id: "select", label: "Select" },
+  { id: "rectangle", label: "Rect" },
+  { id: "ellipse", label: "Ellipse" },
+  { id: "text", label: "Text" },
+  { id: "line", label: "Line" },
+  { id: "arrow", label: "Arrow" },
+  { id: "connector", label: "Connector" },
+];
+
+export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
+  const [tool, setTool] = useState<Tool>("select");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [gridVisible, setGridVisible] = useState(true);
+  const [snap, setSnap] = useState(true);
+  const [history, setHistory] = useState<History>([]);
+  const [undoStack, setUndoStack] = useState<History>([]);
+  const [redoStack, setRedoStack] = useState<History>([]);
+  const [clipboard, setClipboard] = useState<DrawingObject[]>([]);
+  const [connectorStart, setConnectorStart] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<{
+    type: "move" | "resize" | "create";
+    id?: string;
+    startX: number;
+    startY: number;
+    origX?: number;
+    origY?: number;
+    origW?: number;
+    origH?: number;
+    handle?: string;
+  } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const selectedObjects = useMemo(
+    () => doc.objects.filter((o) => selectedIds.includes(o.id)),
+    [doc.objects, selectedIds],
+  );
+
+  const commit = useCallback(
+    (next: DrawingDocument) => {
+      setUndoStack((u) => [...u, { before: doc, after: next }]);
+      setRedoStack([]);
+      onChange(next);
+      onDirty();
+    },
+    [doc, onChange, onDirty],
+  );
+
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    const entry = undoStack[undoStack.length - 1];
+    setRedoStack((r) => [...r, entry]);
+    setUndoStack((u) => u.slice(0, u.length - 1));
+    onChange(entry.before);
+  }, [undoStack, onChange]);
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    const entry = redoStack[redoStack.length - 1];
+    setUndoStack((u) => [...u, entry]);
+    setRedoStack((r) => r.slice(0, r.length - 1));
+    onChange(entry.after);
+  }, [redoStack, onChange]);
+
+  const snapValue = useCallback(
+    (v: number) => (snap ? Math.round(v / doc.canvas.gridSize) * doc.canvas.gridSize : v),
+    [snap, doc.canvas.gridSize],
+  );
+
+  const toCanvasPoint = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = svgRef.current!.getBoundingClientRect();
+      return {
+        x: (clientX - rect.left - pan.x) / zoom,
+        y: (clientY - rect.top - pan.y) / zoom,
+      };
+    },
+    [pan, zoom],
+  );
+
+  const hitTest = useCallback(
+    (x: number, y: number): DrawingObject | null => {
+      const sorted = [...doc.objects].sort((a, b) => b.zIndex - a.zIndex);
+      for (const obj of sorted) {
+        if (obj.type === "line" || obj.type === "arrow") {
+          const line = obj as DrawingObject & { x2: number; y2: number };
+          const dist = Math.abs(
+            (line.y2 - obj.y) * x - (line.x2 - obj.x) * y + line.x2 * obj.y - line.y2 * obj.x,
+          ) / Math.sqrt((line.y2 - obj.y) ** 2 + (line.x2 - obj.x) ** 2);
+          if (dist < 8) return obj;
+          continue;
+        }
+        if (
+          x >= obj.x &&
+          x <= obj.x + obj.width &&
+          y >= obj.y &&
+          y <= obj.y + obj.height
+        ) {
+          return obj;
+        }
+      }
+      return null;
+    },
+    [doc.objects],
+  );
+
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const hit = hitTest(x, y);
+
+    if (tool === "connector") {
+      if (connectorStart === null && hit && hit.type !== "connector") {
+        setConnectorStart(hit.id);
+        return;
+      }
+      if (connectorStart !== null && hit && hit.type !== "connector" && hit.id !== connectorStart) {
+        const existing = new Set(doc.objects.map((o) => o.id));
+        const id = `connector-${existing.size + 1}`;
+        while (existing.has(id)) {
+          existing.add(id);
+        }
+        const conn: DrawingObject = {
+          id,
+          type: "connector",
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          zIndex: Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1,
+          from: { objectId: connectorStart },
+          to: { objectId: hit.id },
+          style: { stroke: "#000000", strokeWidth: 1 },
+        };
+        commit({ ...doc, objects: [...doc.objects, conn] });
+        setConnectorStart(null);
+        return;
+      }
+      setConnectorStart(null);
+      return;
+    }
+
+    if (tool === "select") {
+      if (hit) {
+        const multi = e.shiftKey;
+        setSelectedIds((prev) =>
+          multi && prev.includes(hit.id)
+            ? prev.filter((id) => id !== hit.id)
+            : multi
+              ? [...prev, hit.id]
+              : [hit.id],
+        );
+        setDragging({
+          type: "move",
+          id: hit.id,
+          startX: x,
+          startY: y,
+          origX: hit.x,
+          origY: hit.y,
+        });
+        return;
+      }
+      setSelectedIds([]);
+      return;
+    }
+
+    // 作成ツール
+    const obj = createObject(doc, tool, snapValue(x), snapValue(y));
+    commit({ ...doc, objects: [...doc.objects, obj] });
+    setSelectedIds([obj.id]);
+    setDragging({
+      type: "create",
+      id: obj.id,
+      startX: x,
+      startY: y,
+      origX: obj.x,
+      origY: obj.y,
+      origW: obj.width,
+      origH: obj.height,
+    });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!dragging) return;
+    const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const dx = x - dragging.startX;
+    const dy = y - dragging.startY;
+
+    if (dragging.type === "move" && dragging.id) {
+      const next = moveObject(doc, dragging.id, dx, dy);
+      onChange(next);
+      return;
+    }
+
+    if (dragging.type === "create" && dragging.id) {
+      const obj = doc.objects.find((o) => o.id === dragging.id);
+      if (!obj) return;
+      const width = Math.max(10, dx);
+      const height = Math.max(10, dy);
+      const next = {
+        ...doc,
+        objects: doc.objects.map((o) =>
+          o.id === dragging.id ? { ...o, width, height } : o,
+        ),
+      };
+      onChange(next);
+      return;
+    }
+  };
+
+  const handlePointerUp = () => {
+    if (dragging?.type === "move" && dragging.id) {
+      const moved = moveObject(doc, dragging.id, 0, 0);
+      commit(moved);
+    }
+    setDragging(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Delete" || e.key === "Backspace") {
+      commit(deleteObjects(doc, selectedIds));
+      setSelectedIds([]);
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+      setClipboard(copyObjects(doc, selectedIds));
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+      const pasted = pasteObjects(doc, clipboard);
+      commit(pasted);
+      setSelectedIds(
+        pasted.objects
+          .filter((o) => !doc.objects.some((d) => d.id === o.id))
+          .map((o) => o.id),
+      );
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+      const dup = pasteObjects(doc, copyObjects(doc, selectedIds));
+      commit(dup);
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      undo();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+      e.preventDefault();
+      redo();
+    } else if (e.key === "ArrowLeft") {
+      const dx = e.shiftKey ? -10 : -1;
+      const next = selectedIds.reduce(
+        (acc, id) => moveObject(acc, id, dx, 0),
+        doc,
+      );
+      commit(next);
+    } else if (e.key === "ArrowRight") {
+      const dx = e.shiftKey ? 10 : 1;
+      const next = selectedIds.reduce(
+        (acc, id) => moveObject(acc, id, dx, 0),
+        doc,
+      );
+      commit(next);
+    } else if (e.key === "ArrowUp") {
+      const dy = e.shiftKey ? -10 : -1;
+      const next = selectedIds.reduce(
+        (acc, id) => moveObject(acc, id, 0, dy),
+        doc,
+      );
+      commit(next);
+    } else if (e.key === "ArrowDown") {
+      const dy = e.shiftKey ? 10 : 1;
+      const next = selectedIds.reduce(
+        (acc, id) => moveObject(acc, id, 0, dy),
+        doc,
+      );
+      commit(next);
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom((z) => Math.min(3, Math.max(0.2, z * factor)));
+    } else {
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
+  };
+
+  const updateStyle = (patch: Partial<DrawingObject>) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id) ? { ...o, ...patch } : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updateText = (text: string) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id) ? { ...o, text } : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updateFill = (fill: string) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id)
+          ? { ...o, style: { ...o.style, fill } }
+          : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updateStroke = (stroke: string) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id)
+          ? { ...o, style: { ...o.style, stroke } }
+          : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updateStrokeWidth = (strokeWidth: number) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id)
+          ? { ...o, style: { ...o.style, strokeWidth } }
+          : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updateFontSize = (fontSize: number) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id)
+          ? { ...o, style: { ...o.style, fontSize } }
+          : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updatePosition = (field: "x" | "y", value: number) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id) ? { ...o, [field]: value } : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const updateSize = (field: "width" | "height", value: number) => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id) ? { ...o, [field]: value } : o,
+      ),
+    };
+    commit(next);
+  };
+
+  const applyAlign = (kind: AlignKind) => {
+    commit(alignObjects(doc, selectedIds, kind));
+  };
+
+  const selected = selectedObjects[0];
+
+  const gridLines = useMemo(() => {
+    if (!gridVisible) return null;
+    const lines: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    const gs = doc.canvas.gridSize;
+    for (let x = 0; x <= doc.canvas.width; x += gs) {
+      lines.push({ x1: x, y1: 0, x2: x, y2: doc.canvas.height });
+    }
+    for (let y = 0; y <= doc.canvas.height; y += gs) {
+      lines.push({ x1: 0, y1: y, x2: doc.canvas.width, y2: y });
+    }
+    return lines;
+  }, [gridVisible, doc.canvas]);
+
+  const svg = useMemo(() => renderSvg(doc), [doc]);
+
+  return (
+    <div className="drawing-editor" onKeyDown={handleKeyDown} tabIndex={0}>
+      <div className="drawing-toolbar">
+        {TOOLS.map((t) => (
+          <button
+            key={t.id}
+            className={tool === t.id ? "active" : ""}
+            onClick={() => setTool(t.id)}
+            title={t.label}
+          >
+            {t.label}
+          </button>
+        ))}
+        <span className="drawing-toolbar-spacer" />
+        <button onClick={() => setZoom(1)} title="Reset Zoom">100%</button>
+        <button onClick={() => setZoom(1)} title="Fit to Canvas">Fit</button>
+        <button onClick={() => setGridVisible((g) => !g)} title="Toggle Grid">
+          Grid {gridVisible ? "On" : "Off"}
+        </button>
+        <button onClick={() => setSnap((s) => !s)} title="Toggle Snap">
+          Snap {snap ? "On" : "Off"}
+        </button>
+      </div>
+      <div className="drawing-canvas-wrap">
+        <svg
+          ref={svgRef}
+          className="drawing-canvas"
+          width={doc.canvas.width * zoom}
+          height={doc.canvas.height * zoom}
+          viewBox={`${pan.x} ${pan.y} ${doc.canvas.width * zoom} ${doc.canvas.height * zoom}`}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onWheel={handleWheel}
+        >
+          <rect
+            x={pan.x}
+            y={pan.y}
+            width={doc.canvas.width * zoom}
+            height={doc.canvas.height * zoom}
+            fill="#ffffff"
+          />
+          {gridLines &&
+            gridLines.map((l, i) => (
+              <line
+                key={i}
+                x1={l.x1}
+                y1={l.y1}
+                x2={l.x2}
+                y2={l.y2}
+                stroke="#e0e0e0"
+                strokeWidth={1}
+              />
+            ))}
+          <g transform={`scale(${zoom})`}>
+            <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
+            {selectedIds.map((id) => {
+              const obj = doc.objects.find((o) => o.id === id);
+              if (!obj) return null;
+              return (
+                <g key={id} className="selection-box">
+                  <rect
+                    x={obj.x - 4}
+                    y={obj.y - 4}
+                    width={obj.width + 8}
+                    height={obj.height + 8}
+                    fill="none"
+                    stroke="#2d6cdf"
+                    strokeWidth={1}
+                    strokeDasharray="4 2"
+                  />
+                  {[
+                    "nw",
+                    "n",
+                    "ne",
+                    "e",
+                    "se",
+                    "s",
+                    "sw",
+                    "w",
+                  ].map((h) => {
+                    const hx =
+                      h.includes("w")
+                        ? obj.x
+                        : h.includes("e")
+                          ? obj.x + obj.width
+                          : obj.x + obj.width / 2;
+                    const hy =
+                      h.includes("n")
+                        ? obj.y
+                        : h.includes("s")
+                          ? obj.y + obj.height
+                          : obj.y + obj.height / 2;
+                    return (
+                      <rect
+                        key={h}
+                        x={hx - 4}
+                        y={hy - 4}
+                        width={8}
+                        height={8}
+                        fill="#2d6cdf"
+                      />
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      </div>
+      <div className="drawing-statusbar">
+        <span>{Math.round(zoom * 100)}%</span>
+        <span>Grid {gridVisible ? "On" : "Off"}</span>
+        <span>Snap {snap ? "On" : "Off"}</span>
+      </div>
+      <div className="drawing-inspector">
+        <h4>Properties</h4>
+        {selected ? (
+          <>
+            <div className="inspector-row">
+              <label>X</label>
+              <input
+                type="number"
+                value={selected.x}
+                onChange={(e) => updatePosition("x", Number(e.target.value))}
+              />
+            </div>
+            <div className="inspector-row">
+              <label>Y</label>
+              <input
+                type="number"
+                value={selected.y}
+                onChange={(e) => updatePosition("y", Number(e.target.value))}
+              />
+            </div>
+            <div className="inspector-row">
+              <label>W</label>
+              <input
+                type="number"
+                value={selected.width}
+                onChange={(e) => updateSize("width", Number(e.target.value))}
+              />
+            </div>
+            <div className="inspector-row">
+              <label>H</label>
+              <input
+                type="number"
+                value={selected.height}
+                onChange={(e) => updateSize("height", Number(e.target.value))}
+              />
+            </div>
+            {selected.type !== "line" &&
+              selected.type !== "arrow" &&
+              selected.type !== "connector" && (
+                <>
+                  <div className="inspector-row">
+                    <label>Fill</label>
+                    <input
+                      type="color"
+                      value={toColor((selected as DrawingObject & { style: { fill?: string } }).style.fill)}
+                      onChange={(e) => updateFill(e.target.value)}
+                    />
+                  </div>
+                  <div className="inspector-row">
+                    <label>Stroke</label>
+                    <input
+                      type="color"
+                      value={toColor((selected as DrawingObject & { style: { stroke?: string } }).style.stroke)}
+                      onChange={(e) => updateStroke(e.target.value)}
+                    />
+                  </div>
+                  <div className="inspector-row">
+                    <label>Width</label>
+                    <input
+                      type="number"
+                      value={(selected as DrawingObject & { style: { strokeWidth?: number } }).style.strokeWidth ?? 1}
+                      onChange={(e) => updateStrokeWidth(Number(e.target.value))}
+                    />
+                  </div>
+                </>
+              )}
+            {(selected.type === "rectangle" ||
+              selected.type === "ellipse" ||
+              selected.type === "text") && (
+              <div className="inspector-row">
+                <label>Text</label>
+                <input
+                  type="text"
+                  value={(selected as DrawingObject & { text?: string }).text ?? ""}
+                  onChange={(e) => updateText(e.target.value)}
+                />
+              </div>
+            )}
+            {selected.type === "text" && (
+              <div className="inspector-row">
+                <label>Size</label>
+                <input
+                  type="number"
+                  value={(selected as DrawingObject & { style: { fontSize?: number } }).style.fontSize ?? 16}
+                  onChange={(e) => updateFontSize(Number(e.target.value))}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="inspector-empty">Select an object</p>
+        )}
+        {selectedIds.length > 1 && (
+          <div className="inspector-align">
+            <button onClick={() => applyAlign("left")}>L</button>
+            <button onClick={() => applyAlign("center")}>C</button>
+            <button onClick={() => applyAlign("right")}>R</button>
+            <button onClick={() => applyAlign("top")}>T</button>
+            <button onClick={() => applyAlign("middle")}>M</button>
+            <button onClick={() => applyAlign("bottom")}>B</button>
+          </div>
+        )}
+        {selectedIds.length > 0 && (
+          <div className="inspector-arrange">
+            <button onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>
+            <button onClick={() => commit(bringForward(doc, selectedIds))}>Fwd</button>
+            <button onClick={() => commit(sendBackward(doc, selectedIds))}>Back</button>
+            <button onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function toColor(color: string | undefined): string {
+  return color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#000000";
+}
