@@ -189,6 +189,7 @@ fn is_text_path(path: &str) -> bool {
         || lower.ends_with(".puml")
         || lower.ends_with(".mmd")
         || lower.ends_with(".dot")
+        || lower.ends_with(".svg")
         || lower.ends_with(".txt")
         || lower.ends_with(".toml")
 }

@@ -117,6 +117,7 @@ fn is_text(name: &str) -> bool {
         || lower.ends_with(".puml")
         || lower.ends_with(".mmd")
         || lower.ends_with(".dot")
+        || lower.ends_with(".svg")
         || lower.ends_with(".txt")
         || lower.ends_with(".toml")
 }
@@ -225,5 +226,20 @@ mod tests {
         let loaded = load_package(&zip).unwrap();
         let png = loaded.files.iter().find(|f| f.path == "images/a.png").unwrap();
         assert!(!png.is_text());
+    }
+
+    #[test]
+    fn loads_svg_as_text() {
+        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="#eee"/></svg>"##;
+        let zip = build_zip(&[
+            ("manifest.json", manifest),
+            ("README.md", b"# Hello"),
+            ("diagrams/architecture.svg", svg),
+        ]);
+        let loaded = load_package(&zip).unwrap();
+        let svg_file = loaded.files.iter().find(|f| f.path == "diagrams/architecture.svg").unwrap();
+        assert!(svg_file.is_text());
+        assert!(svg_file.text_content().unwrap().contains("<svg"));
     }
 }
