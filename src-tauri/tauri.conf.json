@@ -14,7 +14,8 @@
       {
         "title": "MaCa Editor",
         "width": 1200,
-        "height": 800
+        "height": 800,
+        "dragDropEnabled": false
       }
     ],
     "security": {

@@ -8,9 +8,24 @@ export interface TreeNode {
 /**
  * フラットなファイルパス一覧からツリー構造を構築する。
  */
-export function buildFileTree(paths: string[]): TreeNode[] {
+export function buildFileTree(paths: string[], directoryPaths: string[] = []): TreeNode[] {
   const root: TreeNode[] = [];
   const dirMap = new Map<string, TreeNode>();
+
+  for (const path of directoryPaths) {
+    let currentPath = "";
+    let parentList = root;
+    for (const segment of path.split("/")) {
+      currentPath = currentPath === "" ? segment : `${currentPath}/${segment}`;
+      let dir = dirMap.get(currentPath);
+      if (!dir) {
+        dir = { name: segment, path: currentPath, isDir: true, children: [] };
+        dirMap.set(currentPath, dir);
+        parentList.push(dir);
+      }
+      parentList = dir.children;
+    }
+  }
 
   for (const path of paths) {
     const segments = path.split("/");

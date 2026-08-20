@@ -28,4 +28,10 @@ describe("buildFileTree", () => {
     expect(tree[0].name).toBe("diagrams");
     expect(tree[1].name).toBe("README.md");
   });
+
+  test("includes requested empty directories", () => {
+    const tree = buildFileTree(["README.md"], ["images"]);
+    const images = tree.find((node) => node.path === "images");
+    expect(images).toMatchObject({ name: "images", isDir: true, children: [] });
+  });
 });

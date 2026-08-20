@@ -6,6 +6,7 @@ interface Props {
   files: FileInfo[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  onDropImages: (files: File[]) => void;
 }
 
 function TreeItem({
@@ -13,13 +14,16 @@ function TreeItem({
   selectedPath,
   onSelect,
   depth,
+  onDropImages,
 }: {
   node: TreeNode;
   selectedPath: string | null;
   onSelect: (path: string) => void;
   depth: number;
+  onDropImages: (files: File[]) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [dragOver, setDragOver] = useState(false);
 
   if (!node.isDir) {
     return (
@@ -36,9 +40,22 @@ function TreeItem({
   return (
     <div>
       <div
-        className="tree-item tree-dir"
+        className={`tree-item tree-dir ${dragOver ? "drop-target" : ""}`}
         style={{ paddingLeft: depth * 12 + 8 }}
         onClick={() => setOpen((o) => !o)}
+        onDragOver={(event) => {
+          if (node.path !== "images") return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(event) => {
+          if (node.path !== "images") return;
+          event.preventDefault();
+          setDragOver(false);
+          onDropImages(Array.from(event.dataTransfer.files));
+        }}
       >
         {open ? "▾" : "▸"} {node.name}
       </div>
@@ -50,15 +67,16 @@ function TreeItem({
             selectedPath={selectedPath}
             onSelect={onSelect}
             depth={depth + 1}
+            onDropImages={onDropImages}
           />
         ))}
     </div>
   );
 }
 
-export function FileTree({ files, selectedPath, onSelect }: Props) {
+export function FileTree({ files, selectedPath, onSelect, onDropImages }: Props) {
   const paths = files.map((f) => f.path);
-  const tree = buildFileTree(paths);
+  const tree = buildFileTree(paths, ["images"]);
 
   return (
     <div className="file-tree">
@@ -69,6 +87,7 @@ export function FileTree({ files, selectedPath, onSelect }: Props) {
           selectedPath={selectedPath}
           onSelect={onSelect}
           depth={0}
+          onDropImages={onDropImages}
         />
       ))}
     </div>

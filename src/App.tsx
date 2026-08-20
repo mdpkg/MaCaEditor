@@ -33,6 +33,8 @@ import {
 import type { FileInfo } from "./types";
 import { insertMarkdownImages } from "./lib/markdown";
 import { isSaveShortcut } from "./lib/shortcuts";
+import { droppedFileToImage, isSupportedImageName } from "./lib/imageImport";
+import type { ImportedImage } from "./types";
 
 type Mode = "preview" | "split" | "drawing";
 
@@ -238,12 +240,32 @@ export default function App() {
     setStatus("Inserted Drawing");
   };
 
-  const handleAddImage = async () => {
-    if (!doc) return;
+  const addImportedImages = (images: ImportedImage[]) => {
+    if (!doc || images.length === 0) return;
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
     const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    let next = doc;
+    const addedPaths: string[] = [];
+    for (const image of images) {
+      const added = addImage(next, image.file_name, image.base64);
+      next = added.state;
+      addedPaths.push(added.path);
+    }
+    if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
+      const inserted = insertMarkdownImages(markdownFile.content, cursor, markdownFile.path, addedPaths);
+      next = updateFileContent(next, markdownFile.path, inserted.content);
+      editorCursorRef.current = inserted.cursor;
+    }
+    setDoc(next);
+    setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
+    setStatus(`Added ${images.length} image${images.length === 1 ? "" : "s"} to images/`);
+    setError(null);
+  };
+
+  const handleAddImage = async () => {
+    if (!doc) return;
     const result = await openDialog({
       multiple: true,
       filters: [
@@ -253,28 +275,22 @@ export default function App() {
     const paths = Array.isArray(result) ? result : typeof result === "string" ? [result] : [];
     if (paths.length === 0) return;
     try {
-      let next = doc;
-      const addedPaths: string[] = [];
-      for (const path of paths) {
-        const image = await readImage(path);
-        const added = addImage(next, image.file_name, image.base64);
-        next = added.state;
-        addedPaths.push(added.path);
-      }
-      if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
-        const inserted = insertMarkdownImages(
-          markdownFile.content,
-          cursor,
-          markdownFile.path,
-          addedPaths,
-        );
-        next = updateFileContent(next, markdownFile.path, inserted.content);
-        editorCursorRef.current = inserted.cursor;
-      }
-      setDoc(next);
-      setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
-      setStatus(`Added ${paths.length} image${paths.length === 1 ? "" : "s"} to images/`);
-      setError(null);
+      addImportedImages(await Promise.all(paths.map(readImage)));
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
+  const handleDropImages = async (files: File[]) => {
+    const supported = files.filter((file) => isSupportedImageName(file.name));
+    if (supported.length === 0) {
+      setError("Drop PNG, JPEG, GIF, WebP, or BMP image files.");
+      setStatus("Error");
+      return;
+    }
+    try {
+      addImportedImages(await Promise.all(supported.map(droppedFileToImage)));
     } catch (e) {
       setError(String(e));
       setStatus("Error");
@@ -380,6 +396,7 @@ export default function App() {
             files={doc?.files ?? []}
             selectedPath={selectedPath}
             onSelect={handleSelect}
+            onDropImages={handleDropImages}
           />
         </aside>
         <main className="document-area">

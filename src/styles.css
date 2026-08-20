@@ -102,6 +102,11 @@ body {
   font-weight: 600;
 }
 
+.tree-dir.drop-target {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  outline: 1px dashed var(--accent);
+}
+
 .document-area {
   flex: 1;
   overflow: auto;
