@@ -79,6 +79,14 @@ export function moveObject(
 }
 
 function translateObject(object: DrawingObject, dx: number, dy: number): DrawingObject {
+  if (object.type === "group") {
+    return {
+      ...object,
+      x: object.x + dx,
+      y: object.y + dy,
+      members: object.members.map((member) => translateObject(member, dx, dy)),
+    };
+  }
   if (object.type === "line" || object.type === "arrow") {
     return {
       ...object,
@@ -429,13 +437,24 @@ export function groupObjects(
   ids: string[],
 ): DrawingDocument {
   if (ids.length === 0) return doc;
-  const targets = doc.objects.filter((o) => ids.includes(o.id));
+  const selectedIds = new Set(ids);
+  const connectedIds = doc.objects
+    .filter((object) =>
+      object.type === "connector" &&
+      selectedIds.has(object.from.objectId) &&
+      selectedIds.has(object.to.objectId),
+    )
+    .map((object) => object.id);
+  const groupedIds = new Set([...ids, ...connectedIds]);
+  const targets = doc.objects.filter((o) => groupedIds.has(o.id));
   if (targets.length === 0) return doc;
 
-  const minX = Math.min(...targets.map((o) => o.x));
-  const minY = Math.min(...targets.map((o) => o.y));
-  const maxX = Math.max(...targets.map((o) => o.x + o.width));
-  const maxY = Math.max(...targets.map((o) => o.y + o.height));
+  const boundsTargets = targets.filter((object) => object.type !== "connector");
+  const measuredTargets = boundsTargets.length > 0 ? boundsTargets : targets;
+  const minX = Math.min(...measuredTargets.map((o) => o.x));
+  const minY = Math.min(...measuredTargets.map((o) => o.y));
+  const maxX = Math.max(...measuredTargets.map((o) => o.x + o.width));
+  const maxY = Math.max(...measuredTargets.map((o) => o.y + o.height));
 
   const existing = new Set(doc.objects.map((o) => o.id));
   const id = newId("group", existing);
@@ -454,10 +473,9 @@ export function groupObjects(
     style: {},
   };
 
-  const idSet = new Set(ids);
   return {
     ...doc,
-    objects: [...doc.objects.filter((o) => !idSet.has(o.id)), group],
+    objects: [...doc.objects.filter((o) => !groupedIds.has(o.id)), group],
   };
 }
 

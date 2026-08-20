@@ -8,6 +8,7 @@ import {
   bringForward,
   bringToFront,
   deleteObjects,
+  groupObjects,
   insertImageObject,
   moveObject,
   moveObjectsFromDragStart,
@@ -19,6 +20,7 @@ import {
   sendToBack,
   type AlignKind,
   type History,
+  ungroupObjects,
   updateShapeText,
   updateShapeTextAlignment,
 } from "../lib/drawing/edit";
@@ -635,6 +637,28 @@ export function DrawingEditor({
     commit(alignObjects(doc, selectedIds, kind));
   };
 
+  const groupSelection = () => {
+    if (selectedIds.length < 2) return;
+    const next = groupObjects(doc, selectedIds);
+    const group = next.objects.find(
+      (object) => object.type === "group" && !doc.objects.some((before) => before.id === object.id),
+    );
+    if (!group) return;
+    commit(next);
+    setSelectedIds([group.id]);
+  };
+
+  const ungroupSelection = () => {
+    const groups = selectedObjects.filter((object) => object.type === "group");
+    if (groups.length === 0) return;
+    const memberIds = groups.flatMap((group) => group.type === "group"
+      ? group.members.map((member) => member.id)
+      : []);
+    const next = groups.reduce((current, group) => ungroupObjects(current, group.id), doc);
+    commit(next);
+    setSelectedIds(memberIds);
+  };
+
   const selected = selectedObjects[0];
 
   const gridLines = useMemo(() => {
@@ -746,7 +770,7 @@ export function DrawingEditor({
               const obj = doc.objects.find((o) => o.id === id);
               if (
                 !obj ||
-                ![...TEXT_SHAPE_TYPES, "text", "image"].includes(obj.type)
+                ![...TEXT_SHAPE_TYPES, "text", "image", "group"].includes(obj.type)
               ) return null;
               return (
                 <g key={id} className="selection-box">
@@ -760,7 +784,7 @@ export function DrawingEditor({
                     strokeWidth={1}
                     strokeDasharray="4 2"
                   />
-                  {[
+                  {obj.type !== "group" && [
                     "nw",
                     "n",
                     "ne",
@@ -1006,6 +1030,12 @@ export function DrawingEditor({
             <button onClick={() => applyAlign("bottom")}>B</button>
           </div>
         )}
+        <div className="inspector-group">
+          {selectedIds.length > 1 && <button onClick={groupSelection}>Group</button>}
+          {selectedObjects.some((object) => object.type === "group") && (
+            <button onClick={ungroupSelection}>Ungroup</button>
+          )}
+        </div>
         {selectedIds.length > 0 && (
           <div className="inspector-arrange">
             <button onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>

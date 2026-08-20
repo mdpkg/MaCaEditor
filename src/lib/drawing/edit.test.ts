@@ -543,6 +543,60 @@ describe("alignObjects", () => {
 });
 
 describe("groupObjects", () => {
+  test("includes a connector when both connected shapes are grouped", () => {
+    const connector: DrawingObject = {
+      id: "connector-1",
+      type: "connector",
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      rotation: 0,
+      zIndex: 3,
+      from: { objectId: "r1" },
+      to: { objectId: "r2" },
+      style: { stroke: "#000000", strokeWidth: 1 },
+    };
+
+    const out = groupObjects(
+      doc([rect("r1", 0, 0), rect("r2", 100, 50), connector]),
+      ["r1", "r2"],
+    );
+
+    expect(out.objects).toHaveLength(1);
+    expect(out.objects[0].type).toBe("group");
+    if (out.objects[0].type === "group") {
+      expect(out.objects[0].members.map((member) => member.id).sort()).toEqual([
+        "connector-1",
+        "r1",
+        "r2",
+      ]);
+    }
+  });
+
+  test("does not include a connector when only one endpoint is grouped", () => {
+    const connector: DrawingObject = {
+      id: "connector-1",
+      type: "connector",
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      rotation: 0,
+      zIndex: 3,
+      from: { objectId: "r1" },
+      to: { objectId: "outside" },
+      style: {},
+    };
+
+    const out = groupObjects(
+      doc([rect("r1", 0, 0), rect("r2", 100, 50), rect("outside", 300, 50), connector]),
+      ["r1", "r2"],
+    );
+
+    expect(out.objects.some((object) => object.id === "connector-1")).toBe(true);
+  });
+
   test("groups selected objects into a single group", () => {
     const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
     const out = groupObjects(d, ["r1", "r2"]);
@@ -570,6 +624,21 @@ describe("groupObjects", () => {
     const out = groupObjects(d, ["missing"]);
     expect(out).toBe(d);
   });
+
+  test("moves the group and all of its members together", () => {
+    const grouped = groupObjects(doc([rect("r1", 0, 0), rect("r2", 100, 50)]), ["r1", "r2"]);
+    const group = grouped.objects[0];
+
+    const moved = moveObject(grouped, group.id, 30, 20);
+    const movedGroup = moved.objects[0];
+
+    expect(movedGroup).toMatchObject({ x: 30, y: 20 });
+    expect(movedGroup.type).toBe("group");
+    if (movedGroup.type === "group") {
+      expect(movedGroup.members[0]).toMatchObject({ x: 30, y: 20 });
+      expect(movedGroup.members[1]).toMatchObject({ x: 130, y: 70 });
+    }
+  });
 });
 
 describe("ungroupObjects", () => {
@@ -585,6 +654,16 @@ describe("ungroupObjects", () => {
     const d = doc([rect("r1", 0, 0)]);
     const out = ungroupObjects(d, "r1");
     expect(out).toBe(d);
+  });
+
+  test("restores members at their moved positions", () => {
+    const grouped = groupObjects(doc([rect("r1", 0, 0), rect("r2", 100, 50)]), ["r1", "r2"]);
+    const moved = moveObject(grouped, grouped.objects[0].id, 30, 20);
+
+    const out = ungroupObjects(moved, moved.objects[0].id);
+
+    expect(out.objects[0]).toMatchObject({ id: "r1", x: 30, y: 20 });
+    expect(out.objects[1]).toMatchObject({ id: "r2", x: 130, y: 70 });
   });
 });
 

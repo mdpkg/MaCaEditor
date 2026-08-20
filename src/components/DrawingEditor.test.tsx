@@ -47,6 +47,50 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("groups selected shapes and ungroups the selected group", () => {
+    const onDirty = vi.fn();
+    const second = {
+      ...initial.objects[0],
+      id: "rect-2",
+      x: 300,
+      zIndex: 2,
+    };
+    const starting = { ...initial, objects: [...initial.objects, second] };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(starting);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 310, 110, { ctrlKey: true })));
+
+    const button = (label: string) => [...container.querySelectorAll("button")]
+      .find((candidate) => candidate.textContent === label) as HTMLButtonElement;
+    act(() => button("Group").click());
+
+    const grouped = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(grouped.objects).toHaveLength(1);
+    expect(grouped.objects[0]).toMatchObject({ type: "group" });
+    expect(button("Ungroup")).toBeDefined();
+
+    act(() => button("Ungroup").click());
+
+    const ungrouped = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(ungrouped.objects.map((object) => object.id).sort()).toEqual(["rect-1", "rect-2"]);
+    act(() => root.unmount());
+  });
+
   test("selects multiple shapes with Ctrl+click", () => {
     const second = {
       ...initial.objects[0],
