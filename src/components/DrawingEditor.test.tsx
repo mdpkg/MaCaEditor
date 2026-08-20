@@ -41,6 +41,39 @@ function pointerEvent(type: string, x: number, y: number): MouseEvent {
 }
 
 describe("DrawingEditor", () => {
+  test("returns to Select after inserting one shape", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={vi.fn()} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const buttons = Array.from(container.querySelectorAll(".drawing-toolbar button"));
+    const rectangle = buttons.find((button) => button.textContent === "Rect") as HTMLButtonElement;
+    act(() => rectangle.click());
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 300, 200)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 360, 240)));
+
+    const select = Array.from(container.querySelectorAll(".drawing-toolbar button"))
+      .find((button) => button.textContent === "Select");
+    expect(select?.classList.contains("active")).toBe(true);
+
+    act(() => root.unmount());
+  });
+
   test("offers File and User shape tools", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

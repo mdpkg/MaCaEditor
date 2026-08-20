@@ -384,6 +384,7 @@ export function DrawingEditor({
       const after = dragPreviewRef.current ?? doc;
       onChange(after);
       onDirty(after);
+      setTool("select");
     }
     dragPreviewRef.current = null;
     setDragging(null);
