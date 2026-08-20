@@ -30,12 +30,38 @@ afterEach(() => {
 });
 
 function pointerEvent(type: string, x: number, y: number): MouseEvent {
-  const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+  });
   Object.defineProperty(event, "pointerId", { value: 1 });
   return event;
 }
 
 describe("DrawingEditor", () => {
+  test("prevents browser text selection when dragging on the SVG canvas", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    const event = pointerEvent("pointerdown", 110, 110);
+
+    act(() => canvas.dispatchEvent(event));
+
+    expect(event.defaultPrevented).toBe(true);
+    act(() => root.unmount());
+  });
+
   test("renders Properties into the requested sidebar panel", () => {
     const panel = document.createElement("div");
     panel.id = "drawing-properties-panel";

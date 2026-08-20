@@ -195,6 +195,7 @@ export function DrawingEditor({
   );
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const canvasResize = (e.target as SVGElement).dataset.canvasResize;
     if (canvasResize === "width" || canvasResize === "height" || canvasResize === "both") {

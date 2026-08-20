@@ -36,3 +36,12 @@ describe("drawing sidebar layout", () => {
     expect(propertiesBlock).toContain("overflow: auto");
   });
 });
+
+describe("drawing canvas interaction", () => {
+  it("disables native text selection inside the SVG canvas", () => {
+    const start = styles.indexOf(".drawing-canvas {");
+    const block = start >= 0 ? styles.slice(start, styles.indexOf("}", start)) : "";
+
+    expect(block).toContain("user-select: none");
+  });
+});

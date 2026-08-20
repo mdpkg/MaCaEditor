@@ -316,6 +316,8 @@ body {
   display: block;
   background: #ffffff;
   cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .canvas-resize-handle {
