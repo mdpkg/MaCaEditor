@@ -51,9 +51,12 @@ const DIRECT_TOOLS: { id: Tool; label: string }[] = [
   { id: "text", label: "Text" },
   { id: "line", label: "Line" },
   { id: "arrow", label: "Arrow" },
-  { id: "connector", label: "Connector" },
-  { id: "elbowConnector", label: "Elbow" },
+];
+
+const CONNECTOR_TOOLS: { id: Tool; label: string }[] = [
+  { id: "connector", label: "Straight" },
   { id: "curveConnector", label: "Curve" },
+  { id: "elbowConnector", label: "Elbow" },
 ];
 
 const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse", "file", "user"];
@@ -711,6 +714,22 @@ export function DrawingEditor({
           <option value="">Shape</option>
           {SHAPE_TOOLS.map((shape) => (
             <option key={shape.id} value={shape.id}>{shape.label}</option>
+          ))}
+        </select>
+        <select
+          aria-label="Connector"
+          title="Connector"
+          className={CONNECTOR_TOOLS.some((connector) => connector.id === tool) ? "active" : ""}
+          value={CONNECTOR_TOOLS.some((connector) => connector.id === tool) ? tool : ""}
+          onChange={(event) => {
+            if (!event.target.value) return;
+            setTool(event.target.value as Tool);
+            setConnectorStart(null);
+          }}
+        >
+          <option value="">Connector</option>
+          {CONNECTOR_TOOLS.map((connector) => (
+            <option key={connector.id} value={connector.id}>{connector.label}</option>
           ))}
         </select>
         {DIRECT_TOOLS.map((t) => (

@@ -67,9 +67,17 @@ describe("DrawingEditor", () => {
       width: 1200, height: 800, toJSON: () => ({}),
     });
     canvas.setPointerCapture = vi.fn();
-    const elbow = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Elbow") as HTMLButtonElement;
-    act(() => elbow.click());
+    const connectorMenu = container.querySelector('select[aria-label="Connector"]') as HTMLSelectElement;
+    expect([...connectorMenu.options].map((option) => option.text)).toEqual([
+      "Connector",
+      "Straight",
+      "Curve",
+      "Elbow",
+    ]);
+    act(() => {
+      connectorMenu.value = "elbowConnector";
+      connectorMenu.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
     act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 310, 210)));
 

@@ -298,8 +298,7 @@ body {
   cursor: pointer;
 }
 
-.drawing-toolbar button.active,
-.drawing-toolbar select.active {
+.drawing-toolbar button.active {
   background: var(--accent);
   color: #fff;
 }

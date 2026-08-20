@@ -45,3 +45,9 @@ describe("drawing canvas interaction", () => {
     expect(block).toContain("user-select: none");
   });
 });
+
+describe("drawing toolbar dropdowns", () => {
+  it("does not change a dropdown color when its tool is active", () => {
+    expect(styles).not.toContain(".drawing-toolbar select.active");
+  });
+});
