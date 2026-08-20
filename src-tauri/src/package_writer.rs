@@ -67,7 +67,8 @@ mod tests {
         let zip = write_package(&manifest, &files).unwrap();
         let loaded = load_package(&zip).unwrap();
         assert_eq!(loaded.manifest.format, "mdpkg");
-        assert_eq!(loaded.files.len(), 3); // manifest + README + png
+        // manifest.json は files に含まれない（manifest として別途保持される）
+        assert_eq!(loaded.files.len(), 2); // README + png
     }
 
     #[test]

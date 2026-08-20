@@ -71,8 +71,13 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
     validate_paths(&manifest)?;
 
     // 全ファイルを読み込む
+    // manifest.json は manifest として別途保持するため files には含めない
+    // （write_package は manifest.json を常に書き込むため、含めると重複してしまう）
     let mut files: Vec<PackageFile> = Vec::new();
     for (i, name) in names.iter().enumerate() {
+        if name.replace('\\', "/") == "manifest.json" {
+            continue;
+        }
         let mut entry = archive.by_index(i).map_err(LoadError::NotZip)?;
         let mut content = Vec::new();
         entry
@@ -191,6 +196,22 @@ mod tests {
             result,
             Err(LoadError::InvalidPackage(ValidationError::EntrypointNotFound(_)))
         ));
+    }
+
+    #[test]
+    fn manifest_is_not_included_in_files_list() {
+        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let readme = b"# Hello";
+        let zip = build_zip(&[("manifest.json", manifest), ("README.md", readme)]);
+        let loaded = load_package(&zip).unwrap();
+        // manifest.json は files に含めない（write_package が常に書き込むため）
+        assert!(
+            loaded
+                .files
+                .iter()
+                .all(|f| f.path.replace('\\', "/") != "manifest.json"),
+            "manifest.json must not be in files list"
+        );
     }
 
     #[test]
