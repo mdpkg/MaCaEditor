@@ -1,0 +1,67 @@
+import { describe, expect, test } from "vitest";
+import type { DrawingDocument } from "./model";
+import { createObject } from "./factory";
+
+function emptyDoc(): DrawingDocument {
+  return {
+    format: "maca-drawing",
+    version: "1.0",
+    canvas: { width: 1200, height: 800, gridSize: 10 },
+    objects: [],
+  };
+}
+
+describe("createObject", () => {
+  test("creates rectangle", () => {
+    const obj = createObject(emptyDoc(), "rectangle", 100, 100);
+    expect(obj.type).toBe("rectangle");
+    expect(obj.x).toBe(100);
+    expect(obj.y).toBe(100);
+  });
+
+  test("creates ellipse", () => {
+    const obj = createObject(emptyDoc(), "ellipse", 100, 100);
+    expect(obj.type).toBe("ellipse");
+  });
+
+  test("creates text", () => {
+    const obj = createObject(emptyDoc(), "text", 100, 100);
+    expect(obj.type).toBe("text");
+    expect(obj.text).toBe("Text");
+  });
+
+  test("creates line", () => {
+    const obj = createObject(emptyDoc(), "line", 100, 100);
+    expect(obj.type).toBe("line");
+    expect(obj.x2).toBe(200);
+  });
+
+  test("creates arrow", () => {
+    const obj = createObject(emptyDoc(), "arrow", 100, 100);
+    expect(obj.type).toBe("arrow");
+  });
+
+  test("creates connector", () => {
+    const obj = createObject(emptyDoc(), "connector", 100, 100);
+    expect(obj.type).toBe("connector");
+  });
+
+  test("assigns unique ids", () => {
+    const doc = emptyDoc();
+    const a = createObject(doc, "rectangle", 0, 0);
+    const b = createObject(
+      { ...doc, objects: [a] },
+      "rectangle",
+      0,
+      0,
+    );
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test("assigns increasing zIndex", () => {
+    const doc = emptyDoc();
+    const a = createObject(doc, "rectangle", 0, 0);
+    const b = createObject({ ...doc, objects: [a] }, "rectangle", 0, 0);
+    expect(b.zIndex).toBeGreaterThan(a.zIndex);
+  });
+});
