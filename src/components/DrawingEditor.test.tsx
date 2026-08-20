@@ -41,6 +41,43 @@ function pointerEvent(type: string, x: number, y: number): MouseEvent {
 }
 
 describe("DrawingEditor", () => {
+  test("does not delete a shape when Backspace is pressed in its text editor", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 110, 110)));
+    onDirty.mockClear();
+    const textarea = container.querySelector(".inspector-row textarea") as HTMLTextAreaElement;
+
+    act(() => textarea.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Backspace",
+      bubbles: true,
+      cancelable: true,
+    })));
+
+    expect(onDirty).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-object-id="rect-1"]')).not.toBeNull();
+
+    act(() => root.unmount());
+  });
+
   test("returns to Select after inserting one shape", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

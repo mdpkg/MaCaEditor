@@ -391,6 +391,13 @@ export function DrawingEditor({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    const target = e.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.matches("input, textarea, select") || target.isContentEditable)
+    ) {
+      return;
+    }
     if (e.key === "Delete" || e.key === "Backspace") {
       commit(deleteObjects(doc, selectedIds));
       setSelectedIds([]);
