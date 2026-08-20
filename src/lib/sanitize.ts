@@ -35,8 +35,19 @@ export function sanitizeHtml(html: string): string {
  */
 export function sanitizeImageSrc(src: string): string {
   if (!src || src.length === 0) return "";
-  // 許可するスキーム: http, https, data:image
-  if (/^https?:\/\//i.test(src)) return src;
-  if (/^data:image\//i.test(src)) return src;
-  return "";
+  const trimmed = src.trim();
+  if (trimmed.length === 0) return "";
+  try {
+    const url = new URL(trimmed);
+    // 許可するスキーム: http, https（スラッシュなしの http: 形式は拒否）
+    if (/^https?:$/.test(url.protocol) && /^https?:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+    // data:image は URL パース可能な場合のみ許可
+    if (/^data:image\//i.test(trimmed)) return trimmed;
+    return "";
+  } catch {
+    // 不正な URL（ホストなし・空白含む等）は拒否
+    return "";
+  }
 }

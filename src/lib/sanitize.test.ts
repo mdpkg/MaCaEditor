@@ -62,4 +62,49 @@ describe("sanitizeImageSrc", () => {
   test("rejects empty src", () => {
     expect(sanitizeImageSrc("")).toBe("");
   });
+
+  test("rejects whitespace-only src", () => {
+    expect(sanitizeImageSrc("   ")).toBe("");
+  });
+
+  test("keeps http src with query and fragment", () => {
+    const src = "http://example.com/image.png?size=large#thumb";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("keeps https src with port", () => {
+    const src = "https://example.com:8443/image.png";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("keeps data:image with uppercase scheme", () => {
+    const src = "DATA:image/png;base64,AAAA";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("keeps data:image/svg+xml", () => {
+    const src = "data:image/svg+xml;base64,PHN2Zz4=";
+    expect(sanitizeImageSrc(src)).toBe(src);
+  });
+
+  test("rejects malformed http src without host", () => {
+    expect(sanitizeImageSrc("http://")).toBe("");
+    expect(sanitizeImageSrc("https://")).toBe("");
+  });
+
+  test("rejects http src with whitespace in host", () => {
+    expect(sanitizeImageSrc("http://exa mple.com/image.png")).toBe("");
+  });
+
+  test("rejects protocol-relative src", () => {
+    expect(sanitizeImageSrc("//example.com/image.png")).toBe("");
+  });
+
+  test("rejects http src without slashes", () => {
+    expect(sanitizeImageSrc("http:example.com/image.png")).toBe("");
+  });
+
+  test("rejects unsupported schemes like ftp:", () => {
+    expect(sanitizeImageSrc("ftp://example.com/image.png")).toBe("");
+  });
 });
