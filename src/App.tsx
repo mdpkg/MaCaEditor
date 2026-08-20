@@ -33,7 +33,11 @@ import {
 import type { FileInfo } from "./types";
 import { insertMarkdownImages } from "./lib/markdown";
 import { isSaveShortcut } from "./lib/shortcuts";
-import { droppedFileToImage, isSupportedImageName } from "./lib/imageImport";
+import {
+  droppedFileToImage,
+  importedImageDataUrl,
+  isSupportedImageName,
+} from "./lib/imageImport";
 import type { ImportedImage } from "./types";
 
 type Mode = "preview" | "split" | "drawing";
@@ -332,6 +336,25 @@ export default function App() {
     setDoc(saveDrawingToDocument(doc, drawingPath, next));
   };
 
+  const handleDrawingImageRequest = async (): Promise<string | null> => {
+    const result = await openDialog({
+      filters: [
+        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
+      ],
+    });
+    if (typeof result !== "string") return null;
+    try {
+      const image = await readImage(result);
+      setStatus(`Added ${image.file_name} to drawing`);
+      setError(null);
+      return importedImageDataUrl(image);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+      return null;
+    }
+  };
+
   const handleEditDrawingFromPreview = (drawPath: string) => {
     if (!doc) return;
     const file = doc.files.find((f) => f.path === drawPath);
@@ -411,6 +434,7 @@ export default function App() {
               doc={drawingDoc}
               onChange={handleDrawingChange}
               onDirty={handleDrawingDirty}
+              onRequestImage={handleDrawingImageRequest}
             />
           )}
           {doc && mode !== "drawing" && displayFile && displayFile.is_text && (

@@ -7,6 +7,7 @@ import {
   bringForward,
   bringToFront,
   deleteObjects,
+  insertImageObject,
   moveObject,
   moveObjectFromDragStart,
   moveObjectFromDragStartSnapped,
@@ -26,6 +27,7 @@ export interface DrawingEditorProps {
   doc: DrawingDocument;
   onChange: (doc: DrawingDocument) => void;
   onDirty: (doc: DrawingDocument) => void;
+  onRequestImage?: () => Promise<string | null>;
 }
 
 type Tool = ToolKind;
@@ -42,7 +44,7 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "curveConnector", label: "Curve" },
 ];
 
-export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
+export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: DrawingEditorProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -99,6 +101,22 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     onChange(entry.after);
     onDirty(entry.after);
   }, [redoStack, onChange, onDirty]);
+
+  const addImage = useCallback(async () => {
+    if (!onRequestImage) return;
+    const src = await onRequestImage();
+    if (!src) return;
+    const next = insertImageObject(
+      doc,
+      Math.max(0, (doc.canvas.width - 160) / 2),
+      Math.max(0, (doc.canvas.height - 120) / 2),
+      src,
+    );
+    const image = next.objects[next.objects.length - 1];
+    commit(next);
+    setSelectedIds([image.id]);
+    setTool("select");
+  }, [commit, doc, onRequestImage]);
 
   const snapValue = useCallback(
     (v: number) => (snap ? Math.round(v / doc.canvas.gridSize) * doc.canvas.gridSize : v),
@@ -510,6 +528,9 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
             {t.label}
           </button>
         ))}
+        {onRequestImage && (
+          <button onClick={() => void addImage()} title="Add Image">Image</button>
+        )}
         <span className="drawing-toolbar-spacer" />
         <button onClick={() => setZoom(1)} title="Reset Zoom">100%</button>
         <button onClick={() => setZoom(1)} title="Fit to Canvas">Fit</button>

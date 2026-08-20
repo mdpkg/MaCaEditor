@@ -107,4 +107,41 @@ describe("DrawingEditor", () => {
 
     act(() => root.unmount());
   });
+
+  test("adds a selected image to the center of the SVG canvas", async () => {
+    const onDirty = vi.fn();
+    const onRequestImage = vi.fn(async () => "data:image/png;base64,AQID");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return (
+        <DrawingEditor
+          doc={doc}
+          onChange={setDoc}
+          onDirty={onDirty}
+          onRequestImage={onRequestImage}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    const button = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent === "Image") as HTMLButtonElement;
+    await act(async () => button.click());
+
+    const persisted = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(persisted.objects[persisted.objects.length - 1]).toMatchObject({
+      type: "image",
+      x: 520,
+      y: 340,
+      width: 160,
+      height: 120,
+      src: "data:image/png;base64,AQID",
+    });
+
+    act(() => root.unmount());
+  });
 });

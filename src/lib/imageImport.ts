@@ -1,4 +1,5 @@
 import type { ImportedImage } from "../types";
+import { imageMediaType } from "./document";
 
 export function isSupportedImageName(name: string): boolean {
   return /\.(png|jpe?g|gif|webp|bmp)$/i.test(name);
@@ -11,6 +12,10 @@ export function toBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
+}
+
+export function importedImageDataUrl(image: ImportedImage): string {
+  return `data:${imageMediaType(image.file_name)};base64,${image.base64}`;
 }
 
 export async function droppedFileToImage(file: File): Promise<ImportedImage> {
