@@ -1,4 +1,5 @@
 import type { FileContent, FileInfo, PackageInfo } from "../types";
+import { relativePackagePath, resolvePackagePath } from "./markdown";
 
 export interface DocumentState {
   path: string | null;
@@ -79,6 +80,85 @@ export function imageMediaType(path: string): string {
     default:
       return "image/png";
   }
+}
+
+function safeAssetName(name: string): string {
+  const safe = name.trim().normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
+  if (safe === "" || safe === "." || safe === "..") throw new Error("A valid name is required");
+  return safe;
+}
+
+function replaceMarkdownPaths(content: string, markdownPath: string, replacements: Map<string, string>): string {
+  return content.replace(/(!?\[[^\]]*\]\()([^)]+)(\))/g, (match, start, target, end) => {
+    const baseDir = markdownPath.includes("/") ? markdownPath.slice(0, markdownPath.lastIndexOf("/")) : "";
+    const resolved = resolvePackagePath(baseDir, target);
+    const replacement = resolved ? replacements.get(resolved) : undefined;
+    return replacement ? `${start}${relativePackagePath(markdownPath, replacement)}${end}` : match;
+  });
+}
+
+export function renameAsset(
+  state: DocumentState,
+  path: string,
+  requestedName: string,
+): { state: DocumentState; path: string } {
+  const resource = Array.isArray(state.manifest.resources)
+    ? state.manifest.resources.find((item) =>
+        typeof item === "object" && item !== null &&
+        ((item as { source?: string }).source === path || (item as { rendered?: string }).rendered === path)) as
+        | { source: string; rendered: string; type: string }
+        | undefined
+    : undefined;
+  const directory = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  const prefix = directory ? `${directory}/` : "";
+  const replacements = new Map<string, string>();
+  let selectedNewPath: string;
+
+  if (resource?.type === "drawing") {
+    const name = safeAssetName(requestedName.replace(/(?:\.draw\.json|\.svg)$/i, ""));
+    replacements.set(resource.source, `${prefix}${name}.draw.json`);
+    replacements.set(resource.rendered, `${prefix}${name}.svg`);
+    selectedNewPath = replacements.get(path)!;
+  } else {
+    const extension = path.slice(path.lastIndexOf("/") + 1).match(/(\.[^.]+)$/)?.[1] ?? "";
+    const name = safeAssetName(requestedName.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
+    selectedNewPath = `${prefix}${name}${extension}`;
+    replacements.set(path, selectedNewPath);
+  }
+
+  const oldPaths = new Set(replacements.keys());
+  const occupied = new Set(state.files.filter((file) => !oldPaths.has(file.path)).map((file) => file.path.toLowerCase()));
+  for (const nextPath of replacements.values()) {
+    if (occupied.has(nextPath.toLowerCase())) throw new Error(`A file named "${nextPath}" already exists`);
+  }
+
+  const resources = Array.isArray(state.manifest.resources)
+    ? state.manifest.resources.map((item) => {
+        if (typeof item !== "object" || item === null) return item;
+        const value = item as Record<string, unknown>;
+        return {
+          ...value,
+          source: typeof value.source === "string" ? replacements.get(value.source) ?? value.source : value.source,
+          rendered: typeof value.rendered === "string" ? replacements.get(value.rendered) ?? value.rendered : value.rendered,
+        };
+      })
+    : state.manifest.resources;
+
+  return {
+    path: selectedNewPath,
+    state: {
+      ...state,
+      dirty: true,
+      manifest: { ...state.manifest, resources },
+      files: state.files.map((file) => {
+        const nextPath = replacements.get(file.path) ?? file.path;
+        const content = file.is_text && file.content !== null && /\.(md|markdown)$/i.test(file.path)
+          ? replaceMarkdownPaths(file.content, file.path, replacements)
+          : file.content;
+        return { ...file, path: nextPath, content };
+      }),
+    },
+  };
 }
 
 export function toSaveRequest(state: DocumentState): {

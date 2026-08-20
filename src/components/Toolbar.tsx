@@ -9,6 +9,8 @@ interface Props {
   onExport: () => void;
   onInsertDrawing: () => void;
   onAddImage: () => void;
+  canRename: boolean;
+  onRename: () => void;
 }
 
 export function Toolbar({
@@ -22,6 +24,8 @@ export function Toolbar({
   onExport,
   onInsertDrawing,
   onAddImage,
+  canRename,
+  onRename,
 }: Props) {
   return (
     <div className="toolbar">
@@ -42,6 +46,9 @@ export function Toolbar({
       </button>
       <button onClick={onAddImage} disabled={!hasDocument}>
         Add Image
+      </button>
+      <button onClick={onRename} disabled={!canRename}>
+        Rename
       </button>
       {dirty && <span className="dirty-indicator">●</span>}
     </div>

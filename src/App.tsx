@@ -11,6 +11,7 @@ import {
   createDocumentState,
   addImage,
   imageMediaType,
+  renameAsset,
   toSaveRequest,
   updateFileContent,
 } from "./lib/document";
@@ -280,6 +281,32 @@ export default function App() {
     }
   };
 
+  const renameable = selectedPath !== null && (
+    /\.(png|jpe?g|gif|webp|bmp)$/i.test(selectedPath) ||
+    doc?.manifest.resources instanceof Array && doc.manifest.resources.some((item) =>
+      typeof item === "object" && item !== null &&
+      ((item as { source?: string }).source === selectedPath || (item as { rendered?: string }).rendered === selectedPath))
+  );
+
+  const handleRename = () => {
+    if (!doc || !selectedPath || !renameable) return;
+    const fileName = selectedPath.slice(selectedPath.lastIndexOf("/") + 1);
+    const currentName = fileName.replace(/\.draw\.json$|\.[^.]+$/i, "");
+    const requested = window.prompt("New name", currentName);
+    if (requested === null || requested.trim() === "" || requested === currentName) return;
+    try {
+      const renamed = renameAsset(doc, selectedPath, requested);
+      setDoc(renamed.state);
+      setSelectedPath(renamed.path);
+      if (drawingPath === selectedPath) setDrawingPath(renamed.path);
+      setStatus(`Renamed to ${renamed.path}`);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
   const handleDrawingChange = (next: DrawingDocument) => {
     setDrawingDoc(next);
   };
@@ -344,6 +371,8 @@ export default function App() {
         onExport={handleExport}
         onInsertDrawing={handleInsertDrawing}
         onAddImage={handleAddImage}
+        canRename={renameable}
+        onRename={handleRename}
       />
       <div className="main-layout">
         <aside className="sidebar">
