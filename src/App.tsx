@@ -327,9 +327,9 @@ export default function App() {
     setDrawingDoc(next);
   };
 
-  const handleDrawingDirty = () => {
-    if (!doc || !drawingPath || !drawingDoc) return;
-    setDoc(saveDrawingToDocument(doc, drawingPath, drawingDoc));
+  const handleDrawingDirty = (next: DrawingDocument) => {
+    if (!doc || !drawingPath) return;
+    setDoc(saveDrawingToDocument(doc, drawingPath, next));
   };
 
   const handleEditDrawingFromPreview = (drawPath: string) => {

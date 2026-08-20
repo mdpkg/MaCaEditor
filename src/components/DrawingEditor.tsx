@@ -10,6 +10,7 @@ import {
   moveObject,
   moveObjectFromDragStart,
   moveObjectFromDragStartSnapped,
+  resizeCanvasFromDrag,
   sendBackward,
   sendToBack,
   type AlignKind,
@@ -24,7 +25,7 @@ import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector"
 export interface DrawingEditorProps {
   doc: DrawingDocument;
   onChange: (doc: DrawingDocument) => void;
-  onDirty: () => void;
+  onDirty: (doc: DrawingDocument) => void;
 }
 
 type Tool = ToolKind;
@@ -52,7 +53,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   const [clipboard, setClipboard] = useState<DrawingObject[]>([]);
   const [connectorStart, setConnectorStart] = useState<string | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "create";
+    type: "move" | "resize" | "create" | "canvasResize";
     id?: string;
     startX: number;
     startY: number;
@@ -76,7 +77,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       setUndoStack((u) => [...u, { before: doc, after: next }]);
       setRedoStack([]);
       onChange(next);
-      onDirty();
+      onDirty(next);
     },
     [doc, onChange, onDirty],
   );
@@ -87,7 +88,8 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     setRedoStack((r) => [...r, entry]);
     setUndoStack((u) => u.slice(0, u.length - 1));
     onChange(entry.before);
-  }, [undoStack, onChange]);
+    onDirty(entry.before);
+  }, [undoStack, onChange, onDirty]);
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return;
@@ -95,7 +97,8 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     setUndoStack((u) => [...u, entry]);
     setRedoStack((r) => r.slice(0, r.length - 1));
     onChange(entry.after);
-  }, [redoStack, onChange]);
+    onDirty(entry.after);
+  }, [redoStack, onChange, onDirty]);
 
   const snapValue = useCallback(
     (v: number) => (snap ? Math.round(v / doc.canvas.gridSize) * doc.canvas.gridSize : v),
@@ -148,6 +151,19 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
+    const canvasResize = (e.target as SVGElement).dataset.canvasResize;
+    if (canvasResize === "width" || canvasResize === "height" || canvasResize === "both") {
+      setSelectedIds([]);
+      setDragging({
+        type: "canvasResize",
+        handle: canvasResize,
+        startX: e.clientX,
+        startY: e.clientY,
+        before: doc,
+      });
+      dragPreviewRef.current = doc;
+      return;
+    }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
     const hit = hitTest(x, y);
 
@@ -197,7 +213,9 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
 
     // 作成ツール
     const obj = createObject(doc, tool, snapValue(x), snapValue(y));
-    commit({ ...doc, objects: [...doc.objects, obj] });
+    const next = { ...doc, objects: [...doc.objects, obj] };
+    commit(next);
+    dragPreviewRef.current = next;
     setSelectedIds([obj.id]);
     setDragging({
       type: "create",
@@ -213,6 +231,18 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragging) return;
+    if (dragging.type === "canvasResize" && dragging.before && dragging.handle) {
+      const next = resizeCanvasFromDrag(
+        dragging.before,
+        dragging.handle as "width" | "height" | "both",
+        (e.clientX - dragging.startX) / zoom,
+        (e.clientY - dragging.startY) / zoom,
+        snap,
+      );
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
 
     if (dragging.type === "move" && dragging.id) {
@@ -238,6 +268,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
           o.id === dragging.id ? { ...o, width, height } : o,
         ),
       };
+      dragPreviewRef.current = next;
       onChange(next);
       return;
     }
@@ -252,7 +283,17 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
       onChange(after);
-      onDirty();
+      onDirty(after);
+    } else if (dragging?.type === "canvasResize" && dragging.before) {
+      const after = dragPreviewRef.current ?? doc;
+      setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
+      setRedoStack([]);
+      onChange(after);
+      onDirty(after);
+    } else if (dragging?.type === "create") {
+      const after = dragPreviewRef.current ?? doc;
+      onChange(after);
+      onDirty(after);
     }
     dragPreviewRef.current = null;
     setDragging(null);
@@ -565,12 +606,37 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
               );
             })}
           </g>
+          <rect
+            className="canvas-resize-handle canvas-resize-handle-width"
+            data-canvas-resize="width"
+            x={doc.canvas.width - 8 / zoom}
+            y={0}
+            width={8 / zoom}
+            height={doc.canvas.height - 14 / zoom}
+          />
+          <rect
+            className="canvas-resize-handle canvas-resize-handle-height"
+            data-canvas-resize="height"
+            x={0}
+            y={doc.canvas.height - 8 / zoom}
+            width={doc.canvas.width - 14 / zoom}
+            height={8 / zoom}
+          />
+          <rect
+            className="canvas-resize-handle canvas-resize-handle-both"
+            data-canvas-resize="both"
+            x={doc.canvas.width - 14 / zoom}
+            y={doc.canvas.height - 14 / zoom}
+            width={14 / zoom}
+            height={14 / zoom}
+          />
         </svg>
       </div>
       <div className="drawing-statusbar">
         <span>{Math.round(zoom * 100)}%</span>
         <span>Grid {gridVisible ? "On" : "Off"}</span>
         <span>Snap {snap ? "On" : "Off"}</span>
+        <span>{Math.round(doc.canvas.width)} × {Math.round(doc.canvas.height)}</span>
       </div>
       <div className="drawing-inspector">
         <h4>Properties</h4>

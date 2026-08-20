@@ -10,6 +10,7 @@ import {
   moveObject,
   moveObjectFromDragStart,
   moveObjectFromDragStartSnapped,
+  resizeCanvasFromDrag,
   resizeObject,
   redo,
   selectGroup,
@@ -113,6 +114,26 @@ describe("resizeObject", () => {
     if (obj?.type === "image") {
       expect(obj.src).toBe("https://example.com/a.png");
     }
+  });
+});
+
+describe("resizeCanvasFromDrag", () => {
+  test("resizes both dimensions from the bottom-right edge", () => {
+    const resized = resizeCanvasFromDrag(doc([]), "both", 137, -53, true);
+
+    expect(resized.canvas).toMatchObject({ width: 1340, height: 750, fitToContent: false });
+  });
+
+  test("resizes only the dragged edge", () => {
+    const resized = resizeCanvasFromDrag(doc([]), "width", 25, 200, false);
+
+    expect(resized.canvas).toMatchObject({ width: 1225, height: 800, fitToContent: false });
+  });
+
+  test("keeps the canvas large enough to remain draggable", () => {
+    const resized = resizeCanvasFromDrag(doc([]), "both", -2000, -2000, true);
+
+    expect(resized.canvas).toMatchObject({ width: 100, height: 100 });
   });
 });
 

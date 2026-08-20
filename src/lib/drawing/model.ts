@@ -4,6 +4,8 @@ export interface CanvasConfig {
   width: number;
   height: number;
   gridSize: number;
+  /** false when the user has explicitly chosen the exported SVG canvas size. */
+  fitToContent?: boolean;
 }
 
 export type LineDashStyle =

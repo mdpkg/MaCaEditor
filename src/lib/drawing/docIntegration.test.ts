@@ -79,6 +79,33 @@ describe("docIntegration", () => {
     expect(updated.dirty).toBe(true);
   });
 
+  test("saveDrawingToDocument renders the latest object bounds", () => {
+    const { state: next } = addDrawingToDocument(state(), drawing(), "diagrams", "Drawing");
+    const latest: DrawingDocument = {
+      ...drawing(),
+      objects: [
+        {
+          id: "rect-1",
+          type: "rectangle",
+          x: 100,
+          y: 80,
+          width: 200,
+          height: 60,
+          rotation: 0,
+          zIndex: 1,
+          style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+        },
+      ],
+    };
+
+    const updated = saveDrawingToDocument(next, "diagrams/drawing-1.draw.json", latest);
+    const source = updated.files.find((f) => f.path === "diagrams/drawing-1.draw.json");
+    const svg = updated.files.find((f) => f.path === "diagrams/drawing-1.svg");
+
+    expect(source?.content).toContain('"x": 100');
+    expect(svg?.content).toContain('viewBox="80 60 240 100"');
+  });
+
   test("findDrawingResources filters type drawing", () => {
     const manifest = {
       resources: [

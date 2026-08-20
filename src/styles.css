@@ -299,6 +299,24 @@ body {
   cursor: crosshair;
 }
 
+.canvas-resize-handle {
+  fill: transparent;
+  stroke: none;
+}
+
+.canvas-resize-handle-width {
+  cursor: ew-resize;
+}
+
+.canvas-resize-handle-height {
+  cursor: ns-resize;
+}
+
+.canvas-resize-handle-both {
+  fill: #2d6cdf;
+  cursor: nwse-resize;
+}
+
 .drawing-statusbar {
   display: flex;
   gap: 16px;

@@ -94,6 +94,31 @@ export function resizeObject(
   };
 }
 
+export type CanvasResizeEdge = "width" | "height" | "both";
+
+/** Resize the SVG canvas from its right, bottom, or bottom-right edge. */
+export function resizeCanvasFromDrag(
+  doc: DrawingDocument,
+  edge: CanvasResizeEdge,
+  deltaX: number,
+  deltaY: number,
+  snap: boolean,
+  minimumSize = 100,
+): DrawingDocument {
+  const snapSize = (value: number) =>
+    snap ? Math.round(value / doc.canvas.gridSize) * doc.canvas.gridSize : value;
+  const width = edge === "height"
+    ? doc.canvas.width
+    : Math.max(minimumSize, snapSize(doc.canvas.width + deltaX));
+  const height = edge === "width"
+    ? doc.canvas.height
+    : Math.max(minimumSize, snapSize(doc.canvas.height + deltaY));
+  return {
+    ...doc,
+    canvas: { ...doc.canvas, width, height, fitToContent: false },
+  };
+}
+
 export function updateShapeText(
   doc: DrawingDocument,
   id: string,

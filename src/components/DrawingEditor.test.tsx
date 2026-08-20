@@ -1,0 +1,110 @@
+import { act, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { DrawingDocument } from "../lib/drawing/model";
+import { DrawingEditor } from "./DrawingEditor";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const initial: DrawingDocument = {
+  format: "maca-drawing",
+  version: "1.0",
+  canvas: { width: 1200, height: 800, gridSize: 10 },
+  objects: [
+    {
+      id: "rect-1",
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 80,
+      height: 40,
+      rotation: 0,
+      zIndex: 1,
+      style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+    },
+  ],
+};
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+function pointerEvent(type: string, x: number, y: number): MouseEvent {
+  const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  return event;
+}
+
+describe("DrawingEditor", () => {
+  test("passes the final dragged document to the persistence callback", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1200,
+      bottom: 800,
+      width: 1200,
+      height: 800,
+      toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 150, 140)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 150, 140)));
+
+    const persisted = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as
+      | DrawingDocument
+      | undefined;
+    expect(persisted?.objects[0]).toMatchObject({ x: 140, y: 130 });
+
+    act(() => root.unmount());
+  });
+
+  test("persists a canvas resized from its bottom-right handle", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    const handle = container.querySelector('[data-canvas-resize="both"]') as SVGRectElement;
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerdown", 1198, 798)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 998, 698)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 998, 698)));
+
+    const persisted = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(persisted.canvas).toMatchObject({
+      width: 1000,
+      height: 700,
+      fitToContent: false,
+    });
+
+    act(() => root.unmount());
+  });
+});

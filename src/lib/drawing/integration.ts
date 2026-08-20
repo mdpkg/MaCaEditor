@@ -24,7 +24,10 @@ export function generateDrawingFiles(
     drawPath,
     svgPath,
     drawContent: serializeDrawingDocument(doc),
-    svgContent: renderSvg(doc, { fitToContent: true, margin: 20 }),
+    svgContent: renderSvg(doc, {
+      fitToContent: doc.canvas.fitToContent !== false,
+      margin: 20,
+    }),
   };
 }
 

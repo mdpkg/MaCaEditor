@@ -48,6 +48,19 @@ describe("integration", () => {
     expect(files.svgContent).toContain('viewBox="80 60 240 100"');
   });
 
+  test("uses an explicitly resized canvas for the rendered SVG", () => {
+    const drawing = doc();
+    drawing.canvas = { ...drawing.canvas, width: 640, height: 360, fitToContent: false };
+    drawing.objects = [{
+      id: "r1", type: "rectangle", x: 100, y: 80, width: 200, height: 60,
+      rotation: 0, zIndex: 1, style: {},
+    }];
+
+    const files = generateDrawingFiles(drawing, "diagrams", "manual-size");
+
+    expect(files.svgContent).toContain('width="640" height="360" viewBox="0 0 640 360"');
+  });
+
   test("next name avoids existing files", () => {
     const name = nextDrawingName("diagrams", [
       "diagrams/drawing-1.draw.json",
