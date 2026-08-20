@@ -27,13 +27,17 @@ describe("createObject", () => {
   test("creates text", () => {
     const obj = createObject(emptyDoc(), "text", 100, 100);
     expect(obj.type).toBe("text");
-    expect(obj.text).toBe("Text");
+    if (obj.type === "text") {
+      expect(obj.text).toBe("Text");
+    }
   });
 
   test("creates line", () => {
     const obj = createObject(emptyDoc(), "line", 100, 100);
     expect(obj.type).toBe("line");
-    expect(obj.x2).toBe(200);
+    if (obj.type === "line") {
+      expect(obj.x2).toBe(200);
+    }
   });
 
   test("creates arrow", () => {

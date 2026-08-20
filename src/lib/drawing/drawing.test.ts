@@ -3,7 +3,6 @@ import {
   parseDrawingDocument,
   serializeDrawingDocument,
   validateDrawingDocument,
-  type DrawingDocument,
 } from "./drawing";
 
 const validJson = `{
@@ -52,7 +51,9 @@ describe("drawing document parsing", () => {
     const doc = parseDrawingDocument(validJson);
     const obj = doc.objects[0];
     expect(obj.type).toBe("rectangle");
-    expect(obj.text).toBe("API");
+    if (obj.type === "rectangle") {
+      expect(obj.text).toBe("API");
+    }
   });
 
   test("serializes document", () => {

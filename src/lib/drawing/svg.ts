@@ -23,12 +23,9 @@ function center(obj: DrawingObject): { x: number; y: number } {
   return { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 };
 }
 
-/** オブジェクトの右端 / 下端を返す。 */
+/** オブジェクトの右端を返す。 */
 function rightEdge(obj: DrawingObject): number {
   return obj.x + obj.width;
-}
-function bottomEdge(obj: DrawingObject): number {
-  return obj.y + obj.height;
 }
 
 /** 接続元オブジェクトのアンカー（右端中央）を返す。 */

@@ -2,11 +2,14 @@ import { useMemo } from "react";
 import type { FileInfo } from "../types";
 import { resolvePackagePath } from "../lib/markdown";
 import { sanitizeHtml } from "../lib/sanitize";
+import { findResourceByRendered } from "../lib/drawing/docIntegration";
 
 interface Props {
   markdown: string;
   baseDir: string;
   files: FileInfo[];
+  manifest?: Record<string, unknown>;
+  onEditDrawing?: (drawPath: string) => void;
 }
 
 function escapeHtml(text: string): string {
@@ -24,7 +27,13 @@ function renderInline(text: string): string {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 }
 
-export function MarkdownPreview({ markdown, baseDir, files }: Props) {
+export function MarkdownPreview({
+  markdown,
+  baseDir,
+  files,
+  manifest,
+  onEditDrawing,
+}: Props) {
   const html = useMemo(() => {
     const lines = markdown.split("\n");
     let out = "";
@@ -54,8 +63,13 @@ export function MarkdownPreview({ markdown, baseDir, files }: Props) {
         const file = resolved
           ? files.find((f) => f.path === resolved)
           : undefined;
+        const resource = manifest
+          ? findResourceByRendered(manifest, resolved ?? "")
+          : undefined;
         if (file && file.base64) {
           out += `<img src="data:image/png;base64,${file.base64}" alt="${image[1]}" />\n`;
+        } else if (file && file.is_text && file.content?.trim().startsWith("<svg")) {
+          out += `<div class="drawing-image" data-drawpath="${resource?.source ?? ""}">${file.content}</div>\n`;
         } else {
           out += `<p>⚠️ 画像が見つかりません: ${image[2]}</p>\n`;
         }
@@ -114,7 +128,23 @@ export function MarkdownPreview({ markdown, baseDir, files }: Props) {
     }
 
     return sanitizeHtml(out);
-  }, [markdown, baseDir, files]);
+  }, [markdown, baseDir, files, manifest]);
 
-  return <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <div
+      className="markdown-preview"
+      dangerouslySetInnerHTML={{ __html: html }}
+      onClick={(e) => {
+        if (!onEditDrawing) return;
+        const target = (e.target as HTMLElement).closest(".drawing-image");
+        if (target) {
+          const drawPath = target.getAttribute("data-drawpath");
+          if (drawPath) {
+            e.preventDefault();
+            onEditDrawing(drawPath);
+          }
+        }
+      }}
+    />
+  );
 }

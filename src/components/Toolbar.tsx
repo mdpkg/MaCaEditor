@@ -7,6 +7,7 @@ interface Props {
   onNew: () => void;
   onImport: () => void;
   onExport: () => void;
+  onInsertDrawing: () => void;
 }
 
 export function Toolbar({
@@ -18,6 +19,7 @@ export function Toolbar({
   onNew,
   onImport,
   onExport,
+  onInsertDrawing,
 }: Props) {
   return (
     <div className="toolbar">
@@ -32,6 +34,9 @@ export function Toolbar({
       <button onClick={onImport}>Import Folder</button>
       <button onClick={onExport} disabled={!hasDocument}>
         Export Folder
+      </button>
+      <button onClick={onInsertDrawing} disabled={!hasDocument}>
+        Insert Drawing
       </button>
       {dirty && <span className="dirty-indicator">●</span>}
     </div>

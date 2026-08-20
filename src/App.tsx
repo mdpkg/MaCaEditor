@@ -5,6 +5,7 @@ import { MarkdownEditor } from "./components/MarkdownEditor";
 import { MarkdownPreview } from "./components/MarkdownPreview";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import { DrawingEditor } from "./components/DrawingEditor";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
@@ -18,9 +19,15 @@ import {
   openPackage,
   savePackage,
 } from "./lib/tauri";
+import type { DrawingDocument } from "./lib/drawing/model";
+import {
+  addDrawingToDocument,
+  parseDrawingFile,
+  saveDrawingToDocument,
+} from "./lib/drawing/docIntegration";
 import type { FileInfo } from "./types";
 
-type Mode = "preview" | "split";
+type Mode = "preview" | "split" | "drawing";
 
 export default function App() {
   const [doc, setDoc] = useState<DocumentState | null>(null);
@@ -28,6 +35,8 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("preview");
   const [status, setStatus] = useState("Ready");
   const [error, setError] = useState<string | null>(null);
+  const [drawingPath, setDrawingPath] = useState<string | null>(null);
+  const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const pendingRef = useRef<(() => void) | null>(null);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
@@ -60,6 +69,8 @@ export default function App() {
         setDoc(createDocumentState(info, result));
         setSelectedPath(info.entrypoint);
         setMode("preview");
+        setDrawingDoc(null);
+        setDrawingPath(null);
         setError(null);
         setStatus(`Opened ${result}`);
       } catch (e) {
@@ -115,6 +126,8 @@ export default function App() {
         setDoc(createDocumentState(info, result));
         setSelectedPath(info.entrypoint);
         setMode("preview");
+        setDrawingDoc(null);
+        setDrawingPath(null);
         setError(null);
         setStatus(`Created ${result}`);
       } catch (e) {
@@ -138,6 +151,8 @@ export default function App() {
           setDoc(createDocumentState(info, dest));
           setSelectedPath(info.entrypoint);
           setMode("preview");
+          setDrawingDoc(null);
+          setDrawingPath(null);
           setError(null);
           setStatus(`Imported ${folder}`);
         } catch (e) {
@@ -168,11 +183,75 @@ export default function App() {
 
   const handleSelect = (path: string) => {
     setSelectedPath(path);
+    if (path.endsWith(".draw.json")) {
+      const file = doc?.files.find((f) => f.path === path);
+      if (file?.content) {
+        try {
+          const parsed = parseDrawingFile(file.content);
+          setDrawingDoc(parsed);
+          setDrawingPath(path);
+          setMode("drawing");
+          return;
+        } catch (e) {
+          setError(`Unable to open drawing: ${String(e)}`);
+          setStatus("Error");
+          return;
+        }
+      }
+    }
+    setMode("preview");
   };
 
   const handleContentChange = (content: string) => {
     if (!doc || !selectedPath) return;
     setDoc(updateFileContent(doc, selectedPath, content));
+  };
+
+  const handleInsertDrawing = () => {
+    if (!doc) return;
+    const baseDir = entrypointDir();
+    const empty: DrawingDocument = {
+      format: "maca-drawing",
+      version: "1.0",
+      canvas: { width: 1200, height: 800, gridSize: 10 },
+      objects: [],
+    };
+    const { state, drawPath } = addDrawingToDocument(
+      doc,
+      empty,
+      baseDir,
+      "Drawing",
+    );
+    setDoc(state);
+    setDrawingDoc(empty);
+    setDrawingPath(drawPath);
+    setMode("drawing");
+    setStatus("Inserted Drawing");
+  };
+
+  const handleDrawingChange = (next: DrawingDocument) => {
+    setDrawingDoc(next);
+  };
+
+  const handleDrawingDirty = () => {
+    if (!doc || !drawingPath || !drawingDoc) return;
+    setDoc(saveDrawingToDocument(doc, drawingPath, drawingDoc));
+  };
+
+  const handleEditDrawingFromPreview = (drawPath: string) => {
+    if (!doc) return;
+    const file = doc.files.find((f) => f.path === drawPath);
+    if (!file?.content) return;
+    try {
+      const parsed = parseDrawingFile(file.content);
+      setDrawingDoc(parsed);
+      setDrawingPath(drawPath);
+      setMode("drawing");
+      setSelectedPath(drawPath);
+    } catch (e) {
+      setError(`Unable to open drawing: ${String(e)}`);
+      setStatus("Error");
+    }
   };
 
   const resolveDiscard = (discard: boolean) => {
@@ -202,6 +281,7 @@ export default function App() {
         onNew={handleNew}
         onImport={handleImport}
         onExport={handleExport}
+        onInsertDrawing={handleInsertDrawing}
       />
       <div className="main-layout">
         <aside className="sidebar">
@@ -218,7 +298,14 @@ export default function App() {
               <p>Markdown Package を開くか、新規作成してください。</p>
             </div>
           )}
-          {doc && displayFile && displayFile.is_text && (
+          {doc && mode === "drawing" && drawingDoc && drawingPath && (
+            <DrawingEditor
+              doc={drawingDoc}
+              onChange={handleDrawingChange}
+              onDirty={handleDrawingDirty}
+            />
+          )}
+          {doc && mode !== "drawing" && displayFile && displayFile.is_text && (
             <>
               {mode === "preview" && (
                 <div className="preview-only">
@@ -226,6 +313,8 @@ export default function App() {
                     markdown={displayContent}
                     baseDir={displayBaseDir}
                     files={doc.files}
+                    manifest={doc.manifest}
+                    onEditDrawing={handleEditDrawingFromPreview}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -242,12 +331,14 @@ export default function App() {
                     markdown={displayContent}
                     baseDir={displayBaseDir}
                     files={doc.files}
+                    manifest={doc.manifest}
+                    onEditDrawing={handleEditDrawingFromPreview}
                   />
                 </div>
               )}
             </>
           )}
-          {doc && displayFile && !displayFile.is_text && (
+          {doc && mode !== "drawing" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
               {displayFile.base64 && (
                 <img src={`data:image/png;base64,${displayFile.base64}`} alt="" />

@@ -8,7 +8,6 @@ import {
   bringToFront,
   deleteObjects,
   moveObject,
-  resizeObject,
   sendBackward,
   sendToBack,
   type AlignKind,
@@ -41,7 +40,6 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [gridVisible, setGridVisible] = useState(true);
   const [snap, setSnap] = useState(true);
-  const [history, setHistory] = useState<History>([]);
   const [undoStack, setUndoStack] = useState<History>([]);
   const [redoStack, setRedoStack] = useState<History>([]);
   const [clipboard, setClipboard] = useState<DrawingObject[]>([]);
@@ -308,16 +306,6 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     }
   };
 
-  const updateStyle = (patch: Partial<DrawingObject>) => {
-    const next = {
-      ...doc,
-      objects: doc.objects.map((o) =>
-        selectedIds.includes(o.id) ? { ...o, ...patch } : o,
-      ),
-    };
-    commit(next);
-  };
-
   const updateText = (text: string) => {
     const next = {
       ...doc,
@@ -333,10 +321,10 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       ...doc,
       objects: doc.objects.map((o) =>
         selectedIds.includes(o.id)
-          ? { ...o, style: { ...o.style, fill } }
+          ? { ...o, style: { ...(o.style as Record<string, unknown>), fill } }
           : o,
       ),
-    };
+    } as DrawingDocument;
     commit(next);
   };
 
@@ -345,10 +333,10 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       ...doc,
       objects: doc.objects.map((o) =>
         selectedIds.includes(o.id)
-          ? { ...o, style: { ...o.style, stroke } }
+          ? { ...o, style: { ...(o.style as Record<string, unknown>), stroke } }
           : o,
       ),
-    };
+    } as DrawingDocument;
     commit(next);
   };
 
@@ -357,10 +345,10 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       ...doc,
       objects: doc.objects.map((o) =>
         selectedIds.includes(o.id)
-          ? { ...o, style: { ...o.style, strokeWidth } }
+          ? { ...o, style: { ...(o.style as Record<string, unknown>), strokeWidth } }
           : o,
       ),
-    };
+    } as DrawingDocument;
     commit(next);
   };
 
@@ -369,10 +357,22 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       ...doc,
       objects: doc.objects.map((o) =>
         selectedIds.includes(o.id)
-          ? { ...o, style: { ...o.style, fontSize } }
+          ? { ...o, style: { ...(o.style as Record<string, unknown>), fontSize } }
           : o,
       ),
-    };
+    } as DrawingDocument;
+    commit(next);
+  };
+
+  const updateTextAlign = (align: "left" | "center" | "right") => {
+    const next = {
+      ...doc,
+      objects: doc.objects.map((o) =>
+        selectedIds.includes(o.id)
+          ? { ...o, style: { ...(o.style as Record<string, unknown>), align } }
+          : o,
+      ),
+    } as DrawingDocument;
     commit(next);
   };
 
@@ -618,6 +618,21 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
                   value={(selected as DrawingObject & { style: { fontSize?: number } }).style.fontSize ?? 16}
                   onChange={(e) => updateFontSize(Number(e.target.value))}
                 />
+              </div>
+            )}
+            {selected.type === "text" && (
+              <div className="inspector-row">
+                <label>Align</label>
+                <select
+                  value={(selected as DrawingObject & { style: { align?: string } }).style.align ?? "left"}
+                  onChange={(e) =>
+                    updateTextAlign(e.target.value as "left" | "center" | "right")
+                  }
+                >
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
               </div>
             )}
           </>
