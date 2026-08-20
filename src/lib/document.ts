@@ -37,7 +37,9 @@ export function addImage(
   fileName: string,
   base64: string,
 ): { state: DocumentState; path: string } {
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeName = fileName
+    .normalize("NFC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
   const dot = safeName.lastIndexOf(".");
   const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
   const extension = dot > 0 ? safeName.slice(dot) : "";

@@ -24,6 +24,11 @@ describe("image assets", () => {
     expect(added.path).toBe("images/photo-3.png");
   });
 
+  it("preserves Japanese image file names", () => {
+    const added = addImage(state(), "設計図.png", "data");
+    expect(added.path).toBe("images/設計図.png");
+  });
+
   it("returns the correct media type", () => {
     expect(imageMediaType("images/a.jpeg")).toBe("image/jpeg");
     expect(imageMediaType("images/a.webp")).toBe("image/webp");
