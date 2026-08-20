@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { resolvePackagePath } from "./markdown";
+import { insertMarkdownImages, relativePackagePath, resolvePackagePath } from "./markdown";
 
 describe("resolvePackagePath", () => {
   test("resolves relative image path", () => {
@@ -18,6 +18,10 @@ describe("resolvePackagePath", () => {
     expect(resolvePackagePath("", "../../secret.png")).toBeNull();
   });
 
+  test("resolves parent segments that remain inside the package", () => {
+    expect(resolvePackagePath("docs", "../images/a.png")).toBe("images/a.png");
+  });
+
   test("rejects absolute path", () => {
     expect(resolvePackagePath("", "/etc/passwd")).toBeNull();
   });
@@ -28,5 +32,26 @@ describe("resolvePackagePath", () => {
 
   test("normalizes backslash separators", () => {
     expect(resolvePackagePath("", "images\\a.png")).toBe("images/a.png");
+  });
+});
+
+describe("Markdown image insertion", () => {
+  test("inserts at the cursor", () => {
+    const result = insertMarkdownImages("beforeafter", 6, "README.md", ["images/photo.png"]);
+    expect(result.content).toBe("before\n![photo](images/photo.png)\nafter");
+  });
+
+  test("appends when no cursor is available", () => {
+    const result = insertMarkdownImages("# Title", null, "README.md", ["images/a.jpg"]);
+    expect(result.content).toBe("# Title\n![a](images/a.jpg)");
+  });
+
+  test("creates paths relative to nested Markdown files", () => {
+    expect(relativePackagePath("docs/guide.md", "images/a.png")).toBe("../images/a.png");
+  });
+
+  test("inserts multiple image links", () => {
+    const result = insertMarkdownImages("", null, "README.md", ["images/a.png", "images/b.jpg"]);
+    expect(result.content).toBe("![a](images/a.png)\n![b](images/b.jpg)");
   });
 });

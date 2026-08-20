@@ -30,6 +30,7 @@ import {
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
 import type { FileInfo } from "./types";
+import { insertMarkdownImages } from "./lib/markdown";
 
 type Mode = "preview" | "split" | "drawing";
 
@@ -42,6 +43,7 @@ export default function App() {
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const pendingRef = useRef<(() => void) | null>(null);
+  const editorCursorRef = useRef<number | null>(null);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
@@ -186,6 +188,7 @@ export default function App() {
   };
 
   const handleSelect = (path: string) => {
+    editorCursorRef.current = null;
     setSelectedPath(path);
     if (path.endsWith(".draw.json")) {
       const file = doc?.files.find((f) => f.path === path);
@@ -235,6 +238,10 @@ export default function App() {
 
   const handleAddImage = async () => {
     if (!doc) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
     const result = await openDialog({
       multiple: true,
       filters: [
@@ -245,16 +252,25 @@ export default function App() {
     if (paths.length === 0) return;
     try {
       let next = doc;
-      let lastPath = "";
+      const addedPaths: string[] = [];
       for (const path of paths) {
         const image = await readImage(path);
         const added = addImage(next, image.file_name, image.base64);
         next = added.state;
-        lastPath = added.path;
+        addedPaths.push(added.path);
+      }
+      if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
+        const inserted = insertMarkdownImages(
+          markdownFile.content,
+          cursor,
+          markdownFile.path,
+          addedPaths,
+        );
+        next = updateFileContent(next, markdownFile.path, inserted.content);
+        editorCursorRef.current = inserted.cursor;
       }
       setDoc(next);
-      setSelectedPath(lastPath);
-      setMode("preview");
+      setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
       setStatus(`Added ${paths.length} image${paths.length === 1 ? "" : "s"} to images/`);
       setError(null);
     } catch (e) {
@@ -361,6 +377,7 @@ export default function App() {
                   <MarkdownEditor
                     value={displayContent}
                     onChange={handleContentChange}
+                    onCursorChange={(position) => { editorCursorRef.current = position; }}
                   />
                   <MarkdownPreview
                     markdown={displayContent}
