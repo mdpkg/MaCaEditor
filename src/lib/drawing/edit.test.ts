@@ -9,6 +9,7 @@ import {
   insertImageObject,
   moveObject,
   moveObjectFromDragStart,
+  moveObjectFromDragStartSnapped,
   resizeObject,
   redo,
   selectGroup,
@@ -65,6 +66,18 @@ describe("moveObject", () => {
     const secondFrame = moveObjectFromDragStart(original, "r1", { x: 10, y: 10 }, { x: 30, y: 20 });
     expect(firstFrame.objects[0]).toMatchObject({ x: 110, y: 105 });
     expect(secondFrame.objects[0]).toMatchObject({ x: 120, y: 110 });
+  });
+
+  test("snaps the dragged object position to the grid", () => {
+    const original = doc([rect("r1", 103, 107)]);
+    const moved = moveObjectFromDragStartSnapped(
+      original,
+      "r1",
+      { x: 20, y: 20 },
+      { x: 43, y: 36 },
+      10,
+    );
+    expect(moved.objects[0]).toMatchObject({ x: 130, y: 120 });
   });
 });
 

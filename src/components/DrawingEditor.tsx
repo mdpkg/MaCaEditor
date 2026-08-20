@@ -9,6 +9,7 @@ import {
   deleteObjects,
   moveObject,
   moveObjectFromDragStart,
+  moveObjectFromDragStartSnapped,
   sendBackward,
   sendToBack,
   type AlignKind,
@@ -17,6 +18,7 @@ import {
 import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
 import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
+import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector";
 
 export interface DrawingEditorProps {
   doc: DrawingDocument;
@@ -114,6 +116,12 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     (x: number, y: number): DrawingObject | null => {
       const sorted = [...doc.objects].sort((a, b) => b.zIndex - a.zIndex);
       for (const obj of sorted) {
+        if (obj.type === "connector") {
+          const geometry = connectorGeometry(obj, doc.objects);
+          const tolerance = Math.max(8, (obj.style.strokeWidth ?? 1) / 2 + 4);
+          if (geometry && isPointOnConnector(geometry, x, y, tolerance)) return obj;
+          continue;
+        }
         if (obj.type === "line" || obj.type === "arrow") {
           const line = obj as DrawingObject & { x2: number; y2: number };
           const dist = Math.abs(
@@ -168,6 +176,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
               ? [...prev, hit.id]
               : [hit.id],
         );
+        if (hit.type === "connector") return;
         setDragging({
           type: "move",
           id: hit.id,
@@ -203,16 +212,14 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragging) return;
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
-    const dx = x - dragging.startX;
-    const dy = y - dragging.startY;
 
     if (dragging.type === "move" && dragging.id) {
-      const next = moveObjectFromDragStart(
-        dragging.before ?? doc,
-        dragging.id,
-        { x: dragging.startX, y: dragging.startY },
-        { x, y },
-      );
+      const original = dragging.before ?? doc;
+      const start = { x: dragging.startX, y: dragging.startY };
+      const current = { x, y };
+      const next = snap
+        ? moveObjectFromDragStartSnapped(original, dragging.id, start, current, doc.canvas.gridSize)
+        : moveObjectFromDragStart(original, dragging.id, start, current);
       dragPreviewRef.current = next;
       onChange(next);
       return;
@@ -221,8 +228,8 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     if (dragging.type === "create" && dragging.id) {
       const obj = doc.objects.find((o) => o.id === dragging.id);
       if (!obj) return;
-      const width = Math.max(10, dx);
-      const height = Math.max(10, dy);
+      const width = Math.max(snap ? doc.canvas.gridSize : 10, snapValue(x) - obj.x);
+      const height = Math.max(snap ? doc.canvas.gridSize : 10, snapValue(y) - obj.y);
       const next = {
         ...doc,
         objects: doc.objects.map((o) =>
@@ -557,7 +564,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
         <h4>Properties</h4>
         {selected ? (
           <>
-            <div className="inspector-row">
+            {selected.type !== "connector" && <><div className="inspector-row">
               <label>X</label>
               <input
                 type="number"
@@ -588,7 +595,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
                 value={selected.height}
                 onChange={(e) => updateSize("height", Number(e.target.value))}
               />
-            </div>
+            </div></>}
             {(selected.type === "rectangle" || selected.type === "ellipse") && (
               <div className="inspector-row">
                 <label>Fill</label>

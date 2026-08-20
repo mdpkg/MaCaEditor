@@ -11,6 +11,7 @@ import type {
   TextObject,
 } from "./model";
 import { svgLineStyle } from "./lineStyle";
+import { connectorGeometry } from "./connector";
 
 /** テキストを SVG に埋め込む前にエスケープする。 */
 function escapeXml(text: string): string {
@@ -19,46 +20,6 @@ function escapeXml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-/** オブジェクトの中心座標を返す。 */
-function center(obj: DrawingObject): { x: number; y: number } {
-  return { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 };
-}
-
-interface ConnectionSite {
-  point: { x: number; y: number };
-  outward: { x: number; y: number };
-}
-
-/** 相手に最も近い接続サイトと、その辺から外へ向かう方向を返す。 */
-function connectionSite(obj: DrawingObject, toward: { x: number; y: number }): ConnectionSite {
-  const own = center(obj);
-  const dx = toward.x - own.x;
-  const dy = toward.y - own.y;
-  if (dx === 0 && dy === 0) return { point: own, outward: { x: 1, y: 0 } };
-  const rx = Math.max(obj.width / 2, 0.001);
-  const ry = Math.max(obj.height / 2, 0.001);
-  if (obj.type === "ellipse") {
-    const scale = 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2);
-    const length = Math.hypot(dx, dy);
-    return {
-      point: { x: own.x + dx * scale, y: own.y + dy * scale },
-      outward: { x: dx / length, y: dy / length },
-    };
-  }
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const direction = Math.sign(dx);
-    return {
-      point: { x: own.x + direction * rx, y: own.y },
-      outward: { x: direction, y: 0 },
-    };
-  }
-  const direction = Math.sign(dy);
-  return {
-    point: { x: own.x, y: own.y + direction * ry },
-    outward: { x: 0, y: direction },
-  };
 }
 
 function renderRectangle(obj: RectangleObject): string {
@@ -115,27 +76,10 @@ function renderConnector(
   obj: ConnectorObject,
   objects: DrawingObject[],
 ): string {
-  const fromObj = objects.find((o) => o.id === obj.from.objectId);
-  const toObj = objects.find((o) => o.id === obj.to.objectId);
-  if (!fromObj || !toObj) return "";
-  const fromCenter = center(fromObj);
-  const toCenter = center(toObj);
-  const fromSite = connectionSite(fromObj, toCenter);
-  const toSite = connectionSite(toObj, fromCenter);
-  const from = fromSite.point;
-  const to = toSite.point;
-  if (obj.curve) {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const handle = Math.min(120, Math.max(40, Math.max(Math.abs(dx), Math.abs(dy)) * 0.5));
-    const c1 = {
-      x: from.x + fromSite.outward.x * handle,
-      y: from.y + fromSite.outward.y * handle,
-    };
-    const c2 = {
-      x: to.x + toSite.outward.x * handle,
-      y: to.y + toSite.outward.y * handle,
-    };
+  const geometry = connectorGeometry(obj, objects);
+  if (!geometry) return "";
+  const { from, to, c1, c2 } = geometry;
+  if (c1 && c2) {
     return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
   }
   return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;

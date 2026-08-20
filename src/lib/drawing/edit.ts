@@ -60,6 +60,25 @@ export function moveObjectFromDragStart(
   return moveObject(original, id, current.x - start.x, current.y - start.y);
 }
 
+export function moveObjectFromDragStartSnapped(
+  original: DrawingDocument,
+  id: string,
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  gridSize: number,
+): DrawingDocument {
+  const object = original.objects.find((candidate) => candidate.id === id);
+  if (!object || gridSize <= 0) return moveObjectFromDragStart(original, id, start, current);
+  const x = Math.round((object.x + current.x - start.x) / gridSize) * gridSize;
+  const y = Math.round((object.y + current.y - start.y) / gridSize) * gridSize;
+  return {
+    ...original,
+    objects: original.objects.map((candidate) =>
+      candidate.id === id ? { ...candidate, x, y } : candidate,
+    ),
+  };
+}
+
 /** オブジェクトをリサイズする。 */
 export function resizeObject(
   doc: DrawingDocument,
