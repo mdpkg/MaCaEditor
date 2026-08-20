@@ -10,7 +10,9 @@ import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
   addImage,
+  deleteAsset,
   imageMediaType,
+  isDeletableAsset,
   renameAsset,
   toSaveRequest,
   updateFileContent,
@@ -307,6 +309,7 @@ export default function App() {
       typeof item === "object" && item !== null &&
       ((item as { source?: string }).source === selectedPath || (item as { rendered?: string }).rendered === selectedPath))
   );
+  const deletable = doc !== null && isDeletableAsset(doc, selectedPath);
 
   const handleRename = () => {
     if (!doc || !selectedPath || !renameable) return;
@@ -320,6 +323,27 @@ export default function App() {
       setSelectedPath(renamed.path);
       if (drawingPath === selectedPath) setDrawingPath(renamed.path);
       setStatus(`Renamed to ${renamed.path}`);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
+  const handleDelete = () => {
+    if (!doc || !selectedPath || !deletable) return;
+    const fileName = selectedPath.slice(selectedPath.lastIndexOf("/") + 1);
+    if (!window.confirm(`Delete ${fileName}?`)) return;
+    try {
+      const next = deleteAsset(doc, selectedPath);
+      setDoc(next);
+      setSelectedPath(next.entrypoint);
+      if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
+        setDrawingDoc(null);
+        setDrawingPath(null);
+        setMode("preview");
+      }
+      setStatus(`Deleted ${fileName}`);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -412,6 +436,8 @@ export default function App() {
         onAddImage={handleAddImage}
         canRename={renameable}
         onRename={handleRename}
+        canDelete={deletable}
+        onDelete={handleDelete}
       />
       <div className="main-layout">
         <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>

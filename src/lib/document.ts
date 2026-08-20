@@ -97,6 +97,72 @@ function replaceMarkdownPaths(content: string, markdownPath: string, replacement
   });
 }
 
+function drawingResourceForPath(state: DocumentState, path: string) {
+  if (!Array.isArray(state.manifest.resources)) return undefined;
+  return state.manifest.resources.find((item) =>
+    typeof item === "object" &&
+    item !== null &&
+    (item as { type?: string }).type === "drawing" &&
+    ((item as { source?: string }).source === path ||
+      (item as { rendered?: string }).rendered === path),
+  ) as { source: string; rendered: string; type: string } | undefined;
+}
+
+export function isDeletableAsset(state: DocumentState, path: string | null): boolean {
+  if (!path) return false;
+  return drawingResourceForPath(state, path) !== undefined ||
+    /^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path);
+}
+
+function removeMarkdownImageReferences(
+  content: string,
+  markdownPath: string,
+  deletedPaths: Set<string>,
+): string {
+  return content.replace(/!\[[^\]]*\]\(([^)]+)\)/g, (match, target: string) => {
+    const baseDir = markdownPath.includes("/")
+      ? markdownPath.slice(0, markdownPath.lastIndexOf("/"))
+      : "";
+    const resolved = resolvePackagePath(baseDir, target);
+    return resolved && deletedPaths.has(resolved) ? "" : match;
+  });
+}
+
+export function deleteAsset(state: DocumentState, path: string): DocumentState {
+  const drawing = drawingResourceForPath(state, path);
+  const deletedPaths = new Set<string>();
+  if (drawing) {
+    deletedPaths.add(drawing.source);
+    deletedPaths.add(drawing.rendered);
+  } else if (/^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path)) {
+    deletedPaths.add(path);
+  } else {
+    throw new Error(`Asset cannot be deleted: ${path}`);
+  }
+
+  const resources = Array.isArray(state.manifest.resources)
+    ? state.manifest.resources.filter((item) => {
+        if (typeof item !== "object" || item === null) return true;
+        const value = item as { source?: string; rendered?: string };
+        return !deletedPaths.has(value.source ?? "") && !deletedPaths.has(value.rendered ?? "");
+      })
+    : state.manifest.resources;
+
+  return {
+    ...state,
+    dirty: true,
+    manifest: { ...state.manifest, resources },
+    files: state.files
+      .filter((file) => !deletedPaths.has(file.path))
+      .map((file) => ({
+        ...file,
+        content: file.is_text && file.content !== null && /\.(md|markdown)$/i.test(file.path)
+          ? removeMarkdownImageReferences(file.content, file.path, deletedPaths)
+          : file.content,
+      })),
+  };
+}
+
 export function renameAsset(
   state: DocumentState,
   path: string,

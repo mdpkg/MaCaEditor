@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { addImage, imageMediaType, renameAsset, type DocumentState } from "./document";
+import {
+  addImage,
+  deleteAsset,
+  imageMediaType,
+  isDeletableAsset,
+  renameAsset,
+  type DocumentState,
+} from "./document";
 
 function state(paths: string[] = []): DocumentState {
   return {
@@ -74,5 +81,58 @@ describe("asset rename", () => {
   it("rejects a name already used in the same folder", () => {
     expect(() => renameAsset(state(["images/a.png", "images/b.png"]), "images/a.png", "b"))
       .toThrow("already exists");
+  });
+});
+
+describe("asset deletion", () => {
+  it("deletes an image and its Markdown image references", () => {
+    const current = state(["images/写真.png", "images/keep.png"]);
+    current.files.unshift({
+      path: "docs/guide.md",
+      is_text: true,
+      content: "before\n![写真](../images/写真.png)\nafter\n![keep](../images/keep.png)",
+      base64: null,
+    });
+
+    const deleted = deleteAsset(current, "images/写真.png");
+
+    expect(deleted.files.map((file) => file.path)).not.toContain("images/写真.png");
+    expect(deleted.files[0].content).toBe("before\n\nafter\n![keep](../images/keep.png)");
+    expect(deleted.dirty).toBe(true);
+  });
+
+  it.each(["diagrams/drawing-1.draw.json", "diagrams/drawing-1.svg"])(
+    "deletes both drawing files and its resource when selecting %s",
+    (selected) => {
+      const current = state([
+        "diagrams/drawing-1.draw.json",
+        "diagrams/drawing-1.svg",
+        "diagrams/keep.svg",
+      ]);
+      current.manifest = {
+        resources: [
+          { source: "diagrams/drawing-1.draw.json", rendered: "diagrams/drawing-1.svg", type: "drawing" },
+          { source: "other.puml", rendered: "diagrams/keep.svg", type: "plantuml" },
+        ],
+      };
+
+      const deleted = deleteAsset(current, selected);
+
+      expect(deleted.files.map((file) => file.path)).toEqual(["diagrams/keep.svg"]);
+      expect(deleted.manifest.resources).toEqual([
+        { source: "other.puml", rendered: "diagrams/keep.svg", type: "plantuml" },
+      ]);
+    },
+  );
+
+  it("only enables deletion for image and drawing assets", () => {
+    const current = state(["README.md", "images/a.png", "diagrams/a.draw.json", "diagrams/a.svg"]);
+    current.manifest = {
+      resources: [{ source: "diagrams/a.draw.json", rendered: "diagrams/a.svg", type: "drawing" }],
+    };
+
+    expect(isDeletableAsset(current, "images/a.png")).toBe(true);
+    expect(isDeletableAsset(current, "diagrams/a.svg")).toBe(true);
+    expect(isDeletableAsset(current, "README.md")).toBe(false);
   });
 });

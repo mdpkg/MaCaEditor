@@ -11,6 +11,8 @@ interface Props {
   onAddImage: () => void;
   canRename: boolean;
   onRename: () => void;
+  canDelete: boolean;
+  onDelete: () => void;
 }
 
 export function Toolbar({
@@ -26,6 +28,8 @@ export function Toolbar({
   onAddImage,
   canRename,
   onRename,
+  canDelete,
+  onDelete,
 }: Props) {
   return (
     <div className="toolbar">
@@ -49,6 +53,9 @@ export function Toolbar({
       </button>
       <button onClick={onRename} disabled={!canRename}>
         Rename
+      </button>
+      <button onClick={onDelete} disabled={!canDelete}>
+        Delete
       </button>
       {dirty && <span className="dirty-indicator">●</span>}
     </div>
