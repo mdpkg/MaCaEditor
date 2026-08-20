@@ -181,6 +181,75 @@ describe("drawing document parsing", () => {
     expect(() => validateDrawingDocument(withImage)).toThrow("src");
   });
 
+  test("rejects image with whitespace-only src", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withImage = {
+      ...doc,
+      objects: [
+        ...doc.objects,
+        {
+          id: "img-1",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 80,
+          rotation: 0,
+          zIndex: 2,
+          src: "   ",
+          style: {},
+        },
+      ],
+    };
+    expect(() => validateDrawingDocument(withImage)).toThrow("src");
+  });
+
+  test("rejects image with empty data url", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withImage = {
+      ...doc,
+      objects: [
+        ...doc.objects,
+        {
+          id: "img-1",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 80,
+          rotation: 0,
+          zIndex: 2,
+          src: "data:image/png;base64,",
+          style: {},
+        },
+      ],
+    };
+    expect(() => validateDrawingDocument(withImage)).toThrow("src");
+  });
+
+  test("rejects image with bare data:image prefix", () => {
+    const doc = parseDrawingDocument(validJson);
+    const withImage = {
+      ...doc,
+      objects: [
+        ...doc.objects,
+        {
+          id: "img-1",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 80,
+          rotation: 0,
+          zIndex: 2,
+          src: "data:image/",
+          style: {},
+        },
+      ],
+    };
+    expect(() => validateDrawingDocument(withImage)).toThrow("src");
+  });
+
   test("rejects unknown object type", () => {
     const bad = validJson.replace('"type": "rectangle"', '"type": "bogus"');
     expect(() => validateDrawingDocument(parseDrawingDocument(bad))).toThrow(

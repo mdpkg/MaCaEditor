@@ -43,8 +43,16 @@ export function sanitizeImageSrc(src: string): string {
     if (/^https?:$/.test(url.protocol) && /^https?:\/\//i.test(trimmed)) {
       return trimmed;
     }
-    // data:image は URL パース可能な場合のみ許可
-    if (/^data:image\//i.test(trimmed)) return trimmed;
+    // data:image は URL パース可能かつ実データを持つ場合のみ許可
+    if (/^data:image\//i.test(trimmed)) {
+      // "data:image/..." の後ろに実データ（MIME 指定後のコンテンツ）が存在するか
+      const dataUrl = trimmed;
+      const commaIndex = dataUrl.indexOf(",");
+      const hasContent = commaIndex >= 0 && dataUrl.slice(commaIndex + 1).length > 0;
+      // プレフィックスのみ（data:image/）は拒否
+      const hasType = /^data:image\/[^/]+/i.test(dataUrl);
+      if (hasType && hasContent) return trimmed;
+    }
     return "";
   } catch {
     // 不正な URL（ホストなし・空白含む等）は拒否
