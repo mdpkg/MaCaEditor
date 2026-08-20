@@ -180,6 +180,29 @@ describe("deleteObjects", () => {
     expect(obj?.y).toBe(130);
   });
 
+  test("deletes curved connectors referencing deleted objects", () => {
+    const d = doc([
+      rect("r1", 0, 0),
+      rect("r2", 100, 100),
+      {
+        id: "c1",
+        type: "connector",
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        rotation: 0,
+        zIndex: 0,
+        curve: true,
+        from: { objectId: "r1" },
+        to: { objectId: "r2" },
+        style: {},
+      },
+    ]);
+    const deleted = deleteObjects(d, ["r1"]);
+    expect(deleted.objects.some((o) => o.id === "c1")).toBe(false);
+  });
+
   test("deletes connectors referencing deleted objects", () => {
     const d = doc([
       rect("r1", 0, 0),
