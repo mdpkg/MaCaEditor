@@ -217,6 +217,106 @@ describe("svg renderer", () => {
     expect(svg).toContain("<line");
   });
 
+  test("connector follows image positions and sizes", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "c1",
+          type: "connector",
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          zIndex: 1,
+          from: { objectId: "img1" },
+          to: { objectId: "img2" },
+          style: { stroke: "#000", strokeWidth: 1 },
+        },
+        {
+          id: "img1",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 0,
+          src: "data:image/png;base64,AAAA",
+          style: {},
+        },
+        {
+          id: "img2",
+          type: "image",
+          x: 300,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 0,
+          src: "data:image/png;base64,BBBB",
+          style: {},
+        },
+      ]),
+    );
+    // fromAnchor: img1 の右端中央 (100, 25)
+    expect(svg).toContain('x1="100"');
+    expect(svg).toContain('y1="25"');
+    // toAnchor: img2 の左端中央 (300, 25)
+    expect(svg).toContain('x2="300"');
+    expect(svg).toContain('y2="25"');
+  });
+
+  test("connector follows image move and resize", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "c1",
+          type: "connector",
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          zIndex: 1,
+          from: { objectId: "img1" },
+          to: { objectId: "img2" },
+          style: { stroke: "#000", strokeWidth: 1 },
+        },
+        {
+          id: "img1",
+          type: "image",
+          x: 50,
+          y: 40,
+          width: 200,
+          height: 100,
+          rotation: 0,
+          zIndex: 0,
+          src: "data:image/png;base64,AAAA",
+          style: {},
+        },
+        {
+          id: "img2",
+          type: "image",
+          x: 400,
+          y: 40,
+          width: 80,
+          height: 60,
+          rotation: 0,
+          zIndex: 0,
+          src: "data:image/png;base64,BBBB",
+          style: {},
+        },
+      ]),
+    );
+    // fromAnchor: img1 の右端中央 (250, 90)
+    expect(svg).toContain('x1="250"');
+    expect(svg).toContain('y1="90"');
+    // toAnchor: img2 の左端中央 (400, 70)
+    expect(svg).toContain('x2="400"');
+    expect(svg).toContain('y2="70"');
+  });
+
   test("output is deterministic", () => {
     const d = doc([
       {
