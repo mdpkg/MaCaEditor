@@ -31,6 +31,7 @@ import {
 } from "./lib/drawing/docIntegration";
 import type { FileInfo } from "./types";
 import { insertMarkdownImages } from "./lib/markdown";
+import { isSaveShortcut } from "./lib/shortcuts";
 
 type Mode = "preview" | "split" | "drawing";
 
@@ -311,6 +312,16 @@ export default function App() {
     }
     pendingRef.current = null;
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSaveShortcut(event)) return;
+      event.preventDefault();
+      void handleSave();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [doc]);
 
   const displayFile = selectedFile ?? entrypointFile;
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
