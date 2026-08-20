@@ -22,6 +22,52 @@ export type ToolKind =
   | "image"
   | "connector";
 
+/** 四角形オブジェクトを生成する。 */
+export function createRectangleObject(
+  doc: DrawingDocument,
+  x: number,
+  y: number,
+): DrawingObject {
+  const existing = new Set(doc.objects.map((o) => o.id));
+  const id = newId("rectangle", existing);
+  const zIndex = Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1;
+  return {
+    id,
+    type: "rectangle",
+    x,
+    y,
+    width: 120,
+    height: 60,
+    rotation: 0,
+    zIndex,
+    style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+    text: "",
+  };
+}
+
+/** 楕円オブジェクトを生成する。 */
+export function createEllipseObject(
+  doc: DrawingDocument,
+  x: number,
+  y: number,
+): DrawingObject {
+  const existing = new Set(doc.objects.map((o) => o.id));
+  const id = newId("ellipse", existing);
+  const zIndex = Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1;
+  return {
+    id,
+    type: "ellipse",
+    x,
+    y,
+    width: 120,
+    height: 60,
+    rotation: 0,
+    zIndex,
+    style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+    text: "",
+  };
+}
+
 /** 画像オブジェクトを生成し、src をサニタイズする。 */
 export function createImageObject(
   doc: DrawingDocument,

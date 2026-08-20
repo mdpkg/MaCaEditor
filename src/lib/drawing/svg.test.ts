@@ -42,6 +42,27 @@ describe("svg renderer", () => {
     expect(svg).toContain("API");
   });
 
+  test("renders rectangle with fill, stroke and stroke-width", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "r1",
+          type: "rectangle",
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 80,
+          rotation: 0,
+          zIndex: 1,
+          style: { fill: "#fff", stroke: "#000", strokeWidth: 1 },
+        },
+      ]),
+    );
+    expect(svg).toContain('fill="#fff"');
+    expect(svg).toContain('stroke="#000"');
+    expect(svg).toContain('stroke-width="1"');
+  });
+
   test("renders ellipse", () => {
     const svg = renderSvg(
       doc([
@@ -61,6 +82,29 @@ describe("svg renderer", () => {
     expect(svg).toContain("<ellipse");
     expect(svg).toContain('cx="200"');
     expect(svg).toContain('cy="140"');
+  });
+
+  test("renders ellipse with rx, ry and style", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "e1",
+          type: "ellipse",
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 80,
+          rotation: 0,
+          zIndex: 1,
+          style: { fill: "#fff", stroke: "#000", strokeWidth: 2 },
+        },
+      ]),
+    );
+    expect(svg).toContain('rx="100"');
+    expect(svg).toContain('ry="40"');
+    expect(svg).toContain('fill="#fff"');
+    expect(svg).toContain('stroke="#000"');
+    expect(svg).toContain('stroke-width="2"');
   });
 
   test("renders text", () => {

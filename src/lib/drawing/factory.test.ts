@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DrawingDocument } from "./model";
-import { createImageObject, createObject } from "./factory";
+import { createImageObject, createObject, createRectangleObject, createEllipseObject } from "./factory";
 
 function emptyDoc(): DrawingDocument {
   return {
@@ -19,9 +19,37 @@ describe("createObject", () => {
     expect(obj.y).toBe(100);
   });
 
+  test("createRectangleObject creates rectangle with default size and style", () => {
+    const obj = createRectangleObject(emptyDoc(), 100, 100);
+    expect(obj.type).toBe("rectangle");
+    expect(obj.x).toBe(100);
+    expect(obj.y).toBe(100);
+    expect(obj.width).toBe(120);
+    expect(obj.height).toBe(60);
+    expect(obj.rotation).toBe(0);
+    if (obj.type === "rectangle") {
+      expect(obj.style).toEqual({ fill: "#ffffff", stroke: "#000000", strokeWidth: 1 });
+      expect(obj.text).toBe("");
+    }
+  });
+
   test("creates ellipse", () => {
     const obj = createObject(emptyDoc(), "ellipse", 100, 100);
     expect(obj.type).toBe("ellipse");
+  });
+
+  test("createEllipseObject creates ellipse with default size and style", () => {
+    const obj = createEllipseObject(emptyDoc(), 100, 100);
+    expect(obj.type).toBe("ellipse");
+    expect(obj.x).toBe(100);
+    expect(obj.y).toBe(100);
+    expect(obj.width).toBe(120);
+    expect(obj.height).toBe(60);
+    expect(obj.rotation).toBe(0);
+    if (obj.type === "ellipse") {
+      expect(obj.style).toEqual({ fill: "#ffffff", stroke: "#000000", strokeWidth: 1 });
+      expect(obj.text).toBe("");
+    }
   });
 
   test("creates text", () => {
