@@ -20,7 +20,8 @@ export type ToolKind =
   | "line"
   | "arrow"
   | "image"
-  | "connector";
+  | "connector"
+  | "curveConnector";
 
 /** 四角形オブジェクトを生成する。 */
 export function createRectangleObject(
@@ -65,6 +66,31 @@ export function createEllipseObject(
     zIndex,
     style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
     text: "",
+  };
+}
+
+/** 曲線コネクタを生成する。 */
+export function createCurvedConnector(
+  doc: DrawingDocument,
+  fromId: string,
+  toId: string,
+): DrawingObject {
+  const existing = new Set(doc.objects.map((o) => o.id));
+  const id = newId("connector", existing);
+  const zIndex = Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1;
+  return {
+    id,
+    type: "connector",
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    rotation: 0,
+    zIndex,
+    from: { objectId: fromId },
+    to: { objectId: toId },
+    curve: true,
+    style: { stroke: "#000000", strokeWidth: 1 },
   };
 }
 
@@ -185,6 +211,7 @@ export function createObject(
         style: {},
       };
     case "connector":
+    case "curveConnector":
       return {
         id,
         type: "connector",
@@ -196,6 +223,7 @@ export function createObject(
         zIndex,
         from: { objectId: "" },
         to: { objectId: "" },
+        curve: tool === "curveConnector",
         style: { stroke: "#000000", strokeWidth: 1 },
       };
     case "select":

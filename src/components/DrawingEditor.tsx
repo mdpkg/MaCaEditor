@@ -31,6 +31,7 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "line", label: "Line" },
   { id: "arrow", label: "Arrow" },
   { id: "connector", label: "Connector" },
+  { id: "curveConnector", label: "Curve" },
 ];
 
 export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
@@ -134,7 +135,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
     const hit = hitTest(x, y);
 
-    if (tool === "connector") {
+    if (tool === "connector" || tool === "curveConnector") {
       if (connectorStart === null && hit && hit.type !== "connector") {
         setConnectorStart(hit.id);
         return;
@@ -156,6 +157,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
           zIndex: Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1,
           from: { objectId: connectorStart },
           to: { objectId: hit.id },
+          curve: tool === "curveConnector",
           style: { stroke: "#000000", strokeWidth: 1 },
         };
         commit({ ...doc, objects: [...doc.objects, conn] });

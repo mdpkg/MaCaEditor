@@ -74,6 +74,8 @@ export interface ConnectorObject extends BaseObject {
   type: "connector";
   from: { objectId: string };
   to: { objectId: string };
+  /** true の場合は曲線コネクタとして描画する。 */
+  curve?: boolean;
   style: ObjectStyle;
 }
 

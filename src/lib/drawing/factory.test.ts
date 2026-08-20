@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DrawingDocument } from "./model";
-import { createImageObject, createObject, createRectangleObject, createEllipseObject } from "./factory";
+import { createCurvedConnector, createImageObject, createObject, createRectangleObject, createEllipseObject } from "./factory";
 
 function emptyDoc(): DrawingDocument {
   return {
@@ -103,6 +103,16 @@ describe("createObject", () => {
   test("creates connector", () => {
     const obj = createObject(emptyDoc(), "connector", 100, 100);
     expect(obj.type).toBe("connector");
+  });
+
+  test("createCurvedConnector creates curved connector", () => {
+    const obj = createCurvedConnector(emptyDoc(), "r1", "r2");
+    expect(obj.type).toBe("connector");
+    if (obj.type === "connector") {
+      expect(obj.curve).toBe(true);
+      expect(obj.from.objectId).toBe("r1");
+      expect(obj.to.objectId).toBe("r2");
+    }
   });
 
   test("assigns unique ids", () => {

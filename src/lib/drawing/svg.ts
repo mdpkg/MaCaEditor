@@ -109,6 +109,11 @@ function renderConnector(
   const to = toAnchor(toObj);
   const stroke = obj.style.stroke ?? "#000000";
   const sw = obj.style.strokeWidth ?? 1;
+  if (obj.curve) {
+    const cx = (from.x + to.x) / 2;
+    const cy = (from.y + to.y) / 2;
+    return `<path d="M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
+  }
   return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${escapeXml(stroke)}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
 }
 

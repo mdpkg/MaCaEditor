@@ -261,6 +261,96 @@ describe("svg renderer", () => {
     expect(svg).toContain("<line");
   });
 
+  test("renders curved connector as quadratic bezier path", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "c1",
+          type: "connector",
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          zIndex: 1,
+          curve: true,
+          from: { objectId: "r1" },
+          to: { objectId: "r2" },
+          style: { stroke: "#000", strokeWidth: 1 },
+        },
+        {
+          id: "r1",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 0,
+          style: {},
+        },
+        {
+          id: "r2",
+          type: "rectangle",
+          x: 300,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 0,
+          style: {},
+        },
+      ]),
+    );
+    // fromAnchor: (100, 25), toAnchor: (300, 25), control: (200, 25)
+    expect(svg).toContain("<path");
+    expect(svg).toContain('d="M 100 25 Q 200 25 300 25"');
+  });
+
+  test("renders straight connector as line by default", () => {
+    const svg = renderSvg(
+      doc([
+        {
+          id: "c1",
+          type: "connector",
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          zIndex: 1,
+          from: { objectId: "r1" },
+          to: { objectId: "r2" },
+          style: { stroke: "#000", strokeWidth: 1 },
+        },
+        {
+          id: "r1",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 0,
+          style: {},
+        },
+        {
+          id: "r2",
+          type: "rectangle",
+          x: 300,
+          y: 0,
+          width: 100,
+          height: 50,
+          rotation: 0,
+          zIndex: 0,
+          style: {},
+        },
+      ]),
+    );
+    expect(svg).toContain("<line");
+    expect(svg).not.toContain("<path");
+  });
+
   test("connector follows image positions and sizes", () => {
     const svg = renderSvg(
       doc([
