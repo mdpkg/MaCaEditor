@@ -38,6 +38,16 @@ describe("integration", () => {
     expect(files.svgContent).toContain("<svg");
   });
 
+  test("generates a rendered SVG fitted to drawing content", () => {
+    const drawing = doc();
+    drawing.objects = [{
+      id: "r1", type: "rectangle", x: 100, y: 80, width: 200, height: 60,
+      rotation: 0, zIndex: 1, style: {},
+    }];
+    const files = generateDrawingFiles(drawing, "diagrams", "fitted");
+    expect(files.svgContent).toContain('viewBox="80 60 240 100"');
+  });
+
   test("next name avoids existing files", () => {
     const name = nextDrawingName("diagrams", [
       "diagrams/drawing-1.draw.json",

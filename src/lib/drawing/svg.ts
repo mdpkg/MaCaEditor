@@ -14,6 +14,40 @@ import type {
 import { svgLineStyle } from "./lineStyle";
 import { connectorGeometry } from "./connector";
 
+interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
+
+function objectBounds(object: DrawingObject): Bounds | null {
+  if (object.type === "connector") return null;
+  if (object.type === "line" || object.type === "arrow") {
+    return {
+      minX: Math.min(object.x, object.x2),
+      minY: Math.min(object.y, object.y2),
+      maxX: Math.max(object.x, object.x2),
+      maxY: Math.max(object.y, object.y2),
+    };
+  }
+  if (object.type === "group" && object.members.length > 0) {
+    return contentBounds(object.members);
+  }
+  return {
+    minX: Math.min(object.x, object.x + object.width),
+    minY: Math.min(object.y, object.y + object.height),
+    maxX: Math.max(object.x, object.x + object.width),
+    maxY: Math.max(object.y, object.y + object.height),
+  };
+}
+
+function contentBounds(objects: DrawingObject[]): Bounds | null {
+  const bounds = objects.map(objectBounds).filter((value): value is Bounds => value !== null);
+  if (bounds.length === 0) return null;
+  return {
+    minX: Math.min(...bounds.map((value) => value.minX)),
+    minY: Math.min(...bounds.map((value) => value.minY)),
+    maxX: Math.max(...bounds.map((value) => value.maxX)),
+    maxY: Math.max(...bounds.map((value) => value.maxY)),
+  };
+}
+
 /** テキストを SVG に埋め込む前にエスケープする。 */
 function escapeXml(text: string): string {
   return text
@@ -127,8 +161,24 @@ function renderGroup(obj: GroupObject): string {
 }
 
 /** Drawing Document から静的 SVG を生成する。 */
-export function renderSvg(doc: DrawingDocument): string {
-  const { width, height } = doc.canvas;
+export function renderSvg(
+  doc: DrawingDocument,
+  options: { fitToContent?: boolean; margin?: number } = {},
+): string {
+  let width = doc.canvas.width;
+  let height = doc.canvas.height;
+  let viewX = 0;
+  let viewY = 0;
+  if (options.fitToContent) {
+    const bounds = contentBounds(doc.objects);
+    if (bounds) {
+      const margin = Math.max(0, options.margin ?? 20);
+      viewX = bounds.minX - margin;
+      viewY = bounds.minY - margin;
+      width = bounds.maxX - bounds.minX + margin * 2;
+      height = bounds.maxY - bounds.minY + margin * 2;
+    }
+  }
   const sorted = [...doc.objects].sort((a, b) => a.zIndex - b.zIndex);
 
   const body = sorted
@@ -158,7 +208,7 @@ export function renderSvg(doc: DrawingDocument): string {
     })
     .join("\n");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewX} ${viewY} ${width} ${height}">
 <defs>
 <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
 <polygon points="0 0, 10 3, 0 6" fill="#000000" />

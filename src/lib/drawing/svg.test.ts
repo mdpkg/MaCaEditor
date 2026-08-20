@@ -19,6 +19,31 @@ describe("svg renderer", () => {
     expect(svg).toContain('height="800"');
   });
 
+  test("fits the exported SVG to object bounds with a margin", () => {
+    const svg = renderSvg(doc([{
+      id: "r1", type: "rectangle", x: 100, y: 80, width: 200, height: 60,
+      rotation: 0, zIndex: 1, style: {},
+    }]), { fitToContent: true, margin: 20 });
+    expect(svg).toContain('width="240"');
+    expect(svg).toContain('height="100"');
+    expect(svg).toContain('viewBox="80 60 240 100"');
+  });
+
+  test("includes all objects in fitted SVG bounds", () => {
+    const svg = renderSvg(doc([
+      { id: "a", type: "rectangle", x: -20, y: 40, width: 50, height: 60, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "ellipse", x: 200, y: 150, width: 100, height: 80, rotation: 0, zIndex: 2, style: {} },
+    ]), { fitToContent: true, margin: 10 });
+    expect(svg).toContain('width="340"');
+    expect(svg).toContain('height="210"');
+    expect(svg).toContain('viewBox="-30 30 340 210"');
+  });
+
+  test("keeps the canvas size when fitting an empty drawing", () => {
+    const svg = renderSvg(doc([]), { fitToContent: true, margin: 20 });
+    expect(svg).toContain('viewBox="0 0 1200 800"');
+  });
+
   test("renders rectangle", () => {
     const svg = renderSvg(
       doc([
