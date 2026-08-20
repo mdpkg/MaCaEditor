@@ -18,6 +18,7 @@ import {
   sendToBack,
   ungroupObjects,
   undo,
+  updateShapeText,
   type History,
 } from "./edit";
 
@@ -112,6 +113,30 @@ describe("resizeObject", () => {
     if (obj?.type === "image") {
       expect(obj.src).toBe("https://example.com/a.png");
     }
+  });
+});
+
+describe("updateShapeText", () => {
+  test.each(["rectangle", "roundedRectangle", "ellipse"] as const)(
+    "writes text into a %s shape",
+    (type) => {
+      const shape = {
+        ...rect("shape", 100, 100),
+        type,
+        ...(type === "roundedRectangle" ? { cornerRadius: 12 } : {}),
+        text: "",
+      } as DrawingObject;
+      const updated = updateShapeText(doc([shape]), "shape", "日本語テキスト");
+      expect(updated.objects[0]).toMatchObject({ text: "日本語テキスト" });
+    },
+  );
+
+  test("does not add text to a line", () => {
+    const line: DrawingObject = {
+      id: "line", type: "line", x: 0, y: 0, x2: 100, y2: 100,
+      width: 0, height: 0, rotation: 0, zIndex: 1, style: {},
+    };
+    expect(updateShapeText(doc([line]), "line", "ignored").objects[0]).not.toHaveProperty("text");
   });
 });
 

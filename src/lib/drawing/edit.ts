@@ -94,6 +94,21 @@ export function resizeObject(
   };
 }
 
+export function updateShapeText(
+  doc: DrawingDocument,
+  id: string,
+  text: string,
+): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((object) =>
+      object.id === id && ["rectangle", "roundedRectangle", "ellipse"].includes(object.type)
+        ? { ...object, text }
+        : object,
+    ),
+  };
+}
+
 /** オブジェクトを削除する。削除対象を参照する Connector も削除する。 */
 export function deleteObjects(
   doc: DrawingDocument,

@@ -14,6 +14,7 @@ import {
   sendToBack,
   type AlignKind,
   type History,
+  updateShapeText,
 } from "../lib/drawing/edit";
 import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
@@ -319,13 +320,22 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     }
   };
 
+  const handleDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const hit = hitTest(x, y);
+    if (!hit || !["rectangle", "roundedRectangle", "ellipse"].includes(hit.type)) return;
+    const currentText = "text" in hit && typeof hit.text === "string" ? hit.text : "";
+    const text = window.prompt("Shape text", currentText);
+    if (text === null || text === currentText) return;
+    commit(updateShapeText(doc, hit.id, text));
+    setSelectedIds([hit.id]);
+  };
+
   const updateText = (text: string) => {
-    const next = {
-      ...doc,
-      objects: doc.objects.map((o) =>
-        selectedIds.includes(o.id) ? { ...o, text } : o,
-      ),
-    };
+    const next = selectedIds.reduce(
+      (current, id) => updateShapeText(current, id, text),
+      doc,
+    );
     commit(next);
   };
 
@@ -479,6 +489,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onDoubleClick={handleDoubleClick}
           onWheel={handleWheel}
         >
           <rect
