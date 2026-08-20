@@ -1,0 +1,69 @@
+{
+  "format": "maca-drawing",
+  "version": "1.0",
+  "canvas": { "width": 1200, "height": 800, "gridSize": 10 },
+  "objects": [
+    {
+      "id": "rect-1",
+      "type": "rectangle",
+      "x": 100,
+      "y": 100,
+      "width": 160,
+      "height": 60,
+      "rotation": 0,
+      "zIndex": 1,
+      "style": { "fill": "#ffffff", "stroke": "#000000", "strokeWidth": 1 },
+      "text": "Web Client"
+    },
+    {
+      "id": "rect-2",
+      "type": "rectangle",
+      "x": 100,
+      "y": 300,
+      "width": 160,
+      "height": 60,
+      "rotation": 0,
+      "zIndex": 1,
+      "style": { "fill": "#ffffff", "stroke": "#000000", "strokeWidth": 1 },
+      "text": "API Server"
+    },
+    {
+      "id": "rect-3",
+      "type": "rectangle",
+      "x": 100,
+      "y": 500,
+      "width": 160,
+      "height": 60,
+      "rotation": 0,
+      "zIndex": 1,
+      "style": { "fill": "#ffffff", "stroke": "#000000", "strokeWidth": 1 },
+      "text": "Database"
+    },
+    {
+      "id": "connector-1",
+      "type": "connector",
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "rotation": 0,
+      "zIndex": 0,
+      "from": { "objectId": "rect-1" },
+      "to": { "objectId": "rect-2" },
+      "style": { "stroke": "#000000", "strokeWidth": 1 }
+    },
+    {
+      "id": "connector-2",
+      "type": "connector",
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "rotation": 0,
+      "zIndex": 0,
+      "from": { "objectId": "rect-2" },
+      "to": { "objectId": "rect-3" },
+      "style": { "stroke": "#000000", "strokeWidth": 1 }
+    }
+  ]
+}
