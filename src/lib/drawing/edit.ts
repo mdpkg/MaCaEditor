@@ -51,6 +51,15 @@ export function moveObject(
   };
 }
 
+export function moveObjectFromDragStart(
+  original: DrawingDocument,
+  id: string,
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+): DrawingDocument {
+  return moveObject(original, id, current.x - start.x, current.y - start.y);
+}
+
 /** オブジェクトをリサイズする。 */
 export function resizeObject(
   doc: DrawingDocument,

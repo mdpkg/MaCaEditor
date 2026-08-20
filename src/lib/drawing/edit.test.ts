@@ -8,6 +8,7 @@ import {
   groupObjects,
   insertImageObject,
   moveObject,
+  moveObjectFromDragStart,
   resizeObject,
   redo,
   selectGroup,
@@ -56,6 +57,14 @@ describe("moveObject", () => {
     const moved = moveObject(d, "r1", 20, 30);
     const r2 = moved.objects.find((o) => o.id === "r2");
     expect(r2?.x).toBe(300);
+  });
+
+  test("calculates every drag frame from the original position", () => {
+    const original = doc([rect("r1", 100, 100)]);
+    const firstFrame = moveObjectFromDragStart(original, "r1", { x: 10, y: 10 }, { x: 20, y: 15 });
+    const secondFrame = moveObjectFromDragStart(original, "r1", { x: 10, y: 10 }, { x: 30, y: 20 });
+    expect(firstFrame.objects[0]).toMatchObject({ x: 110, y: 105 });
+    expect(secondFrame.objects[0]).toMatchObject({ x: 120, y: 110 });
   });
 });
 

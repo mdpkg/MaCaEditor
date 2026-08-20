@@ -8,12 +8,14 @@ import {
   bringToFront,
   deleteObjects,
   moveObject,
+  moveObjectFromDragStart,
   sendBackward,
   sendToBack,
   type AlignKind,
   type History,
 } from "../lib/drawing/edit";
 import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
+import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
 
 export interface DrawingEditorProps {
   doc: DrawingDocument;
@@ -38,7 +40,6 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [gridVisible, setGridVisible] = useState(true);
   const [snap, setSnap] = useState(true);
   const [undoStack, setUndoStack] = useState<History>([]);
@@ -55,8 +56,10 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     origW?: number;
     origH?: number;
     handle?: string;
+    before?: DrawingDocument;
   } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const dragPreviewRef = useRef<DrawingDocument | null>(null);
 
   const selectedObjects = useMemo(
     () => doc.objects.filter((o) => selectedIds.includes(o.id)),
@@ -97,12 +100,13 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   const toCanvasPoint = useCallback(
     (clientX: number, clientY: number) => {
       const rect = svgRef.current!.getBoundingClientRect();
-      return {
-        x: (clientX - rect.left - pan.x) / zoom,
-        y: (clientY - rect.top - pan.y) / zoom,
-      };
+      return clientToCanvasPoint(
+        { x: clientX, y: clientY },
+        rect,
+        doc.canvas,
+      );
     },
-    [pan, zoom],
+    [doc.canvas],
   );
 
   const hitTest = useCallback(
@@ -132,6 +136,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   );
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
     const hit = hitTest(x, y);
 
@@ -185,7 +190,9 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
           startY: y,
           origX: hit.x,
           origY: hit.y,
+          before: doc,
         });
+        dragPreviewRef.current = doc;
         return;
       }
       setSelectedIds([]);
@@ -215,7 +222,13 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     const dy = y - dragging.startY;
 
     if (dragging.type === "move" && dragging.id) {
-      const next = moveObject(doc, dragging.id, dx, dy);
+      const next = moveObjectFromDragStart(
+        dragging.before ?? doc,
+        dragging.id,
+        { x: dragging.startX, y: dragging.startY },
+        { x, y },
+      );
+      dragPreviewRef.current = next;
       onChange(next);
       return;
     }
@@ -236,11 +249,18 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
     }
   };
 
-  const handlePointerUp = () => {
-    if (dragging?.type === "move" && dragging.id) {
-      const moved = moveObject(doc, dragging.id, 0, 0);
-      commit(moved);
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    if (dragging?.type === "move" && dragging.id && dragging.before) {
+      const after = dragPreviewRef.current ?? doc;
+      setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
+      setRedoStack([]);
+      onChange(after);
+      onDirty();
+    }
+    dragPreviewRef.current = null;
     setDragging(null);
   };
 
@@ -303,8 +323,6 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       setZoom((z) => Math.min(3, Math.max(0.2, z * factor)));
-    } else {
-      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
     }
   };
 
@@ -418,6 +436,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
   }, [gridVisible, doc.canvas]);
 
   const svg = useMemo(() => renderSvg(doc), [doc]);
+  const viewport = drawingViewport(doc.canvas, zoom);
 
   return (
     <div className="drawing-editor" onKeyDown={handleKeyDown} tabIndex={0}>
@@ -446,19 +465,19 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
         <svg
           ref={svgRef}
           className="drawing-canvas"
-          width={doc.canvas.width * zoom}
-          height={doc.canvas.height * zoom}
-          viewBox={`${pan.x} ${pan.y} ${doc.canvas.width * zoom} ${doc.canvas.height * zoom}`}
+          width={viewport.width}
+          height={viewport.height}
+          viewBox={viewport.viewBox}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onWheel={handleWheel}
         >
           <rect
-            x={pan.x}
-            y={pan.y}
-            width={doc.canvas.width * zoom}
-            height={doc.canvas.height * zoom}
+            x={0}
+            y={0}
+            width={doc.canvas.width}
+            height={doc.canvas.height}
             fill="#ffffff"
           />
           {gridLines &&
@@ -473,7 +492,7 @@ export function DrawingEditor({ doc, onChange, onDirty }: DrawingEditorProps) {
                 strokeWidth={1}
               />
             ))}
-          <g transform={`scale(${zoom})`}>
+          <g>
             <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
             {selectedIds.map((id) => {
               const obj = doc.objects.find((o) => o.id === id);
