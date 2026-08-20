@@ -36,13 +36,15 @@ export interface DrawingEditorProps {
 
 type Tool = ToolKind;
 
-const TOOLS: { id: Tool; label: string }[] = [
-  { id: "select", label: "Select" },
+const SHAPE_TOOLS: { id: Tool; label: string }[] = [
   { id: "rectangle", label: "Rect" },
   { id: "roundedRectangle", label: "Round Rect" },
   { id: "ellipse", label: "Ellipse" },
   { id: "file", label: "File" },
   { id: "user", label: "User" },
+];
+
+const DIRECT_TOOLS: { id: Tool; label: string }[] = [
   { id: "text", label: "Text" },
   { id: "line", label: "Line" },
   { id: "arrow", label: "Arrow" },
@@ -606,7 +608,33 @@ export function DrawingEditor({
   return (
     <div className="drawing-editor" onKeyDown={handleKeyDown} tabIndex={0}>
       <div className="drawing-toolbar">
-        {TOOLS.map((t) => (
+        <button
+          className={tool === "select" ? "active" : ""}
+          onClick={() => {
+            setTool("select");
+            setConnectorStart(null);
+          }}
+          title="Select"
+        >
+          Select
+        </button>
+        <select
+          aria-label="Shape"
+          title="Shape"
+          className={SHAPE_TOOLS.some((shape) => shape.id === tool) ? "active" : ""}
+          value={SHAPE_TOOLS.some((shape) => shape.id === tool) ? tool : ""}
+          onChange={(event) => {
+            if (!event.target.value) return;
+            setTool(event.target.value as Tool);
+            setConnectorStart(null);
+          }}
+        >
+          <option value="">Shape</option>
+          {SHAPE_TOOLS.map((shape) => (
+            <option key={shape.id} value={shape.id}>{shape.label}</option>
+          ))}
+        </select>
+        {DIRECT_TOOLS.map((t) => (
           <button
             key={t.id}
             className={tool === t.id ? "active" : ""}

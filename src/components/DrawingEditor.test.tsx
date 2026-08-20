@@ -89,9 +89,11 @@ describe("DrawingEditor", () => {
     }
 
     act(() => root.render(<Harness />));
-    const buttons = Array.from(container.querySelectorAll(".drawing-toolbar button"));
-    const rectangle = buttons.find((button) => button.textContent === "Rect") as HTMLButtonElement;
-    act(() => rectangle.click());
+    const shapeMenu = container.querySelector('select[aria-label="Shape"]') as HTMLSelectElement;
+    act(() => {
+      shapeMenu.value = "rectangle";
+      shapeMenu.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
@@ -111,7 +113,7 @@ describe("DrawingEditor", () => {
     act(() => root.unmount());
   });
 
-  test("offers File and User shape tools", () => {
+  test("groups shape tools in a select menu", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -119,10 +121,13 @@ describe("DrawingEditor", () => {
       <DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />,
     ));
 
-    const labels = Array.from(container.querySelectorAll(".drawing-toolbar button"))
+    const menu = container.querySelector('select[aria-label="Shape"]') as HTMLSelectElement;
+    const options = Array.from(menu.options).map((option) => option.textContent);
+    expect(options).toEqual(["Shape", "Rect", "Round Rect", "Ellipse", "File", "User"]);
+    const buttons = Array.from(container.querySelectorAll(".drawing-toolbar button"))
       .map((button) => button.textContent);
-    expect(labels).toContain("File");
-    expect(labels).toContain("User");
+    expect(buttons).not.toContain("File");
+    expect(buttons).not.toContain("User");
 
     act(() => root.unmount());
   });

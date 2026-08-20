@@ -288,7 +288,8 @@ body {
   background: var(--panel);
 }
 
-.drawing-toolbar button {
+.drawing-toolbar button,
+.drawing-toolbar select {
   padding: 3px 10px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -297,7 +298,8 @@ body {
   cursor: pointer;
 }
 
-.drawing-toolbar button.active {
+.drawing-toolbar button.active,
+.drawing-toolbar select.active {
   background: var(--accent);
   color: #fff;
 }
