@@ -28,7 +28,12 @@ pub fn write_package(manifest: &Manifest, files: &[PackageFile]) -> Result<Vec<u
     writer.write_all(manifest_json.as_bytes()).map_err(WriteError::Io)?;
 
     // 各ファイルを書き込む
+    // manifest.json は上で常に書き込むため、files に含まれている場合はスキップする
+    // （load_package は manifest.json を files に含めるため、そのまま保存すると重複する）
     for file in files {
+        if file.path.replace('\\', "/") == "manifest.json" {
+            continue;
+        }
         validate_package_path(&file.path).map_err(|_| WriteError::UnsafePath(file.path.clone()))?;
         writer
             .start_file(&file.path, zip::write::FullFileOptions::default())
@@ -80,6 +85,20 @@ mod tests {
         let files = vec![PackageFile::new_text("../evil.md".to_string(), "evil".to_string())];
         let result = write_package(&manifest, &files);
         assert!(matches!(result, Err(WriteError::UnsafePath(_))));
+    }
+
+    #[test]
+    fn save_after_load_does_not_duplicate_manifest() {
+        // load_package は manifest.json を files に含めてしまうため、
+        // そのまま write_package すると manifest.json が2回書き込まれる。
+        let manifest = manifest();
+        let files = vec![PackageFile::new_text("README.md".to_string(), "# Hello".to_string())];
+        let zip = write_package(&manifest, &files).unwrap();
+        let loaded = load_package(&zip).unwrap();
+
+        // 開いた直後に保存しても Duplicate filename エラーにならないこと
+        let result = write_package(&loaded.manifest, &loaded.files);
+        assert!(result.is_ok(), "save after load should not fail: {:?}", result.err());
     }
 
     #[test]
