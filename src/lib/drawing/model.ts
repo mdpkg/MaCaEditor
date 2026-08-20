@@ -112,6 +112,8 @@ export interface ConnectorObject extends BaseObject {
   to: { objectId: string };
   /** true の場合は曲線コネクタとして描画する。 */
   curve?: boolean;
+  /** true の場合は水平・垂直のカギ線コネクタとして描画する。 */
+  elbow?: boolean;
   style: ObjectStyle;
 }
 

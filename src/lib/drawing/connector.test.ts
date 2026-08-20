@@ -7,11 +7,11 @@ const shapes: DrawingObject[] = [
   { id: "b", type: "rectangle", x: 300, y: 200, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
 ];
 
-function connector(curve: boolean): ConnectorObject {
+function connector(curve: boolean, elbow = false): ConnectorObject {
   return {
     id: "c", type: "connector", x: 0, y: 0, width: 0, height: 0,
     rotation: 0, zIndex: 2, from: { objectId: "a" }, to: { objectId: "b" },
-    curve, style: {},
+    curve, elbow, style: {},
   };
 }
 
@@ -26,6 +26,19 @@ describe("connector hit testing", () => {
     const geometry = connectorGeometry(connector(true), shapes)!;
     expect(isPointOnConnector(geometry, 200, 125, 8)).toBe(true);
     expect(isPointOnConnector(geometry, 200, 175, 8)).toBe(false);
+  });
+
+  it("creates an orthogonal route and hit-tests every elbow segment", () => {
+    const geometry = connectorGeometry(connector(false, true), shapes)!;
+
+    expect(geometry.points).toEqual([
+      { x: 100, y: 25 },
+      { x: 200, y: 25 },
+      { x: 200, y: 225 },
+      { x: 300, y: 225 },
+    ]);
+    expect(isPointOnConnector(geometry, 200, 160, 6)).toBe(true);
+    expect(isPointOnConnector(geometry, 230, 160, 6)).toBe(false);
   });
 
   it("returns no geometry when an endpoint is missing", () => {

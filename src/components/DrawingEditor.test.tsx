@@ -47,6 +47,42 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("inserts an elbow connector between two shapes", () => {
+    const onDirty = vi.fn();
+    const second = { ...initial.objects[0], id: "rect-2", x: 300, y: 200, zIndex: 2 };
+    const starting = { ...initial, objects: [...initial.objects, second] };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(starting);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    const elbow = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Elbow") as HTMLButtonElement;
+    act(() => elbow.click());
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 310, 210)));
+
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects[2]).toMatchObject({
+      type: "connector",
+      from: { objectId: "rect-1" },
+      to: { objectId: "rect-2" },
+      elbow: true,
+    });
+    act(() => root.unmount());
+  });
+
   test("groups selected shapes and ungroups the selected group", () => {
     const onDirty = vi.fn();
     const second = {

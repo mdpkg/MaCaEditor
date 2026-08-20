@@ -156,6 +156,21 @@ describe("createObject", () => {
     });
   });
 
+  test("creates an elbow connector between two shapes", () => {
+    const base = emptyDoc();
+    base.objects = [
+      { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "rectangle", x: 200, y: 0, width: 100, height: 50, rotation: 0, zIndex: 2, style: {} },
+    ];
+    expect(createConnector(base, "a", "b", false, true)).toMatchObject({
+      type: "connector",
+      from: { objectId: "a" },
+      to: { objectId: "b" },
+      curve: false,
+      elbow: true,
+    });
+  });
+
   test("rejects connecting a shape to itself", () => {
     const base = emptyDoc();
     base.objects = [{ id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} }];

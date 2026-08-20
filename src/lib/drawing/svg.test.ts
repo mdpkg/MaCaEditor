@@ -633,6 +633,20 @@ describe("svg renderer", () => {
     expect(svg).toContain("<rect");
   });
 
+  test("renders an elbow connector as an orthogonal polyline", () => {
+    const svg = renderSvg(doc([
+      { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "rectangle", x: 300, y: 200, width: 100, height: 50, rotation: 0, zIndex: 2, style: {} },
+      {
+        id: "c", type: "connector", x: 0, y: 0, width: 0, height: 0,
+        rotation: 0, zIndex: 3, from: { objectId: "a" }, to: { objectId: "b" },
+        elbow: true, style: {},
+      },
+    ]));
+
+    expect(svg).toContain('<polyline points="100,25 200,25 200,225 300,225"');
+  });
+
   test("output is deterministic", () => {
     const d = doc([
       {

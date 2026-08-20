@@ -2,7 +2,7 @@ import type { ConnectorObject, DrawingObject } from "./model";
 
 export interface Point { x: number; y: number }
 interface ConnectionSite { point: Point; outward: Point }
-export interface ConnectorGeometry { from: Point; to: Point; c1?: Point; c2?: Point }
+export interface ConnectorGeometry { from: Point; to: Point; c1?: Point; c2?: Point; points?: Point[] }
 
 function center(object: DrawingObject): Point {
   return { x: object.x + object.width / 2, y: object.y + object.height / 2 };
@@ -38,6 +38,28 @@ export function connectorGeometry(connector: ConnectorObject, objects: DrawingOb
   const fromSite = connectionSite(fromObject, center(toObject));
   const toSite = connectionSite(toObject, center(fromObject));
   const geometry: ConnectorGeometry = { from: fromSite.point, to: toSite.point };
+  if (connector.elbow) {
+    const fromHorizontal = fromSite.outward.x !== 0;
+    const toHorizontal = toSite.outward.x !== 0;
+    if (fromHorizontal && toHorizontal) {
+      const middleX = (geometry.from.x + geometry.to.x) / 2;
+      return {
+        ...geometry,
+        points: [geometry.from, { x: middleX, y: geometry.from.y }, { x: middleX, y: geometry.to.y }, geometry.to],
+      };
+    }
+    if (!fromHorizontal && !toHorizontal) {
+      const middleY = (geometry.from.y + geometry.to.y) / 2;
+      return {
+        ...geometry,
+        points: [geometry.from, { x: geometry.from.x, y: middleY }, { x: geometry.to.x, y: middleY }, geometry.to],
+      };
+    }
+    const corner = fromHorizontal
+      ? { x: geometry.to.x, y: geometry.from.y }
+      : { x: geometry.from.x, y: geometry.to.y };
+    return { ...geometry, points: [geometry.from, corner, geometry.to] };
+  }
   if (!connector.curve) return geometry;
   const dx = geometry.to.x - geometry.from.x;
   const dy = geometry.to.y - geometry.from.y;
@@ -70,6 +92,11 @@ function cubicPoint(geometry: ConnectorGeometry, t: number): Point {
 
 export function isPointOnConnector(geometry: ConnectorGeometry, x: number, y: number, tolerance: number): boolean {
   const point = { x, y };
+  if (geometry.points) {
+    return geometry.points.slice(1).some((end, index) =>
+      distanceToSegment(point, geometry.points![index], end) <= tolerance,
+    );
+  }
   if (!geometry.c1 || !geometry.c2) return distanceToSegment(point, geometry.from, geometry.to) <= tolerance;
   let previous = geometry.from;
   for (let step = 1; step <= 32; step += 1) {

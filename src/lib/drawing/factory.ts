@@ -24,7 +24,8 @@ export type ToolKind =
   | "arrow"
   | "image"
   | "connector"
-  | "curveConnector";
+  | "curveConnector"
+  | "elbowConnector";
 
 /** 四角形オブジェクトを生成する。 */
 export function createRectangleObject(
@@ -103,6 +104,7 @@ export function createConnector(
   fromId: string,
   toId: string,
   curve: boolean,
+  elbow = false,
 ): DrawingObject {
   if (fromId === toId) throw new Error("Connector endpoints must be different shapes");
   const from = doc.objects.find((object) => object.id === fromId && object.type !== "connector");
@@ -121,6 +123,7 @@ export function createConnector(
     from: { objectId: fromId },
     to: { objectId: toId },
     curve,
+    elbow,
     style: { stroke: "#000000", strokeWidth: 1 },
   };
 }
@@ -271,6 +274,7 @@ export function createObject(
       };
     case "connector":
     case "curveConnector":
+    case "elbowConnector":
       return {
         id,
         type: "connector",
@@ -283,6 +287,7 @@ export function createObject(
         from: { objectId: "" },
         to: { objectId: "" },
         curve: tool === "curveConnector",
+        elbow: tool === "elbowConnector",
         style: { stroke: "#000000", strokeWidth: 1 },
       };
     case "select":

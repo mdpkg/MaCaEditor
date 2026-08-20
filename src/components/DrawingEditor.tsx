@@ -52,6 +52,7 @@ const DIRECT_TOOLS: { id: Tool; label: string }[] = [
   { id: "line", label: "Line" },
   { id: "arrow", label: "Arrow" },
   { id: "connector", label: "Connector" },
+  { id: "elbowConnector", label: "Elbow" },
   { id: "curveConnector", label: "Curve" },
 ];
 
@@ -250,14 +251,20 @@ export function DrawingEditor({
     }
     const hit = hitTest(x, y);
 
-    if (tool === "connector" || tool === "curveConnector") {
+    if (tool === "connector" || tool === "curveConnector" || tool === "elbowConnector") {
       if (connectorStart === null && hit && hit.type !== "connector") {
         setConnectorStart(hit.id);
         setSelectedIds([hit.id]);
         return;
       }
       if (connectorStart !== null && hit && hit.type !== "connector" && hit.id !== connectorStart) {
-        const conn = createConnector(doc, connectorStart, hit.id, tool === "curveConnector");
+        const conn = createConnector(
+          doc,
+          connectorStart,
+          hit.id,
+          tool === "curveConnector",
+          tool === "elbowConnector",
+        );
         commit({ ...doc, objects: [...doc.objects, conn] });
         setConnectorStart(null);
         setSelectedIds([conn.id]);

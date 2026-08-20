@@ -185,6 +185,10 @@ function renderConnector(
   const geometry = connectorGeometry(obj, objects);
   if (!geometry) return "";
   const { from, to, c1, c2 } = geometry;
+  if (geometry.points) {
+    const points = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
+    return `<polyline points="${points}" fill="none" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
+  }
   if (c1 && c2) {
     return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
   }
