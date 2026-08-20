@@ -36,6 +36,33 @@ export function selectObject(
   return hit[hit.length - 1];
 }
 
+export function selectObjectsInRect(
+  doc: DrawingDocument,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): string[] {
+  const left = Math.min(start.x, end.x);
+  const right = Math.max(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const bottom = Math.max(start.y, end.y);
+  return doc.objects.filter((object) => {
+    if (object.type === "connector") return false;
+    const objectLeft = object.type === "line" || object.type === "arrow"
+      ? Math.min(object.x, object.x2)
+      : Math.min(object.x, object.x + object.width);
+    const objectRight = object.type === "line" || object.type === "arrow"
+      ? Math.max(object.x, object.x2)
+      : Math.max(object.x, object.x + object.width);
+    const objectTop = object.type === "line" || object.type === "arrow"
+      ? Math.min(object.y, object.y2)
+      : Math.min(object.y, object.y + object.height);
+    const objectBottom = object.type === "line" || object.type === "arrow"
+      ? Math.max(object.y, object.y2)
+      : Math.max(object.y, object.y + object.height);
+    return objectRight >= left && objectLeft <= right && objectBottom >= top && objectTop <= bottom;
+  }).map((object) => object.id);
+}
+
 /** オブジェクトを移動する。 */
 export function moveObject(
   doc: DrawingDocument,
@@ -46,9 +73,61 @@ export function moveObject(
   return {
     ...doc,
     objects: doc.objects.map((o) =>
-      o.id === id ? { ...o, x: o.x + dx, y: o.y + dy } : o,
+      o.id === id ? translateObject(o, dx, dy) : o,
     ),
   };
+}
+
+function translateObject(object: DrawingObject, dx: number, dy: number): DrawingObject {
+  if (object.type === "line" || object.type === "arrow") {
+    return {
+      ...object,
+      x: object.x + dx,
+      y: object.y + dy,
+      x2: object.x2 + dx,
+      y2: object.y2 + dy,
+    };
+  }
+  return { ...object, x: object.x + dx, y: object.y + dy };
+}
+
+export function moveObjectsFromDragStart(
+  original: DrawingDocument,
+  ids: string[],
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+): DrawingDocument {
+  const selected = new Set(ids);
+  const dx = current.x - start.x;
+  const dy = current.y - start.y;
+  return {
+    ...original,
+    objects: original.objects.map((object) =>
+      selected.has(object.id) ? translateObject(object, dx, dy) : object,
+    ),
+  };
+}
+
+export function moveObjectsFromDragStartSnapped(
+  original: DrawingDocument,
+  ids: string[],
+  anchorId: string,
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  gridSize: number,
+): DrawingDocument {
+  const anchor = original.objects.find((object) => object.id === anchorId);
+  if (!anchor || gridSize <= 0) return moveObjectsFromDragStart(original, ids, start, current);
+  const rawDx = current.x - start.x;
+  const rawDy = current.y - start.y;
+  const snappedX = Math.round((anchor.x + rawDx) / gridSize) * gridSize;
+  const snappedY = Math.round((anchor.y + rawDy) / gridSize) * gridSize;
+  return moveObjectsFromDragStart(
+    original,
+    ids,
+    start,
+    { x: start.x + snappedX - anchor.x, y: start.y + snappedY - anchor.y },
+  );
 }
 
 export function moveObjectFromDragStart(

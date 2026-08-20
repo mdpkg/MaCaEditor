@@ -10,12 +10,15 @@ import {
   moveObject,
   moveObjectFromDragStart,
   moveObjectFromDragStartSnapped,
+  moveObjectsFromDragStart,
+  moveObjectsFromDragStartSnapped,
   resizeCanvasFromDrag,
   resizeObject,
   resizeObjectFromDragStart,
   redo,
   selectGroup,
   selectObject,
+  selectObjectsInRect,
   sendBackward,
   sendToBack,
   ungroupObjects,
@@ -82,6 +85,73 @@ describe("moveObject", () => {
       10,
     );
     expect(moved.objects[0]).toMatchObject({ x: 130, y: 120 });
+  });
+
+  test("moves every selected object by the same drag delta", () => {
+    const original = doc([rect("r1", 100, 100), rect("r2", 260, 180)]);
+    const moved = moveObjectsFromDragStart(
+      original,
+      ["r1", "r2"],
+      { x: 110, y: 110 },
+      { x: 145, y: 130 },
+    );
+
+    expect(moved.objects[0]).toMatchObject({ x: 135, y: 120 });
+    expect(moved.objects[1]).toMatchObject({ x: 295, y: 200 });
+  });
+
+  test("snaps a group using the dragged object as its anchor", () => {
+    const original = doc([rect("r1", 103, 107), rect("r2", 263, 187)]);
+    const moved = moveObjectsFromDragStartSnapped(
+      original,
+      ["r1", "r2"],
+      "r1",
+      { x: 110, y: 110 },
+      { x: 135, y: 128 },
+      10,
+    );
+
+    expect(moved.objects[0]).toMatchObject({ x: 130, y: 130 });
+    expect(moved.objects[1]).toMatchObject({ x: 290, y: 210 });
+  });
+
+  test("moves both endpoints of a selected line", () => {
+    const line: DrawingObject = {
+      id: "line-1", type: "line", x: 10, y: 20, x2: 80, y2: 90,
+      width: 0, height: 0, rotation: 0, zIndex: 1, style: {},
+    };
+    const moved = moveObjectsFromDragStart(
+      doc([line]),
+      ["line-1"],
+      { x: 10, y: 20 },
+      { x: 40, y: 60 },
+    );
+
+    expect(moved.objects[0]).toMatchObject({ x: 40, y: 60, x2: 110, y2: 130 });
+  });
+});
+
+describe("selectObjectsInRect", () => {
+  test("selects shapes and lines intersecting a normalized drag rectangle", () => {
+    const line: DrawingObject = {
+      id: "line-1", type: "line", x: 250, y: 100, x2: 320, y2: 150,
+      width: 0, height: 0, rotation: 0, zIndex: 2, style: {},
+    };
+    const selected = selectObjectsInRect(
+      doc([rect("inside", 100, 100), rect("outside", 500, 500), line]),
+      { x: 350, y: 200 },
+      { x: 80, y: 80 },
+    );
+
+    expect(selected).toEqual(["inside", "line-1"]);
+  });
+
+  test("selects a partially intersecting shape", () => {
+    expect(selectObjectsInRect(
+      doc([rect("partial", 100, 100)]),
+      { x: 190, y: 120 },
+      { x: 220, y: 160 },
+    )).toEqual(["partial"]);
   });
 });
 

@@ -10,10 +10,11 @@ import {
   deleteObjects,
   insertImageObject,
   moveObject,
-  moveObjectFromDragStart,
-  moveObjectFromDragStartSnapped,
+  moveObjectsFromDragStart,
+  moveObjectsFromDragStartSnapped,
   resizeCanvasFromDrag,
   resizeObjectFromDragStart,
+  selectObjectsInRect,
   sendBackward,
   sendToBack,
   type AlignKind,
@@ -75,9 +76,16 @@ export function DrawingEditor({
   const [clipboard, setClipboard] = useState<DrawingObject[]>([]);
   const [connectorStart, setConnectorStart] = useState<string | null>(null);
   const [textFocusRequest, setTextFocusRequest] = useState(0);
+  const [selectionMarquee, setSelectionMarquee] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "create" | "canvasResize";
+    type: "move" | "resize" | "create" | "canvasResize" | "marquee";
     id?: string;
+    ids?: string[];
     startX: number;
     startY: number;
     origX?: number;
@@ -86,6 +94,7 @@ export function DrawingEditor({
     origH?: number;
     handle?: string;
     before?: DrawingDocument;
+    selectionBase?: string[];
   } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const shapeTextRef = useRef<HTMLTextAreaElement>(null);
@@ -258,18 +267,22 @@ export function DrawingEditor({
 
     if (tool === "select") {
       if (hit) {
-        const multi = e.shiftKey;
-        setSelectedIds((prev) =>
-          multi && prev.includes(hit.id)
-            ? prev.filter((id) => id !== hit.id)
-            : multi
-              ? [...prev, hit.id]
-              : [hit.id],
-        );
+        const multi = e.ctrlKey || e.metaKey || e.shiftKey;
+        if (multi) {
+          setSelectedIds((prev) =>
+            prev.includes(hit.id)
+              ? prev.filter((id) => id !== hit.id)
+              : [...prev, hit.id],
+          );
+        }
+        if (multi) return;
         if (hit.type === "connector") return;
+        const dragIds = selectedIds.includes(hit.id) ? selectedIds : [hit.id];
+        setSelectedIds(dragIds);
         setDragging({
           type: "move",
           id: hit.id,
+          ids: dragIds,
           startX: x,
           startY: y,
           origX: hit.x,
@@ -279,7 +292,17 @@ export function DrawingEditor({
         dragPreviewRef.current = doc;
         return;
       }
-      setSelectedIds([]);
+      const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+      const selectionBase = additive ? selectedIds : [];
+      if (!additive) setSelectedIds([]);
+      setDragging({
+        type: "marquee",
+        startX: x,
+        startY: y,
+        before: doc,
+        selectionBase,
+      });
+      setSelectionMarquee({ startX: x, startY: y, currentX: x, currentY: y });
       return;
     }
 
@@ -317,6 +340,22 @@ export function DrawingEditor({
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
 
+    if (dragging.type === "marquee" && dragging.before) {
+      setSelectionMarquee({
+        startX: dragging.startX,
+        startY: dragging.startY,
+        currentX: x,
+        currentY: y,
+      });
+      const inRect = selectObjectsInRect(
+        dragging.before,
+        { x: dragging.startX, y: dragging.startY },
+        { x, y },
+      );
+      setSelectedIds([...new Set([...(dragging.selectionBase ?? []), ...inRect])]);
+      return;
+    }
+
     if (dragging.type === "resize" && dragging.id && dragging.handle && dragging.before) {
       const next = resizeObjectFromDragStart(
         dragging.before,
@@ -335,9 +374,17 @@ export function DrawingEditor({
       const original = dragging.before ?? doc;
       const start = { x: dragging.startX, y: dragging.startY };
       const current = { x, y };
+      const ids = dragging.ids ?? [dragging.id];
       const next = snap
-        ? moveObjectFromDragStartSnapped(original, dragging.id, start, current, doc.canvas.gridSize)
-        : moveObjectFromDragStart(original, dragging.id, start, current);
+        ? moveObjectsFromDragStartSnapped(
+          original,
+          ids,
+          dragging.id,
+          start,
+          current,
+          doc.canvas.gridSize,
+        )
+        : moveObjectsFromDragStart(original, ids, start, current);
       dragPreviewRef.current = next;
       onChange(next);
       return;
@@ -389,6 +436,7 @@ export function DrawingEditor({
       setTool("select");
     }
     dragPreviewRef.current = null;
+    setSelectionMarquee(null);
     setDragging(null);
   };
 
@@ -752,6 +800,20 @@ export function DrawingEditor({
               );
             })}
           </g>
+          {selectionMarquee && (
+            <rect
+              className="selection-marquee"
+              x={Math.min(selectionMarquee.startX, selectionMarquee.currentX)}
+              y={Math.min(selectionMarquee.startY, selectionMarquee.currentY)}
+              width={Math.abs(selectionMarquee.currentX - selectionMarquee.startX)}
+              height={Math.abs(selectionMarquee.currentY - selectionMarquee.startY)}
+              fill="rgba(45, 108, 223, 0.12)"
+              stroke="#2d6cdf"
+              strokeWidth={1 / zoom}
+              strokeDasharray={`${4 / zoom} ${2 / zoom}`}
+              pointerEvents="none"
+            />
+          )}
           <rect
             className="canvas-resize-handle canvas-resize-handle-width"
             data-canvas-resize="width"

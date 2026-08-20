@@ -29,8 +29,14 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-function pointerEvent(type: string, x: number, y: number): MouseEvent {
+function pointerEvent(
+  type: string,
+  x: number,
+  y: number,
+  init: MouseEventInit = {},
+): MouseEvent {
   const event = new MouseEvent(type, {
+    ...init,
     bubbles: true,
     cancelable: true,
     clientX: x,
@@ -41,6 +47,101 @@ function pointerEvent(type: string, x: number, y: number): MouseEvent {
 }
 
 describe("DrawingEditor", () => {
+  test("selects multiple shapes with Ctrl+click", () => {
+    const second = {
+      ...initial.objects[0],
+      id: "rect-2",
+      x: 300,
+      y: 100,
+      zIndex: 2,
+    };
+    const doc = { ...initial, objects: [...initial.objects, second] };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<DrawingEditor doc={doc} onChange={vi.fn()} onDirty={vi.fn()} />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 310, 110, { ctrlKey: true })));
+
+    expect(container.querySelectorAll(".selection-box")).toHaveLength(2);
+    act(() => root.unmount());
+  });
+
+  test("moves all selected shapes when one of them is dragged", () => {
+    const onDirty = vi.fn();
+    const second = {
+      ...initial.objects[0],
+      id: "rect-2",
+      x: 300,
+      y: 100,
+      zIndex: 2,
+    };
+    const starting = { ...initial, objects: [...initial.objects, second] };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(starting);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 310, 110, { ctrlKey: true })));
+    onDirty.mockClear();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 160, 140)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 160, 140)));
+
+    const persisted = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(persisted.objects[0]).toMatchObject({ x: 150, y: 130 });
+    expect(persisted.objects[1]).toMatchObject({ x: 350, y: 130 });
+    expect(container.querySelectorAll(".selection-box")).toHaveLength(2);
+
+    act(() => root.unmount());
+  });
+
+  test("selects multiple objects with a drag marquee", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 50, 50)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 190, 160)));
+    expect(container.querySelector(".selection-marquee")).not.toBeNull();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 190, 160)));
+
+    expect(container.querySelector('[data-object-id="rect-1"]')).not.toBeNull();
+    expect(container.querySelector(".selection-marquee")).toBeNull();
+    act(() => root.unmount());
+  });
+
   test("does not delete a shape when Backspace is pressed in its text editor", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");
