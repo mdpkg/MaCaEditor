@@ -18,6 +18,7 @@ import {
   type AlignKind,
   type History,
   updateShapeText,
+  updateShapeTextAlignment,
 } from "../lib/drawing/edit";
 import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
@@ -513,6 +514,20 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
     commit(next);
   };
 
+  const updateShapeHorizontalAlign = (align: "left" | "center" | "right") => {
+    if (!selected || !["rectangle", "roundedRectangle", "ellipse"].includes(selected.type)) return;
+    const verticalAlign = "textStyle" in selected
+      ? selected.textStyle?.verticalAlign ?? "middle"
+      : "middle";
+    commit(updateShapeTextAlignment(doc, selected.id, align, verticalAlign));
+  };
+
+  const updateShapeVerticalAlign = (verticalAlign: "top" | "middle" | "bottom") => {
+    if (!selected || !["rectangle", "roundedRectangle", "ellipse"].includes(selected.type)) return;
+    const align = "textStyle" in selected ? selected.textStyle?.align ?? "center" : "center";
+    commit(updateShapeTextAlignment(doc, selected.id, align, verticalAlign));
+  };
+
   const updatePosition = (field: "x" | "y", value: number) => {
     const next = {
       ...doc,
@@ -803,6 +818,32 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
                   onChange={(e) => updateText(e.target.value)}
                 />
               </div>
+            )}
+            {(["rectangle", "roundedRectangle", "ellipse"] as string[]).includes(selected.type) && (
+              <>
+                <div className="inspector-row">
+                  <label>H Align</label>
+                  <select
+                    value={(selected as DrawingObject & { textStyle?: { align?: string } }).textStyle?.align ?? "center"}
+                    onChange={(e) => updateShapeHorizontalAlign(e.target.value as "left" | "center" | "right")}
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+                <div className="inspector-row">
+                  <label>V Align</label>
+                  <select
+                    value={(selected as DrawingObject & { textStyle?: { verticalAlign?: string } }).textStyle?.verticalAlign ?? "middle"}
+                    onChange={(e) => updateShapeVerticalAlign(e.target.value as "top" | "middle" | "bottom")}
+                  >
+                    <option value="top">Top</option>
+                    <option value="middle">Middle</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </div>
+              </>
             )}
             {selected.type === "text" && (
               <div className="inspector-row">

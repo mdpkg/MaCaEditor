@@ -57,23 +57,39 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+type TextShape = RectangleObject | RoundedRectangleObject | EllipseObject;
+
+function renderShapeText(obj: TextShape): string {
+  if (!obj.text) return "";
+  const padding = Math.min(8, obj.width / 2, obj.height / 2);
+  const align = obj.textStyle?.align ?? "center";
+  const verticalAlign = obj.textStyle?.verticalAlign ?? "middle";
+  const x = align === "left"
+    ? obj.x + padding
+    : align === "right"
+      ? obj.x + obj.width - padding
+      : obj.x + obj.width / 2;
+  const y = verticalAlign === "top"
+    ? obj.y + padding
+    : verticalAlign === "bottom"
+      ? obj.y + obj.height - padding
+      : obj.y + obj.height / 2;
+  const anchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+  const baseline = verticalAlign === "top" ? "hanging" : verticalAlign === "bottom" ? "auto" : "middle";
+  return `<text x="${x}" y="${y}" text-anchor="${anchor}" dominant-baseline="${baseline}" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+}
+
 function renderRectangle(obj: RectangleObject): string {
   const fill = obj.style.fill ?? "#ffffff";
   const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
-  if (!obj.text) return rect;
-  const cx = obj.x + obj.width / 2;
-  const cy = obj.y + obj.height / 2;
-  return `${rect}<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+  return `${rect}${renderShapeText(obj)}`;
 }
 
 function renderRoundedRectangle(obj: RoundedRectangleObject): string {
   const fill = obj.style.fill ?? "#ffffff";
   const radius = Math.max(0, Math.min(obj.cornerRadius, obj.width / 2, obj.height / 2));
   const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" rx="${radius}" ry="${radius}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
-  if (!obj.text) return rect;
-  const cx = obj.x + obj.width / 2;
-  const cy = obj.y + obj.height / 2;
-  return `${rect}<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+  return `${rect}${renderShapeText(obj)}`;
 }
 
 function renderEllipse(obj: EllipseObject): string {
@@ -83,8 +99,7 @@ function renderEllipse(obj: EllipseObject): string {
   const rx = obj.width / 2;
   const ry = obj.height / 2;
   const ellipse = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
-  if (!obj.text) return ellipse;
-  return `${ellipse}<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif">${escapeXml(obj.text)}</text>`;
+  return `${ellipse}${renderShapeText(obj)}`;
 }
 
 function renderImage(obj: ImageObject): string {

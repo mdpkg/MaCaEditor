@@ -28,6 +28,11 @@ export interface TextStyle {
   color?: string;
 }
 
+export interface ShapeTextStyle {
+  align?: "left" | "center" | "right";
+  verticalAlign?: "top" | "middle" | "bottom";
+}
+
 export interface BaseObject {
   id: string;
   type: string;
@@ -43,6 +48,7 @@ export interface RectangleObject extends BaseObject {
   type: "rectangle";
   style: ObjectStyle;
   text?: string;
+  textStyle?: ShapeTextStyle;
 }
 
 export interface RoundedRectangleObject extends BaseObject {
@@ -50,12 +56,14 @@ export interface RoundedRectangleObject extends BaseObject {
   cornerRadius: number;
   style: ObjectStyle;
   text?: string;
+  textStyle?: ShapeTextStyle;
 }
 
 export interface EllipseObject extends BaseObject {
   type: "ellipse";
   style: ObjectStyle;
   text?: string;
+  textStyle?: ShapeTextStyle;
 }
 
 export interface TextObject extends BaseObject {

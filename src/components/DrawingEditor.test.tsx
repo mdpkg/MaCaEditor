@@ -180,4 +180,51 @@ describe("DrawingEditor", () => {
 
     act(() => root.unmount());
   });
+
+  test("changes horizontal and vertical alignment of shape text", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 110, 110)));
+
+    const selectFor = (label: string) => {
+      const row = Array.from(container.querySelectorAll(".inspector-row"))
+        .find((candidate) => candidate.querySelector("label")?.textContent === label);
+      return row?.querySelector("select") as HTMLSelectElement;
+    };
+    const horizontal = selectFor("H Align");
+    act(() => {
+      horizontal.value = "right";
+      horizontal.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const vertical = selectFor("V Align");
+    act(() => {
+      vertical.value = "bottom";
+      vertical.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const persisted = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(persisted.objects[0]).toMatchObject({
+      textStyle: { align: "right", verticalAlign: "bottom" },
+    });
+
+    act(() => root.unmount());
+  });
 });

@@ -171,6 +171,30 @@ describe("svg renderer", () => {
     expect(svg).toContain("Hello");
   });
 
+  test("aligns shape text to the left and top", () => {
+    const svg = renderSvg(doc([{
+      id: "r1", type: "rectangle", x: 100, y: 80, width: 200, height: 60,
+      rotation: 0, zIndex: 1, text: "Label", style: {},
+      textStyle: { align: "left", verticalAlign: "top" },
+    }]));
+
+    expect(svg).toContain(
+      '<text x="108" y="88" text-anchor="start" dominant-baseline="hanging"',
+    );
+  });
+
+  test("aligns shape text to the right and bottom", () => {
+    const svg = renderSvg(doc([{
+      id: "e1", type: "ellipse", x: 100, y: 80, width: 200, height: 60,
+      rotation: 0, zIndex: 1, text: "Label", style: {},
+      textStyle: { align: "right", verticalAlign: "bottom" },
+    }]));
+
+    expect(svg).toContain(
+      '<text x="292" y="132" text-anchor="end" dominant-baseline="auto"',
+    );
+  });
+
   test("renders line", () => {
     const svg = renderSvg(
       doc([

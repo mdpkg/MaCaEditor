@@ -179,6 +179,22 @@ export function updateShapeText(
   };
 }
 
+export function updateShapeTextAlignment(
+  doc: DrawingDocument,
+  id: string,
+  align: "left" | "center" | "right",
+  verticalAlign: "top" | "middle" | "bottom",
+): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((object) =>
+      object.id === id && ["rectangle", "roundedRectangle", "ellipse"].includes(object.type)
+        ? { ...object, textStyle: { align, verticalAlign } }
+        : object,
+    ),
+  };
+}
+
 /** オブジェクトを削除する。削除対象を参照する Connector も削除する。 */
 export function deleteObjects(
   doc: DrawingDocument,

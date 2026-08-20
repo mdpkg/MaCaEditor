@@ -21,6 +21,7 @@ import {
   ungroupObjects,
   undo,
   updateShapeText,
+  updateShapeTextAlignment,
   type History,
 } from "./edit";
 
@@ -232,6 +233,27 @@ describe("updateShapeText", () => {
       width: 0, height: 0, rotation: 0, zIndex: 1, style: {},
     };
     expect(updateShapeText(doc([line]), "line", "ignored").objects[0]).not.toHaveProperty("text");
+  });
+});
+
+describe("updateShapeTextAlignment", () => {
+  test("updates horizontal and vertical alignment on a shape", () => {
+    const shape = { ...rect("shape", 100, 100), text: "Label" } as DrawingObject;
+
+    const updated = updateShapeTextAlignment(doc([shape]), "shape", "right", "bottom");
+
+    expect(updated.objects[0]).toMatchObject({
+      textStyle: { align: "right", verticalAlign: "bottom" },
+    });
+  });
+
+  test("does not add shape alignment to a standalone text object", () => {
+    const text: DrawingObject = {
+      id: "text-1", type: "text", x: 0, y: 0, width: 100, height: 20,
+      rotation: 0, zIndex: 1, text: "Label", style: {},
+    };
+
+    expect(updateShapeTextAlignment(doc([text]), "text-1", "left", "top")).toEqual(doc([text]));
   });
 });
 
