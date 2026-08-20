@@ -72,9 +72,28 @@ body {
 .sidebar {
   width: 240px;
   border-right: 1px solid var(--border);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--panel);
   padding: 8px 0;
+}
+
+.sidebar-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sidebar-with-properties .sidebar-tree {
+  flex: 0 0 50%;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-properties {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .file-tree {
@@ -348,8 +367,7 @@ body {
 }
 
 .drawing-inspector {
-  width: 220px;
-  border-left: 1px solid var(--border);
+  width: 100%;
   padding: 12px;
   background: var(--panel);
   overflow: auto;

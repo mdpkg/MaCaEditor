@@ -21,3 +21,18 @@ describe("image sizing styles", () => {
     },
   );
 });
+
+describe("drawing sidebar layout", () => {
+  it("splits the drawing sidebar between the file tree and properties", () => {
+    const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");
+    const treeBlock = treeStart >= 0 ? styles.slice(treeStart, styles.indexOf("}", treeStart)) : "";
+    const propertiesStart = styles.indexOf(".sidebar-properties {");
+    const propertiesBlock = propertiesStart >= 0
+      ? styles.slice(propertiesStart, styles.indexOf("}", propertiesStart))
+      : "";
+
+    expect(treeBlock).toContain("flex: 0 0 50%");
+    expect(propertiesBlock).toContain("flex: 1");
+    expect(propertiesBlock).toContain("overflow: auto");
+  });
+});

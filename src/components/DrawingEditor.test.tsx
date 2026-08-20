@@ -36,6 +36,29 @@ function pointerEvent(type: string, x: number, y: number): MouseEvent {
 }
 
 describe("DrawingEditor", () => {
+  test("renders Properties into the requested sidebar panel", () => {
+    const panel = document.createElement("div");
+    panel.id = "drawing-properties-panel";
+    document.body.appendChild(panel);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => root.render(
+      <DrawingEditor
+        doc={initial}
+        onChange={vi.fn()}
+        onDirty={vi.fn()}
+        propertiesPanelId="drawing-properties-panel"
+      />,
+    ));
+
+    expect(panel.querySelector(".drawing-inspector")?.textContent).toContain("Properties");
+    expect(container.querySelector(".drawing-inspector")).toBeNull();
+
+    act(() => root.unmount());
+  });
+
   test("passes the final dragged document to the persistence callback", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");

@@ -414,13 +414,18 @@ export default function App() {
         onRename={handleRename}
       />
       <div className="main-layout">
-        <aside className="sidebar">
-          <FileTree
-            files={doc?.files ?? []}
-            selectedPath={selectedPath}
-            onSelect={handleSelect}
-            onDropImages={handleDropImages}
-          />
+        <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
+          <div className="sidebar-tree">
+            <FileTree
+              files={doc?.files ?? []}
+              selectedPath={selectedPath}
+              onSelect={handleSelect}
+              onDropImages={handleDropImages}
+            />
+          </div>
+          {mode === "drawing" && (
+            <div id="drawing-properties-panel" className="sidebar-properties" />
+          )}
         </aside>
         <main className="document-area">
           {!doc && (
@@ -435,6 +440,7 @@ export default function App() {
               onChange={handleDrawingChange}
               onDirty={handleDrawingDirty}
               onRequestImage={handleDrawingImageRequest}
+              propertiesPanelId="drawing-properties-panel"
             />
           )}
           {doc && mode !== "drawing" && displayFile && displayFile.is_text && (

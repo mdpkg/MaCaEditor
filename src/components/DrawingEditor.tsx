@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DrawingDocument, DrawingObject, LineDashStyle } from "../lib/drawing/model";
 import { renderSvg } from "../lib/drawing/svg";
 import { createConnector, createObject, type ToolKind } from "../lib/drawing/factory";
@@ -30,6 +31,7 @@ export interface DrawingEditorProps {
   onChange: (doc: DrawingDocument) => void;
   onDirty: (doc: DrawingDocument) => void;
   onRequestImage?: () => Promise<string | null>;
+  propertiesPanelId?: string;
 }
 
 type Tool = ToolKind;
@@ -46,7 +48,13 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "curveConnector", label: "Curve" },
 ];
 
-export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: DrawingEditorProps) {
+export function DrawingEditor({
+  doc,
+  onChange,
+  onDirty,
+  onRequestImage,
+  propertiesPanelId,
+}: DrawingEditorProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -723,7 +731,8 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
         <span>Snap {snap ? "On" : "Off"}</span>
         <span>{Math.round(doc.canvas.width)} × {Math.round(doc.canvas.height)}</span>
       </div>
-      <div className="drawing-inspector">
+      {(() => {
+        const inspector = <div className="drawing-inspector">
         <h4>Properties</h4>
         {selected ? (
           <>
@@ -892,7 +901,10 @@ export function DrawingEditor({ doc, onChange, onDirty, onRequestImage }: Drawin
             <button onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
           </div>
         )}
-      </div>
+        </div>;
+        const panel = propertiesPanelId ? document.getElementById(propertiesPanelId) : null;
+        return panel ? createPortal(inspector, panel) : inspector;
+      })()}
     </div>
   );
 }
