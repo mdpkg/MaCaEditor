@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DrawingDocument } from "./model";
-import { createObject } from "./factory";
+import { createImageObject, createObject } from "./factory";
 
 function emptyDoc(): DrawingDocument {
   return {
@@ -53,6 +53,22 @@ describe("createObject", () => {
       expect(obj.height).toBe(120);
       expect(obj.src).toBe("");
       expect(obj.style).toEqual({});
+    }
+  });
+
+  test("creates image with sanitized src", () => {
+    const obj = createImageObject(emptyDoc(), 100, 100, "https://example.com/a.png");
+    expect(obj.type).toBe("image");
+    if (obj.type === "image") {
+      expect(obj.src).toBe("https://example.com/a.png");
+    }
+  });
+
+  test("sanitizes unsafe image src", () => {
+    const obj = createImageObject(emptyDoc(), 100, 100, "javascript:alert(1)");
+    expect(obj.type).toBe("image");
+    if (obj.type === "image") {
+      expect(obj.src).toBe("");
     }
   });
 

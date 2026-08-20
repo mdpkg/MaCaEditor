@@ -1,4 +1,5 @@
 import type { DrawingDocument, DrawingObject } from "./model";
+import { sanitizeImageSrc } from "../sanitize";
 
 /** 新しい一意 ID を生成する。 */
 export function newId(prefix: string, existing: Set<string>): string {
@@ -20,6 +21,30 @@ export type ToolKind =
   | "arrow"
   | "image"
   | "connector";
+
+/** 画像オブジェクトを生成し、src をサニタイズする。 */
+export function createImageObject(
+  doc: DrawingDocument,
+  x: number,
+  y: number,
+  src: string,
+): DrawingObject {
+  const existing = new Set(doc.objects.map((o) => o.id));
+  const id = newId("image", existing);
+  const zIndex = Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1;
+  return {
+    id,
+    type: "image",
+    x,
+    y,
+    width: 160,
+    height: 120,
+    rotation: 0,
+    zIndex,
+    src: sanitizeImageSrc(src),
+    style: {},
+  };
+}
 
 /** ツールに応じた新しいオブジェクトを生成する。 */
 export function createObject(
