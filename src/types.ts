@@ -23,3 +23,8 @@ export interface SaveRequest {
   manifest: Record<string, unknown>;
   files: FileContent[];
 }
+
+export interface ImportedImage {
+  file_name: string;
+  base64: string;
+}

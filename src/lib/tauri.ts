@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { PackageInfo, SaveRequest } from "../types";
+import type { ImportedImage, PackageInfo, SaveRequest } from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
   return invoke("open_package", { path });
@@ -19,4 +19,8 @@ export function importFolder(folder: string, dest: string): Promise<void> {
 
 export function exportFolder(packagePath: string, dest: string): Promise<void> {
   return invoke("export_folder", { packagePath, dest });
+}
+
+export function readImage(path: string): Promise<ImportedImage> {
+  return invoke("read_image", { path });
 }

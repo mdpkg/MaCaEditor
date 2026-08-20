@@ -3,6 +3,7 @@ import type { FileInfo } from "../types";
 import { resolvePackagePath } from "../lib/markdown";
 import { sanitizeHtml } from "../lib/sanitize";
 import { findResourceByRendered } from "../lib/drawing/docIntegration";
+import { imageMediaType } from "../lib/document";
 
 interface Props {
   markdown: string;
@@ -67,7 +68,7 @@ export function MarkdownPreview({
           ? findResourceByRendered(manifest, resolved ?? "")
           : undefined;
         if (file && file.base64) {
-          out += `<img src="data:image/png;base64,${file.base64}" alt="${image[1]}" />\n`;
+          out += `<img src="data:${imageMediaType(file.path)};base64,${file.base64}" alt="${image[1]}" />\n`;
         } else if (file && file.is_text && file.content?.trim().startsWith("<svg")) {
           out += `<div class="drawing-image" data-drawpath="${resource?.source ?? ""}">${file.content}</div>\n`;
         } else {

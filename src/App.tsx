@@ -9,6 +9,8 @@ import { DrawingEditor } from "./components/DrawingEditor";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
+  addImage,
+  imageMediaType,
   toSaveRequest,
   updateFileContent,
 } from "./lib/document";
@@ -18,6 +20,7 @@ import {
   importFolder,
   openPackage,
   savePackage,
+  readImage,
 } from "./lib/tauri";
 import type { DrawingDocument } from "./lib/drawing/model";
 import {
@@ -230,6 +233,36 @@ export default function App() {
     setStatus("Inserted Drawing");
   };
 
+  const handleAddImage = async () => {
+    if (!doc) return;
+    const result = await openDialog({
+      multiple: true,
+      filters: [
+        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
+      ],
+    });
+    const paths = Array.isArray(result) ? result : typeof result === "string" ? [result] : [];
+    if (paths.length === 0) return;
+    try {
+      let next = doc;
+      let lastPath = "";
+      for (const path of paths) {
+        const image = await readImage(path);
+        const added = addImage(next, image.file_name, image.base64);
+        next = added.state;
+        lastPath = added.path;
+      }
+      setDoc(next);
+      setSelectedPath(lastPath);
+      setMode("preview");
+      setStatus(`Added ${paths.length} image${paths.length === 1 ? "" : "s"} to images/`);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
   const handleDrawingChange = (next: DrawingDocument) => {
     setDrawingDoc(next);
   };
@@ -283,6 +316,7 @@ export default function App() {
         onImport={handleImport}
         onExport={handleExport}
         onInsertDrawing={handleInsertDrawing}
+        onAddImage={handleAddImage}
       />
       <div className="main-layout">
         <aside className="sidebar">
@@ -342,7 +376,7 @@ export default function App() {
           {doc && mode !== "drawing" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
               {displayFile.base64 && (
-                <img src={`data:image/png;base64,${displayFile.base64}`} alt="" />
+                <img src={`data:${imageMediaType(displayFile.path)};base64,${displayFile.base64}`} alt="" />
               )}
               <p className="file-info">{displayFile.path}</p>
             </div>

@@ -18,6 +18,7 @@ pub fn run() {
             commands::create_new_package,
             commands::import_folder,
             commands::export_folder,
+            commands::read_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

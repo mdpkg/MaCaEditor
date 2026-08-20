@@ -32,6 +32,53 @@ export function updateFileContent(
   };
 }
 
+export function addImage(
+  state: DocumentState,
+  fileName: string,
+  base64: string,
+): { state: DocumentState; path: string } {
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const dot = safeName.lastIndexOf(".");
+  const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
+  const extension = dot > 0 ? safeName.slice(dot) : "";
+  const used = new Set(state.files.map((file) => file.path.toLowerCase()));
+  let path = `images/${safeName}`;
+  let suffix = 2;
+  while (used.has(path.toLowerCase())) {
+    path = `images/${stem}-${suffix}${extension}`;
+    suffix += 1;
+  }
+
+  return {
+    path,
+    state: {
+      ...state,
+      dirty: true,
+      files: [
+        ...state.files,
+        { path, is_text: false, content: null, base64 },
+      ],
+    },
+  };
+}
+
+export function imageMediaType(path: string): string {
+  const extension = path.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "bmp":
+      return "image/bmp";
+    default:
+      return "image/png";
+  }
+}
+
 export function toSaveRequest(state: DocumentState): {
   path: string;
   manifest: Record<string, unknown>;

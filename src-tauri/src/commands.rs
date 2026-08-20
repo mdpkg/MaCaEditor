@@ -34,6 +34,35 @@ pub struct FileContent {
     pub base64: Option<String>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct ImportedImage {
+    pub file_name: String,
+    pub base64: String,
+}
+
+#[tauri::command]
+pub fn read_image(path: String) -> Result<ImportedImage, String> {
+    let source = PathBuf::from(&path);
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .ok_or("image file must have an extension")?;
+    if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp") {
+        return Err(format!("unsupported image type: .{extension}"));
+    }
+    let file_name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or("invalid image file name")?
+        .to_string();
+    let data = std::fs::read(&source).map_err(|e| e.to_string())?;
+    Ok(ImportedImage {
+        file_name,
+        base64: encode_base64(&data),
+    })
+}
+
 fn to_file_info(file: &crate::package_file::PackageFile) -> FileInfo {
     if file.is_text() {
         FileInfo {
