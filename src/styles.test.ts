@@ -7,6 +7,16 @@ import { resolve } from "node:path";
 declare const process: { cwd(): string };
 const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
 
+describe("attached Markdown preview theme", () => {
+  it("scopes the GitHub Markdown styles to the preview", () => {
+    expect(styles).toContain(".markdown-preview {");
+    expect(styles).toContain("font-family: Helvetica, arial, sans-serif;");
+    expect(styles).toContain(".markdown-preview table td,");
+    expect(styles).toContain(".markdown-preview pre {");
+    expect(styles).not.toContain("\nbody {\n  font-family: Helvetica");
+  });
+});
+
 describe("image sizing styles", () => {
   it.each([".markdown-preview img", ".drawing-image svg", ".binary-view img"])(
     "preserves aspect ratio for %s",
