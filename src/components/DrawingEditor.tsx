@@ -35,7 +35,7 @@ import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
 import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
 import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector";
-import { getArcArrowGeometry, getCalloutTailPoint, SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
+import { getArcArrowGeometry, getBraceTailPoint, getCalloutTailPoint, SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
 import { ShapePicker, type ShapePickerItem } from "./ShapePicker";
 
 export interface DrawingEditorProps {
@@ -147,7 +147,7 @@ export function DrawingEditor({
     y: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "rotate" | "arcAdjust" | "calloutAdjust" | "create" | "canvasResize" | "marquee";
+    type: "move" | "resize" | "rotate" | "arcAdjust" | "calloutAdjust" | "braceAdjust" | "create" | "canvasResize" | "marquee";
     id?: string;
     ids?: string[];
     startX: number;
@@ -310,6 +310,19 @@ export function DrawingEditor({
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const braceObjectId = (e.target as SVGElement).dataset.braceTail;
+    if (braceObjectId) {
+      setSelectedIds([braceObjectId]);
+      setDragging({
+        type: "braceAdjust",
+        id: braceObjectId,
+        startX: x,
+        startY: y,
+        before: doc,
+      });
+      dragPreviewRef.current = doc;
+      return;
+    }
     const calloutObjectId = (e.target as SVGElement).dataset.calloutTail;
     if (calloutObjectId) {
       setSelectedIds([calloutObjectId]);
@@ -584,6 +597,17 @@ export function DrawingEditor({
       return;
     }
 
+    if (dragging.type === "braceAdjust" && dragging.id && dragging.before) {
+      const object = findObjectById(dragging.before.objects, dragging.id);
+      if (!object || object.type !== "autoShape" || !["leftBrace", "rightBrace"].includes(object.preset)) return;
+      const local = pointBeforeRotation(object, x, y);
+      const tailPosition = Math.max(0.15, Math.min(0.85, (local.y - object.y) / object.height));
+      const next = updateAutoShapeAdjustment(dragging.before, object.id, "tailPosition", tailPosition);
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "move" && dragging.id) {
       const original = dragging.before ?? doc;
       const start = { x: dragging.startX, y: dragging.startY };
@@ -637,7 +661,7 @@ export function DrawingEditor({
       setRedoStack([]);
       onChange(after);
       onDirty(after);
-    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust") && dragging.before) {
+    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust" || dragging?.type === "braceAdjust") && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -1154,6 +1178,20 @@ export function DrawingEditor({
                       className="callout-tail-handle"
                       data-callout-tail={obj.id}
                       aria-label="Callout tail handle"
+                      cx={tail[0]}
+                      cy={tail[1]}
+                      r={6 / zoom}
+                      fill="#8250df"
+                      stroke="#ffffff"
+                      strokeWidth={2 / zoom}
+                    />;
+                  })()}
+                  {obj.type === "autoShape" && ["leftBrace", "rightBrace"].includes(obj.preset) && (() => {
+                    const tail = getBraceTailPoint(obj);
+                    return <circle
+                      className="brace-tail-handle"
+                      data-brace-tail={obj.id}
+                      aria-label="Brace tail handle"
                       cx={tail[0]}
                       cy={tail[1]}
                       r={6 / zoom}

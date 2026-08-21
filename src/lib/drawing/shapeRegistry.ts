@@ -23,6 +23,34 @@ function path(d: string, attributes: string): string {
   return `<path d="${d}" ${attributes} />`;
 }
 
+function bracePath(shape: AutoShapeObject, attributes: string, side: "left" | "right"): string {
+  const tailPosition = Math.max(0.15, Math.min(0.85, shape.adjustments?.tailPosition ?? 0.5));
+  const top = shape.y + shape.height * 0.05;
+  const bottom = shape.y + shape.height * 0.95;
+  const tailY = shape.y + shape.height * tailPosition;
+  const endpointX = shape.x + shape.width * (side === "left" ? 0.7 : 0.3);
+  const spineX = shape.x + shape.width * (side === "left" ? 0.4 : 0.6);
+  const middleX = shape.x + shape.width * (side === "left" ? 0.25 : 0.75);
+  const tailX = shape.x + shape.width * (side === "left" ? 0.1 : 0.9);
+  const upperSpan = Math.max(0, tailY - top);
+  const lowerSpan = Math.max(0, bottom - tailY);
+  const lineAttributes = attributes
+    .replace(/fill="[^"]*"(?: fill-opacity="[^"]*")?/, 'fill="none"')
+    .replace(/(?:\s+stroke-linecap="[^"]*")?$/, ' stroke-linecap="round"');
+  return path(
+    `M ${endpointX} ${top} C ${spineX} ${top}, ${spineX} ${top + upperSpan * 0.2222}, ${spineX} ${top + upperSpan * 0.5556} C ${spineX} ${tailY - upperSpan * 0.1667}, ${middleX} ${tailY - upperSpan * 0.0556}, ${tailX} ${tailY} C ${middleX} ${tailY + lowerSpan * 0.0556}, ${spineX} ${tailY + lowerSpan * 0.1667}, ${spineX} ${tailY + lowerSpan * 0.4444} C ${spineX} ${tailY + lowerSpan * 0.7778}, ${spineX} ${bottom}, ${endpointX} ${bottom}`,
+    lineAttributes,
+  );
+}
+
+export function getBraceTailPoint(shape: AutoShapeObject): [number, number] {
+  const tailPosition = Math.max(0.15, Math.min(0.85, shape.adjustments?.tailPosition ?? 0.5));
+  return [
+    shape.x + shape.width * (shape.preset === "rightBrace" ? 0.9 : 0.1),
+    shape.y + shape.height * tailPosition,
+  ];
+}
+
 export interface ArcArrowGeometry {
   start: [number, number];
   end: [number, number];
@@ -167,6 +195,14 @@ const definitions: ShapeDefinition[] = [
   {
     id: "callout", label: "Callout", category: "Basic", width: 140, height: 90,
     render: (s, a) => polygon(getAutoShapeOutlinePoints(s), a),
+  },
+  {
+    id: "leftBrace", label: "Left Brace {", category: "Basic", width: 50, height: 120,
+    render: (s, a) => bracePath(s, a, "left"),
+  },
+  {
+    id: "rightBrace", label: "Right Brace }", category: "Basic", width: 50, height: 120,
+    render: (s, a) => bracePath(s, a, "right"),
   },
   {
     id: "flowProcess", label: "Process", category: "Flowchart", width: 130, height: 70,

@@ -235,6 +235,46 @@ describe("DrawingEditor", () => {
     });
   });
 
+  test("moves a brace tail vertically with its canvas handle", () => {
+    const onDirty = vi.fn();
+    const braceDoc: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "brace-1", type: "autoShape", preset: "rightBrace",
+        x: 100, y: 100, width: 50, height: 120, rotation: 0, zIndex: 1,
+        style: { stroke: "#000000", strokeWidth: 1 },
+        adjustments: { tailPosition: 0.5 },
+      }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(braceDoc);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 125, 160)));
+    const handle = container.querySelector('[aria-label="Brace tail handle"]') as SVGCircleElement;
+    expect(handle).not.toBeNull();
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerdown", 100, 160)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 100, 190)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 100, 190)));
+
+    expect(onDirty.mock.lastCall?.[0].objects[0]).toMatchObject({
+      adjustments: { tailPosition: 0.75 },
+    });
+  });
+
   test("opens shape properties in a context menu and applies changes", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");

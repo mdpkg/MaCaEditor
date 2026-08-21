@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { getCalloutTailPoint, getShapeDefinition, SHAPE_DEFINITIONS } from "./shapeRegistry";
+import { getBraceTailPoint, getCalloutTailPoint, getShapeDefinition, SHAPE_DEFINITIONS } from "./shapeRegistry";
 import type { AutoShapeObject } from "./model";
 
 describe("shape registry", () => {
   test("contains the requested basic, flowchart, and arrow shapes", () => {
     expect(SHAPE_DEFINITIONS.map((shape) => shape.id)).toEqual(expect.arrayContaining([
-      "cylinder", "cube", "callout",
+      "cylinder", "cube", "callout", "leftBrace", "rightBrace",
       "flowProcess", "flowDecision", "flowTerminator", "flowData",
       "flowDocument", "flowPredefinedProcess",
       "leftArrow", "rightArrow", "upArrow", "downArrow",
@@ -82,6 +82,22 @@ describe("shape registry", () => {
     const tail = getCalloutTailPoint(shape);
     expect(tail[0]).toBeCloseTo(-12.4);
     expect(tail[1]).toBeCloseTo(60);
+  });
+
+  test.each([
+    ["leftBrace", 15],
+    ["rightBrace", 55],
+  ])("renders %s with an adjustable tail point", (preset, expectedX) => {
+    const definition = getShapeDefinition(preset);
+    const shape: AutoShapeObject = {
+      id: "brace-1", type: "autoShape", preset,
+      x: 10, y: 20, width: 50, height: 100,
+      rotation: 0, zIndex: 1, style: {}, adjustments: { tailPosition: 0.7 },
+    };
+
+    expect(definition?.render(shape, 'fill="#fff" stroke="#000"')).toContain("fill=\"none\"");
+    expect(definition?.render(shape, 'fill="#fff" stroke="#000"')).toContain('stroke-linecap="round"');
+    expect(getBraceTailPoint(shape)).toEqual([expectedX, 90]);
   });
 
   test("renders an elliptical arc arrow with adjustable start and sweep angles", () => {
