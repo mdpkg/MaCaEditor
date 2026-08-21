@@ -313,6 +313,26 @@ describe("drawing document parsing", () => {
     );
   });
 
+  test("accepts a connector referencing an object inside a group", () => {
+    const parsed = parseDrawingDocument(validJson);
+    const rectangle = parsed.objects[0];
+    parsed.objects = [
+      {
+        id: "group-1", type: "group", x: rectangle.x, y: rectangle.y,
+        width: rectangle.width, height: rectangle.height, rotation: 0, zIndex: 1,
+        style: {}, members: [rectangle],
+      },
+      { ...rectangle, id: "outside", x: 400, zIndex: 2 },
+      {
+        id: "connector-1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+        rotation: 0, zIndex: 3, style: {}, from: { objectId: rectangle.id },
+        to: { objectId: "outside" },
+      },
+    ];
+
+    expect(() => validateDrawingDocument(parsed)).not.toThrow();
+  });
+
   test("rejects non-finite numeric fields", () => {
     const bad = validJson.replace('"width": 200', '"width": "NaN"');
     expect(() => validateDrawingDocument(parseDrawingDocument(bad))).toThrow();

@@ -8,6 +8,17 @@ function center(object: DrawingObject): Point {
   return { x: object.x + object.width / 2, y: object.y + object.height / 2 };
 }
 
+function findObject(objects: DrawingObject[], id: string): DrawingObject | undefined {
+  for (const object of objects) {
+    if (object.id === id) return object;
+    if (object.type === "group") {
+      const member = findObject(object.members, id);
+      if (member) return member;
+    }
+  }
+  return undefined;
+}
+
 function connectionSite(object: DrawingObject, toward: Point): ConnectionSite {
   const own = center(object);
   const dx = toward.x - own.x;
@@ -32,8 +43,8 @@ function connectionSite(object: DrawingObject, toward: Point): ConnectionSite {
 }
 
 export function connectorGeometry(connector: ConnectorObject, objects: DrawingObject[]): ConnectorGeometry | null {
-  const fromObject = objects.find((object) => object.id === connector.from.objectId);
-  const toObject = objects.find((object) => object.id === connector.to.objectId);
+  const fromObject = findObject(objects, connector.from.objectId);
+  const toObject = findObject(objects, connector.to.objectId);
   if (!fromObject || !toObject) return null;
   const fromSite = connectionSite(fromObject, center(toObject));
   const toSite = connectionSite(toObject, center(fromObject));

@@ -59,4 +59,19 @@ describe("connector hit testing", () => {
   it("returns no geometry when an endpoint is missing", () => {
     expect(connectorGeometry(connector(false), shapes.slice(0, 1))).toBeNull();
   });
+
+  it("resolves an endpoint nested inside a group", () => {
+    const groupedShapes: DrawingObject[] = [
+      {
+        id: "group-1", type: "group", x: 0, y: 0, width: 100, height: 50,
+        rotation: 0, zIndex: 1, style: {}, members: [shapes[0]],
+      },
+      shapes[1],
+    ];
+
+    expect(connectorGeometry(connector(false), groupedShapes)).toMatchObject({
+      from: { x: 100, y: 25 },
+      to: { x: 300, y: 225 },
+    });
+  });
 });

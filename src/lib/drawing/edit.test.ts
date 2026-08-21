@@ -656,6 +656,29 @@ describe("groupObjects", () => {
 });
 
 describe("ungroupObjects", () => {
+  test("preserves a connector between grouped shapes after ungrouping", () => {
+    const connector: DrawingObject = {
+      id: "connector-1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+      rotation: 0, zIndex: 3, from: { objectId: "r1" }, to: { objectId: "r2" }, style: {},
+    };
+    const grouped = groupObjects(
+      doc([rect("r1", 0, 0), rect("r2", 100, 50), connector]),
+      ["r1", "r2"],
+    );
+
+    const out = ungroupObjects(grouped, grouped.objects[0].id);
+
+    expect(out.objects.map((object) => object.id).sort()).toEqual([
+      "connector-1",
+      "r1",
+      "r2",
+    ]);
+    expect(out.objects.find((object) => object.id === "connector-1")).toMatchObject({
+      from: { objectId: "r1" },
+      to: { objectId: "r2" },
+    });
+  });
+
   test("ungroups and restores members", () => {
     const d = doc([rect("r1", 0, 0), rect("r2", 100, 50)]);
     const grouped = groupObjects(d, ["r1", "r2"]);

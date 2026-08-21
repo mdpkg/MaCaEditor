@@ -47,19 +47,30 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
   }
 
   const ids = new Set<string>();
-  for (const obj of doc.objects) {
-    if (!obj.id || ids.has(obj.id)) {
-      throw new DrawingError("object id must be unique");
+  const allObjects: DrawingObject[] = [];
+  const collectObjects = (objects: DrawingObject[]) => {
+    for (const obj of objects) {
+      if (!obj.id || ids.has(obj.id)) {
+        throw new DrawingError("object id must be unique");
+      }
+      ids.add(obj.id);
+      allObjects.push(obj);
+      if (!isKnownType(obj.type)) {
+        throw new DrawingError(`unknown object type: ${obj.type}`);
+      }
+      validateNumeric(obj);
+      if (obj.type === "group") {
+        if (!Array.isArray(obj.members)) {
+          throw new DrawingError(`group "${obj.id}" members must be an array`);
+        }
+        collectObjects(obj.members);
+      }
     }
-    ids.add(obj.id);
-    if (!isKnownType(obj.type)) {
-      throw new DrawingError(`unknown object type: ${obj.type}`);
-    }
-    validateNumeric(obj);
-  }
+  };
+  collectObjects(doc.objects);
 
   // Connector の参照先検証
-  for (const obj of doc.objects) {
+  for (const obj of allObjects) {
     if (obj.type === "connector") {
       const conn = obj as ConnectorObject;
       if (!ids.has(conn.from.objectId) || !ids.has(conn.to.objectId)) {

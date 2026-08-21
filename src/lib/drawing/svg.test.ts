@@ -658,6 +658,37 @@ describe("svg renderer", () => {
     expect(svg).toContain("<rect");
   });
 
+  test("renders a connector whose endpoints are members of a group", () => {
+    const svg = renderSvg(doc([{
+      id: "g1", type: "group", x: 0, y: 0, width: 400, height: 250,
+      rotation: 0, zIndex: 1, style: {}, members: [
+        { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+        { id: "b", type: "rectangle", x: 300, y: 200, width: 100, height: 50, rotation: 0, zIndex: 2, style: {} },
+        { id: "c", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 3, from: { objectId: "a" }, to: { objectId: "b" }, style: {} },
+      ],
+    }]));
+
+    expect(svg).toContain('x1="100"');
+    expect(svg).toContain('y1="25"');
+    expect(svg).toContain('x2="300"');
+    expect(svg).toContain('y2="225"');
+  });
+
+  test("renders a connector crossing a group boundary", () => {
+    const svg = renderSvg(doc([
+      {
+        id: "g1", type: "group", x: 0, y: 0, width: 100, height: 50,
+        rotation: 0, zIndex: 1, style: {}, members: [
+          { id: "inside", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+        ],
+      },
+      { id: "outside", type: "rectangle", x: 300, y: 200, width: 100, height: 50, rotation: 0, zIndex: 2, style: {} },
+      { id: "c", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 3, from: { objectId: "inside" }, to: { objectId: "outside" }, style: {} },
+    ]));
+
+    expect(svg).toContain('<line x1="100" y1="25" x2="300" y2="225"');
+  });
+
   test("renders an elbow connector as an orthogonal polyline", () => {
     const svg = renderSvg(doc([
       { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
