@@ -15,6 +15,8 @@ interface Props {
   onInsertMermaid: () => void;
   onInsertTable: () => void;
   onAddImage: () => void;
+  showToc: boolean;
+  onShowTocChange: (enabled: boolean) => void;
   vimMode: boolean;
   onVimModeChange: (enabled: boolean) => void;
   canPrint: boolean;
@@ -37,6 +39,8 @@ export function Toolbar({
   onInsertMermaid,
   onInsertTable,
   onAddImage,
+  showToc,
+  onShowTocChange,
   vimMode,
   onVimModeChange,
   canPrint,
@@ -102,6 +106,14 @@ export function Toolbar({
 
       <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
       <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
+      <label className="toolbar-vim-mode toolbar-toc">
+        <input
+          type="checkbox"
+          checked={showToc}
+          onChange={(event) => onShowTocChange(event.target.checked)}
+        />
+        TOC
+      </label>
       <label className="toolbar-vim-mode">
         <input
           type="checkbox"

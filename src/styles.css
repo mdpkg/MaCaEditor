@@ -93,9 +93,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.toolbar-toc {
+  margin-left: auto;
 }
 
 .toolbar-menu-separator {

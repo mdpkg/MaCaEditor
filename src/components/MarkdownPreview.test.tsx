@@ -10,6 +10,37 @@ afterEach(() => {
 });
 
 describe("MarkdownPreview", () => {
+  test("shows a generated table of contents when enabled", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={"# Document\n\n## First section\n\n### Details\n\n## Second section"}
+        baseDir=""
+        files={[]}
+        showToc
+      />,
+    ));
+
+    expect(container.querySelector("h2")?.textContent).toBe("目次");
+    expect(Array.from(container.querySelectorAll("h2 + ul a")).map((link) => link.textContent))
+      .toEqual(["Document", "First section", "Details", "Second section"]);
+    act(() => root.unmount());
+  });
+
+  test("hides the table of contents by default", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview markdown={"# Document\n\n## Section"} baseDir="" files={[]} />,
+    ));
+
+    expect(container.textContent).not.toContain("目次");
+    act(() => root.unmount());
+  });
+
   test("renders CommonMark structure with react-markdown", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

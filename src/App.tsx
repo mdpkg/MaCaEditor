@@ -81,6 +81,7 @@ export default function App() {
   const [mermaidPath, setMermaidPath] = useState<string | null>(null);
   const [tableEdit, setTableEdit] = useState<TableEditContext | null>(null);
   const [vimMode, setVimMode] = useState(false);
+  const [showToc, setShowToc] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
@@ -663,6 +664,8 @@ export default function App() {
         onInsertMermaid={handleInsertMermaid}
         onInsertTable={handleInsertTable}
         onAddImage={handleAddImage}
+        showToc={showToc}
+        onShowTocChange={setShowToc}
         vimMode={vimMode}
         onVimModeChange={setVimMode}
         canPrint={displayFile?.is_text === true && (mode === "preview" || mode === "split")}
@@ -759,6 +762,7 @@ export default function App() {
                 <div className="preview-only">
                   <MarkdownPreview
                     markdown={displayContent}
+                    showToc={showToc}
                     baseDir={displayBaseDir}
                     files={doc.files}
                     manifest={doc.manifest}
@@ -783,6 +787,7 @@ export default function App() {
                   />
                   <MarkdownPreview
                     markdown={displayContent}
+                    showToc={showToc}
                     baseDir={displayBaseDir}
                     files={doc.files}
                     manifest={doc.manifest}

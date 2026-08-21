@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import type { Components, UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
 import { resolvePackagePath } from "../lib/markdown";
 import { sanitizeHtml } from "../lib/sanitize";
@@ -18,6 +19,7 @@ interface Props {
   onEditPlantUml?: (sourcePath: string) => void;
   onEditMermaid?: (sourcePath: string) => void;
   onEditTable?: (start: number, end: number) => void;
+  showToc?: boolean;
 }
 
 function packageUrl(baseDir: string, url: string): string {
@@ -58,6 +60,7 @@ export function MarkdownPreview({
   onEditPlantUml,
   onEditMermaid,
   onEditTable,
+  showToc = false,
 }: Props) {
   const components: Components = {
     table({ node, ...props }) {
@@ -127,14 +130,17 @@ export function MarkdownPreview({
   const urlTransform: UrlTransform = (url, key) =>
     key === "href" ? packageUrl(baseDir, url) : url;
   const compatibleMarkdown = normalizeLegacyImageDestinations(markdown, baseDir, files);
+  const previewMarkdown = showToc
+    ? `## 目次\n\n${compatibleMarkdown}`
+    : compatibleMarkdown;
 
   return <div className="markdown-preview">
     <ReactMarkdown
       components={components}
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, [remarkToc, { heading: "目次" }]]}
       urlTransform={urlTransform}
     >
-      {compatibleMarkdown}
+      {previewMarkdown}
     </ReactMarkdown>
   </div>;
 }
