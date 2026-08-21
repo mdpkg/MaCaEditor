@@ -1,0 +1,70 @@
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { FileTree } from "./FileTree";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+describe("FileTree", () => {
+  test("deletes a deletable file from its context menu", () => {
+    const onSelect = vi.fn();
+    const onDelete = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <FileTree
+        files={[
+          { path: "README.md", is_text: true, content: "", base64: null },
+          { path: "images/photo.png", is_text: false, content: null, base64: "AAAA" },
+        ]}
+        selectedPath={null}
+        onSelect={onSelect}
+        onDropImages={vi.fn()}
+        canDelete={(path) => path.startsWith("images/")}
+        onDelete={onDelete}
+      />,
+    ));
+    const image = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "photo.png") as HTMLDivElement;
+
+    act(() => image.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, clientX: 40, clientY: 50,
+    })));
+
+    expect(onSelect).toHaveBeenCalledWith("images/photo.png");
+    const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
+    expect(menu.style.left).toBe("40px");
+    expect(menu.style.top).toBe("50px");
+    act(() => (menu.querySelector("button") as HTMLButtonElement).click());
+    expect(onDelete).toHaveBeenCalledWith("images/photo.png");
+    expect(document.querySelector(".file-tree-context-menu")).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("does not open a delete menu for a protected file", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <FileTree
+        files={[{ path: "README.md", is_text: true, content: "", base64: null }]}
+        selectedPath={null}
+        onSelect={vi.fn()}
+        onDropImages={vi.fn()}
+        canDelete={() => false}
+        onDelete={vi.fn()}
+      />,
+    ));
+    const readme = container.querySelector(".tree-item") as HTMLDivElement;
+    act(() => readme.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true,
+    })));
+    expect(document.querySelector(".file-tree-context-menu")).toBeNull();
+    act(() => root.unmount());
+  });
+});

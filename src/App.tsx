@@ -330,12 +330,12 @@ export default function App() {
     }
   };
 
-  const handleDelete = () => {
-    if (!doc || !selectedPath || !deletable) return;
-    const fileName = selectedPath.slice(selectedPath.lastIndexOf("/") + 1);
+  const handleDelete = (path: string | null = selectedPath) => {
+    if (!doc || !path || !isDeletableAsset(doc, path)) return;
+    const fileName = path.slice(path.lastIndexOf("/") + 1);
     if (!window.confirm(`Delete ${fileName}?`)) return;
     try {
-      const next = deleteAsset(doc, selectedPath);
+      const next = deleteAsset(doc, path);
       setDoc(next);
       setSelectedPath(next.entrypoint);
       if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
@@ -447,6 +447,8 @@ export default function App() {
               selectedPath={selectedPath}
               onSelect={handleSelect}
               onDropImages={handleDropImages}
+              canDelete={(path) => doc !== null && isDeletableAsset(doc, path)}
+              onDelete={handleDelete}
             />
           </div>
           {mode === "drawing" && (
