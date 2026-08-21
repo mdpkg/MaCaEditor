@@ -22,6 +22,7 @@ import {
   type AlignKind,
   type History,
   updateConnectorEnds,
+  updateObjectOpacity,
   updateObjectRotation,
   ungroupObjects,
   updateShapeText,
@@ -620,6 +621,10 @@ export function DrawingEditor({
     commit(next);
   };
 
+  const updateOpacity = (kind: "fill" | "stroke", percent: number) => {
+    commit(updateObjectOpacity(doc, selectedIds, kind, percent / 100));
+  };
+
   const updateDashStyle = (dashStyle: LineDashStyle) => {
     const next = {
       ...doc,
@@ -1066,14 +1071,28 @@ export function DrawingEditor({
               </div>
             )}
             {isTextShapeType(selected.type) && (
-              <div className="inspector-row">
-                <label>Fill</label>
-                <input
-                  type="color"
-                  value={toColor((selected.style as { fill?: string }).fill)}
-                  onChange={(e) => updateFill(e.target.value)}
-                />
-              </div>
+              <>
+                <div className="inspector-row">
+                  <label>Fill</label>
+                  <input
+                    type="color"
+                    value={toColor((selected.style as { fill?: string }).fill)}
+                    onChange={(e) => updateFill(e.target.value)}
+                  />
+                </div>
+                <div className="inspector-row">
+                  <label>Fill opacity</label>
+                  <input
+                    aria-label="Fill opacity"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={Math.round(((selected.style as { fillOpacity?: number }).fillOpacity ?? 1) * 100)}
+                    onChange={(e) => updateOpacity("fill", Number(e.target.value))}
+                  />
+                  <span>%</span>
+                </div>
+              </>
             )}
             {([...TEXT_SHAPE_TYPES, "line", "arrow", "connector"] as string[]).includes(selected.type) && (
               <>
@@ -1098,6 +1117,18 @@ export function DrawingEditor({
                   <datalist id="line-weight-options">
                     {LINE_WEIGHT_OPTIONS.map((weight) => <option key={weight} value={weight} />)}
                   </datalist>
+                </div>
+                <div className="inspector-row">
+                  <label>Line opacity</label>
+                  <input
+                    aria-label="Line opacity"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={Math.round(((selected.style as { strokeOpacity?: number }).strokeOpacity ?? 1) * 100)}
+                    onChange={(e) => updateOpacity("stroke", Number(e.target.value))}
+                  />
+                  <span>%</span>
                 </div>
                 <div className="inspector-row">
                   <label>Dashes</label>

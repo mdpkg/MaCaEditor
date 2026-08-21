@@ -92,6 +92,14 @@ function escapeXml(text: string): string {
 
 type TextShape = RectangleObject | RoundedRectangleObject | EllipseObject | FileObject | UserObject;
 
+function svgFillStyle(obj: TextShape): string {
+  const fill = obj.style.fill ?? "#ffffff";
+  const opacity = obj.style.fillOpacity === undefined
+    ? ""
+    : ` fill-opacity="${Math.max(0, Math.min(1, obj.style.fillOpacity))}"`;
+  return `fill="${escapeXml(fill)}"${opacity}`;
+}
+
 function renderShapeText(obj: TextShape): string {
   if (!obj.text) return "";
   const padding = Math.min(8, obj.width / 2, obj.height / 2);
@@ -127,42 +135,37 @@ function renderShapeText(obj: TextShape): string {
 }
 
 function renderRectangle(obj: RectangleObject): string {
-  const fill = obj.style.fill ?? "#ffffff";
-  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" ${svgFillStyle(obj)} ${svgLineStyle(obj.style)} />`;
   return `${rect}${renderShapeText(obj)}`;
 }
 
 function renderRoundedRectangle(obj: RoundedRectangleObject): string {
-  const fill = obj.style.fill ?? "#ffffff";
   const radius = Math.max(0, Math.min(obj.cornerRadius, obj.width / 2, obj.height / 2));
-  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" rx="${radius}" ry="${radius}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const rect = `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" rx="${radius}" ry="${radius}" ${svgFillStyle(obj)} ${svgLineStyle(obj.style)} />`;
   return `${rect}${renderShapeText(obj)}`;
 }
 
 function renderEllipse(obj: EllipseObject): string {
-  const fill = obj.style.fill ?? "#ffffff";
   const cx = obj.x + obj.width / 2;
   const cy = obj.y + obj.height / 2;
   const rx = obj.width / 2;
   const ry = obj.height / 2;
-  const ellipse = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const ellipse = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" ${svgFillStyle(obj)} ${svgLineStyle(obj.style)} />`;
   return `${ellipse}${renderShapeText(obj)}`;
 }
 
 function renderFile(obj: FileObject): string {
-  const fill = obj.style.fill ?? "#ffffff";
   const fold = Math.min(24, obj.width * 0.25, obj.height * 0.3);
   const right = obj.x + obj.width;
   const bottom = obj.y + obj.height;
   const foldX = right - fold;
   const foldY = obj.y + fold;
-  const page = `<path data-shape="file" d="M ${obj.x} ${obj.y} H ${foldX} L ${right} ${foldY} V ${bottom} H ${obj.x} Z" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const page = `<path data-shape="file" d="M ${obj.x} ${obj.y} H ${foldX} L ${right} ${foldY} V ${bottom} H ${obj.x} Z" ${svgFillStyle(obj)} ${svgLineStyle(obj.style)} />`;
   const corner = `<polyline points="${foldX},${obj.y} ${foldX},${foldY} ${right},${foldY}" fill="none" ${svgLineStyle(obj.style)} />`;
   return `${page}${corner}${renderShapeText(obj)}`;
 }
 
 function renderUser(obj: UserObject): string {
-  const fill = obj.style.fill ?? "#ffffff";
   const rounded = (value: number) => Number(value.toFixed(4));
   const cx = rounded(obj.x + obj.width / 2);
   const radius = rounded(Math.min(obj.width, obj.height) * 0.18);
@@ -174,8 +177,8 @@ function renderUser(obj: UserObject): string {
   const leftControlY = rounded(obj.y + obj.height * 0.75);
   const leftShoulderX = rounded(obj.x + obj.width * 0.27);
   const rightShoulderX = rounded(obj.x + obj.width * 0.73);
-  const head = `<circle data-shape="user" cx="${cx}" cy="${headY}" r="${radius}" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
-  const body = `<path d="M ${left} ${bottom} C ${left} ${leftControlY}, ${leftShoulderX} ${shoulderY}, ${cx} ${shoulderY} C ${rightShoulderX} ${shoulderY}, ${right} ${leftControlY}, ${right} ${bottom} Z" fill="${escapeXml(fill)}" ${svgLineStyle(obj.style)} />`;
+  const head = `<circle data-shape="user" cx="${cx}" cy="${headY}" r="${radius}" ${svgFillStyle(obj)} ${svgLineStyle(obj.style)} />`;
+  const body = `<path d="M ${left} ${bottom} C ${left} ${leftControlY}, ${leftShoulderX} ${shoulderY}, ${cx} ${shoulderY} C ${rightShoulderX} ${shoulderY}, ${right} ${leftControlY}, ${right} ${bottom} Z" ${svgFillStyle(obj)} ${svgLineStyle(obj.style)} />`;
   return `${head}${body}${renderShapeText(obj)}`;
 }
 

@@ -722,6 +722,17 @@ describe("svg renderer", () => {
     expect(svg).toContain('>Rotated</text>');
   });
 
+  test("renders independent fill and stroke opacity", () => {
+    const svg = renderSvg(doc([{
+      id: "transparent", type: "rectangle", x: 10, y: 20, width: 100, height: 50,
+      rotation: 0, zIndex: 1,
+      style: { fill: "#ffffff", fillOpacity: 0.25, stroke: "#000000", strokeOpacity: 0.6 },
+    }]));
+
+    expect(svg).toContain('fill-opacity="0.25"');
+    expect(svg).toContain('stroke-opacity="0.6"');
+  });
+
   test("includes rotated extents when fitting the SVG to content", () => {
     const svg = renderSvg(doc([{
       id: "rotated", type: "rectangle", x: 100, y: 80, width: 120, height: 60,

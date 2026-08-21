@@ -14,7 +14,9 @@ export type LineDashStyle =
 
 export interface ObjectStyle {
   fill?: string;
+  fillOpacity?: number;
   stroke?: string;
+  strokeOpacity?: number;
   strokeWidth?: number;
   dashStyle?: LineDashStyle;
 }

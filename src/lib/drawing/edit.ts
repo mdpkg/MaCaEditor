@@ -38,6 +38,25 @@ export function updateObjectRotation(
   };
 }
 
+export function updateObjectOpacity(
+  doc: DrawingDocument,
+  ids: string[],
+  kind: "fill" | "stroke",
+  opacity: number,
+): DrawingDocument {
+  if (!Number.isFinite(opacity)) return doc;
+  const selected = new Set(ids);
+  const value = Math.max(0, Math.min(1, opacity));
+  const key = kind === "fill" ? "fillOpacity" : "strokeOpacity";
+  return {
+    ...doc,
+    objects: doc.objects.map((object) => {
+      if (!selected.has(object.id) || object.type === "text") return object;
+      return { ...object, style: { ...object.style, [key]: value } };
+    }),
+  };
+}
+
 export function rotateObjectFromDragStart(
   original: DrawingDocument,
   id: string,

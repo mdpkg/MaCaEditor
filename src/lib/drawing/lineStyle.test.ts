@@ -27,4 +27,9 @@ describe("PowerPoint-compatible line styles", () => {
     expect(svgLineStyle({ stroke: "#000000", strokeWidth: 1, dashStyle: "roundDot" }))
       .toContain('stroke-linecap="round"');
   });
+
+  it("renders independent stroke opacity", () => {
+    expect(svgLineStyle({ stroke: "#123456", strokeOpacity: 0.4 }))
+      .toContain('stroke-opacity="0.4"');
+  });
 });

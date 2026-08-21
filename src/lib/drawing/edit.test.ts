@@ -26,6 +26,7 @@ import {
   undo,
   updateConnectorEnds,
   updateObjectRotation,
+  updateObjectOpacity,
   updateShapeText,
   updateShapeTextAlignment,
   type History,
@@ -318,6 +319,16 @@ describe("updateObjectRotation", () => {
     const updated = updateObjectRotation(doc([rect("r1", 100, 80)]), "r1", 45);
 
     expect(updated.objects[0].rotation).toBe(45);
+  });
+});
+
+describe("updateObjectOpacity", () => {
+  test("updates fill and stroke opacity independently and clamps values", () => {
+    const original = doc([rect("r1", 0, 0)]);
+    const fill = updateObjectOpacity(original, ["r1"], "fill", 0.25);
+    const stroke = updateObjectOpacity(fill, ["r1"], "stroke", 2);
+
+    expect(stroke.objects[0].style).toMatchObject({ fillOpacity: 0.25, strokeOpacity: 1 });
   });
 });
 

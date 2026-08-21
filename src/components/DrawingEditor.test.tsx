@@ -47,6 +47,40 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("edits fill and line opacity independently", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+
+    const setNumberInput = (label: string, value: string) => {
+      const input = container.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => setNumberInput("Fill opacity", "35"));
+    act(() => setNumberInput("Line opacity", "60"));
+
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects[0].style).toMatchObject({ fillOpacity: 0.35, strokeOpacity: 0.6 });
+    act(() => root.unmount());
+  });
+
   test("rotates a selected shape from Properties", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");

@@ -44,5 +44,8 @@ export function svgLineStyle(style: ObjectStyle): string {
     ? ` stroke-dasharray="${pattern.map((part) => part * width).join(" ")}"`
     : "";
   const cap = dashStyle === "roundDot" ? ' stroke-linecap="round"' : "";
-  return `stroke="${stroke}" stroke-width="${width}"${dash}${cap}`;
+  const opacity = style.strokeOpacity === undefined
+    ? ""
+    : ` stroke-opacity="${Math.max(0, Math.min(1, style.strokeOpacity))}"`;
+  return `stroke="${stroke}" stroke-width="${width}"${opacity}${dash}${cap}`;
 }
