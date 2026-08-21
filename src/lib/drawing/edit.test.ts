@@ -5,6 +5,7 @@ import {
   bringForward,
   bringToFront,
   deleteObjects,
+  findObjectById,
   groupObjects,
   insertImageObject,
   moveObject,
@@ -56,6 +57,41 @@ function doc(objects: DrawingObject[]): DrawingDocument {
 }
 
 describe("moveObject", () => {
+  test("finds and moves an object nested in a group", () => {
+    const child = rect("child", 100, 100);
+    const grouped = doc([{
+      id: "group-1", type: "group", x: 100, y: 100, width: 100, height: 50,
+      rotation: 0, zIndex: 1, style: {}, members: [child],
+    }]);
+
+    expect(findObjectById(grouped.objects, "child")).toBe(child);
+
+    const moved = moveObject(grouped, "child", 20, 30);
+    expect(findObjectById(moved.objects, "child")).toMatchObject({ x: 120, y: 130 });
+    expect(moved.objects[0]).toMatchObject({
+      id: "group-1", x: 120, y: 130, width: 100, height: 50,
+    });
+  });
+
+  test("updates every ancestor group boundary after moving a nested object", () => {
+    const child = rect("child", 100, 100);
+    const grouped = doc([{
+      id: "outer", type: "group", x: 80, y: 80, width: 140, height: 100,
+      rotation: 0, zIndex: 1, style: {}, members: [{
+        id: "inner", type: "group", x: 100, y: 100, width: 80, height: 40,
+        rotation: 0, zIndex: 1, style: {}, members: [child],
+      }],
+    }]);
+
+    const moved = moveObject(grouped, "child", 50, 20);
+    expect(findObjectById(moved.objects, "inner")).toMatchObject({
+      x: 150, y: 120, width: 100, height: 50,
+    });
+    expect(findObjectById(moved.objects, "outer")).toMatchObject({
+      x: 150, y: 120, width: 100, height: 50,
+    });
+  });
+
   test("moves object position", () => {
     const d = doc([rect("r1", 100, 100)]);
     const moved = moveObject(d, "r1", 20, 30);
@@ -471,6 +507,24 @@ describe("deleteObjects", () => {
     const deleted = deleteObjects(d, ["r1"]);
     expect(deleted.objects.length).toBe(1);
     expect(deleted.objects[0].id).toBe("r2");
+  });
+
+  test("deletes a group, all descendants, and connectors referencing them", () => {
+    const child = rect("child", 0, 0);
+    const group: DrawingObject = {
+      id: "group-1", type: "group", x: 0, y: 0, width: 100, height: 50,
+      rotation: 0, zIndex: 1, style: {}, members: [child],
+    };
+    const outside = rect("outside", 200, 0);
+    const connector: DrawingObject = {
+      id: "connector-1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+      rotation: 0, zIndex: 2, from: { objectId: "child" },
+      to: { objectId: "outside" }, style: {},
+    };
+
+    const deleted = deleteObjects(doc([group, outside, connector]), ["group-1"]);
+
+    expect(deleted.objects.map((object) => object.id)).toEqual(["outside"]);
   });
 
   test("moves image object", () => {

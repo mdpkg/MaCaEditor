@@ -70,10 +70,32 @@ describe("DrawingEditor", () => {
     const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     expect(menu.querySelector('input[aria-label="Fill opacity"]')).not.toBeNull();
+    expect(menu.querySelector('select[aria-label="H Align"]')).not.toBeNull();
+    expect(menu.querySelector('select[aria-label="V Align"]')).not.toBeNull();
+    expect(menu.querySelector('button[aria-label="Bring to Front"]')).not.toBeNull();
+    expect(menu.querySelector('button[aria-label="Bring Forward"]')).not.toBeNull();
+    expect(menu.querySelector('button[aria-label="Send Backward"]')).not.toBeNull();
+    expect(menu.querySelector('button[aria-label="Send to Back"]')).not.toBeNull();
     const red = menu.querySelector('[data-color-kind="fill"][title="Red"]') as HTMLButtonElement;
     act(() => red.click());
+    const horizontal = document.querySelector('select[aria-label="H Align"]') as HTMLSelectElement;
+    act(() => {
+      horizontal.value = "right";
+      horizontal.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const vertical = document.querySelector('select[aria-label="V Align"]') as HTMLSelectElement;
+    act(() => {
+      vertical.value = "bottom";
+      vertical.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const sendToBack = document.querySelector('button[aria-label="Send to Back"]') as HTMLButtonElement;
+    act(() => sendToBack.click());
     const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
     expect(changed.objects[0].style).toMatchObject({ fill: "#ff0000" });
+    expect(changed.objects[0]).toMatchObject({
+      zIndex: 0,
+      textStyle: { align: "right", verticalAlign: "bottom" },
+    });
     act(() => root.unmount());
   });
 
@@ -111,6 +133,88 @@ describe("DrawingEditor", () => {
     expect(menu.textContent).toContain("Start");
     expect(menu.textContent).toContain("End");
     expect(menu.textContent).not.toContain("Fill opacity");
+    act(() => root.unmount());
+  });
+
+  test("opens the selected group child's context menu", () => {
+    const child = initial.objects[0];
+    const grouped: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "group-1", type: "group", x: 100, y: 100, width: 280, height: 80,
+        rotation: 0, zIndex: 1, style: {}, members: [
+          child,
+          { ...child, id: "rect-2", x: 300, zIndex: 2 },
+        ],
+      }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <DrawingEditor doc={grouped} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 110, 110)));
+    act(() => canvas.dispatchEvent(new MouseEvent("dblclick", {
+      bubbles: true, cancelable: true, clientX: 110, clientY: 110,
+    })));
+    expect(container.querySelector(".selection-box rect")?.getAttribute("width")).toBe("88");
+
+    act(() => canvas.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, clientX: 110, clientY: 110,
+    })));
+
+    const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
+    expect(menu).not.toBeNull();
+    expect(menu.textContent).toContain("Fill");
+    expect(menu.querySelector('select[aria-label="H Align"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("shows only z-order actions for image and group context menus", () => {
+    const child = initial.objects[0];
+    const doc: DrawingDocument = {
+      ...initial,
+      objects: [
+        {
+          id: "image-1", type: "image", x: 100, y: 100, width: 80, height: 40,
+          rotation: 0, zIndex: 1, src: "data:image/png;base64,AAAA", style: {},
+        },
+        {
+          id: "group-1", type: "group", x: 300, y: 100, width: 80, height: 40,
+          rotation: 0, zIndex: 2, style: {}, members: [{ ...child, x: 300 }],
+        },
+      ],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<DrawingEditor doc={doc} onChange={vi.fn()} onDirty={vi.fn()} />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+
+    for (const x of [110, 310]) {
+      act(() => canvas.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true, clientX: x, clientY: 110,
+      })));
+      const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
+      expect(menu.querySelectorAll("button")).toHaveLength(4);
+      expect(menu.querySelectorAll("input, select")).toHaveLength(0);
+      expect(menu.textContent).toBe("FrontFwdBackBack");
+    }
     act(() => root.unmount());
   });
 
@@ -374,6 +478,118 @@ describe("DrawingEditor", () => {
 
     const ungrouped = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
     expect(ungrouped.objects.map((object) => object.id).sort()).toEqual(["rect-1", "rect-2"]);
+    act(() => root.unmount());
+  });
+
+  test("selects a child only after double-clicking an already selected group", () => {
+    const child = initial.objects[0];
+    const grouped: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "group-1", type: "group", x: 100, y: 100, width: 280, height: 80,
+        rotation: 0, zIndex: 1, style: {}, members: [
+          child,
+          { ...child, id: "rect-2", x: 300, zIndex: 2 },
+        ],
+      }],
+    };
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(grouped);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 110, 110)));
+    expect(container.querySelector(".selection-box rect")?.getAttribute("width")).toBe("288");
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 110, 110)));
+    expect(container.querySelector(".selection-box rect")?.getAttribute("width")).toBe("288");
+
+    act(() => canvas.dispatchEvent(new MouseEvent("dblclick", {
+      bubbles: true, cancelable: true, clientX: 110, clientY: 110,
+    })));
+    expect(container.querySelector(".selection-box rect")?.getAttribute("width")).toBe("88");
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 130, 130)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 130, 130)));
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects[0].type).toBe("group");
+    if (changed.objects[0].type === "group") {
+      expect(changed.objects[0]).toMatchObject({ x: 120, y: 100, width: 260, height: 60 });
+      expect(changed.objects[0].members[0]).toMatchObject({ id: "rect-1", x: 120, y: 120 });
+      expect(changed.objects[0].members[1]).toMatchObject({ id: "rect-2", x: 300, y: 100 });
+    }
+    act(() => root.unmount());
+  });
+
+  test("deletes the selected group with Delete", () => {
+    const group: DrawingDocument["objects"][number] = {
+      id: "group-1", type: "group", x: 100, y: 100, width: 80, height: 40,
+      rotation: 0, zIndex: 1, style: {}, members: [initial.objects[0]],
+    };
+    const doc = { ...initial, objects: [group] };
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<DrawingEditor doc={doc} onChange={vi.fn()} onDirty={onDirty} />));
+    const editor = container.querySelector(".drawing-editor") as HTMLDivElement;
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    expect(document.activeElement).toBe(editor);
+    act(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Delete", bubbles: true, cancelable: true,
+    })));
+
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects).toEqual([]);
+    act(() => root.unmount());
+  });
+
+  test("duplicates the selected shape with Ctrl+D", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<DrawingEditor doc={initial} onChange={vi.fn()} onDirty={onDirty} />));
+    const editor = container.querySelector(".drawing-editor") as HTMLDivElement;
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    expect(document.activeElement).toBe(editor);
+    act(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "d", ctrlKey: true, bubbles: true, cancelable: true,
+    })));
+
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects).toHaveLength(2);
+    expect(changed.objects[1]).toMatchObject({ x: 120, y: 120 });
     act(() => root.unmount());
   });
 

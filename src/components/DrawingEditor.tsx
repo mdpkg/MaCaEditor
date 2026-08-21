@@ -8,6 +8,7 @@ import {
   bringForward,
   bringToFront,
   deleteObjects,
+  findObjectById,
   groupObjects,
   insertImageObject,
   moveObject,
@@ -148,6 +149,7 @@ export function DrawingEditor({
     selectionBase?: string[];
   } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const shapeTextRef = useRef<HTMLTextAreaElement>(null);
   const dragPreviewRef = useRef<DrawingDocument | null>(null);
 
@@ -172,7 +174,9 @@ export function DrawingEditor({
   }, [contextMenu]);
 
   const selectedObjects = useMemo(
-    () => doc.objects.filter((o) => selectedIds.includes(o.id)),
+    () => selectedIds
+      .map((id) => findObjectById(doc.objects, id))
+      .filter((object): object is DrawingObject => object !== undefined),
     [doc.objects, selectedIds],
   );
 
@@ -237,9 +241,9 @@ export function DrawingEditor({
     [doc.canvas],
   );
 
-  const hitTest = useCallback(
-    (x: number, y: number): DrawingObject | null => {
-      const sorted = [...doc.objects].sort((a, b) => b.zIndex - a.zIndex);
+  const hitInObjects = useCallback(
+    (objects: DrawingObject[], x: number, y: number): DrawingObject | null => {
+      const sorted = [...objects].sort((a, b) => b.zIndex - a.zIndex);
       for (const obj of sorted) {
         if (obj.type === "connector") {
           const geometry = connectorGeometry(obj, doc.objects);
@@ -270,8 +274,14 @@ export function DrawingEditor({
     [doc.objects, zoom],
   );
 
+  const hitTest = useCallback(
+    (x: number, y: number): DrawingObject | null => hitInObjects(doc.objects, x, y),
+    [doc.objects, hitInObjects],
+  );
+
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     e.preventDefault();
+    editorRef.current?.focus();
     setContextMenu(null);
     e.currentTarget.setPointerCapture(e.pointerId);
     const canvasResize = (e.target as SVGElement).dataset.canvasResize;
@@ -290,7 +300,7 @@ export function DrawingEditor({
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
     const rotateObjectId = (e.target as SVGElement).dataset.objectRotate;
     if (rotateObjectId) {
-      const object = doc.objects.find((candidate) => candidate.id === rotateObjectId);
+      const object = findObjectById(doc.objects, rotateObjectId);
       if (object) {
         setSelectedIds([rotateObjectId]);
         setDragging({
@@ -307,7 +317,7 @@ export function DrawingEditor({
     const objectResize = (e.target as SVGElement).dataset.objectResize;
     const objectId = (e.target as SVGElement).dataset.objectId;
     if (objectResize && objectId) {
-      const object = doc.objects.find((candidate) => candidate.id === objectId);
+      const object = findObjectById(doc.objects, objectId);
       if (object) {
         setSelectedIds([objectId]);
         setDragging({
@@ -326,7 +336,14 @@ export function DrawingEditor({
         return;
       }
     }
-    const hit = hitTest(x, y);
+    const selectedNestedObject = selectedIds.length === 1
+      ? findObjectById(doc.objects, selectedIds[0])
+      : undefined;
+    const nestedHit = selectedNestedObject &&
+      !doc.objects.some((object) => object.id === selectedNestedObject.id)
+      ? hitInObjects([selectedNestedObject], x, y)
+      : null;
+    const hit = nestedHit ?? hitTest(x, y);
 
     if (tool === "connector" || tool === "curveConnector" || tool === "elbowConnector") {
       if (connectorStart === null && hit && hit.type !== "connector") {
@@ -414,7 +431,14 @@ export function DrawingEditor({
   const handleContextMenu = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
-    const hit = hitTest(x, y);
+    const selectedObject = selectedIds.length === 1
+      ? findObjectById(doc.objects, selectedIds[0])
+      : undefined;
+    const selectedHit = selectedObject &&
+      !doc.objects.some((object) => object.id === selectedObject.id)
+      ? hitInObjects([selectedObject], x, y)
+      : null;
+    const hit = selectedHit ?? hitTest(x, y);
     if (!hit) {
       setContextMenu(null);
       return;
@@ -561,6 +585,7 @@ export function DrawingEditor({
       return;
     }
     if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
       commit(deleteObjects(doc, selectedIds));
       setSelectedIds([]);
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
@@ -574,6 +599,7 @@ export function DrawingEditor({
           .map((o) => o.id),
       );
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+      e.preventDefault();
       const dup = pasteObjects(doc, copyObjects(doc, selectedIds));
       commit(dup);
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -622,7 +648,18 @@ export function DrawingEditor({
   };
 
   const handleDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    e.preventDefault();
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    if (selectedIds.length === 1) {
+      const selected = findObjectById(doc.objects, selectedIds[0]);
+      if (selected?.type === "group") {
+        const member = hitInObjects(selected.members, x, y);
+        if (member) {
+          setSelectedIds([member.id]);
+          return;
+        }
+      }
+    }
     const hit = hitTest(x, y);
     if (!hit || !isTextShapeType(hit.type)) return;
     setSelectedIds([hit.id]);
@@ -807,7 +844,7 @@ export function DrawingEditor({
   const viewport = drawingViewport(doc.canvas, zoom);
 
   return (
-    <div className="drawing-editor" onKeyDown={handleKeyDown} tabIndex={0}>
+    <div ref={editorRef} className="drawing-editor" onKeyDown={handleKeyDown} tabIndex={0}>
       <div className="drawing-toolbar">
         <button
           className={tool === "select" ? "active" : ""}
@@ -911,7 +948,7 @@ export function DrawingEditor({
           <g>
             <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
             {selectedIds.map((id) => {
-              const obj = doc.objects.find((o) => o.id === id);
+              const obj = findObjectById(doc.objects, id);
               if (obj?.type === "connector") {
                 const geometry = connectorGeometry(obj, doc.objects);
                 if (!geometry) return null;
@@ -1075,7 +1112,7 @@ export function DrawingEditor({
         <span>{Math.round(doc.canvas.width)} × {Math.round(doc.canvas.height)}</span>
       </div>
       {contextMenu && (() => {
-        const object = doc.objects.find((candidate) => candidate.id === contextMenu.objectId);
+        const object = findObjectById(doc.objects, contextMenu.objectId);
         if (!object) return null;
         const supportsLine = ([...TEXT_SHAPE_TYPES, "line", "arrow", "connector"] as string[])
           .includes(object.type);
@@ -1127,6 +1164,58 @@ export function DrawingEditor({
                 </select>
               </div>
             </>}
+            {isTextShapeType(object.type) && <>
+              <div className="inspector-row">
+                <label>H Align</label>
+                <select
+                  aria-label="H Align"
+                  value={(object as DrawingObject & { textStyle?: { align?: string } }).textStyle?.align ?? "center"}
+                  onChange={(event) => updateShapeHorizontalAlign(
+                    event.target.value as "left" | "center" | "right",
+                  )}
+                >
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </div>
+              <div className="inspector-row">
+                <label>V Align</label>
+                <select
+                  aria-label="V Align"
+                  value={(object as DrawingObject & { textStyle?: { verticalAlign?: string } }).textStyle?.verticalAlign ?? "middle"}
+                  onChange={(event) => updateShapeVerticalAlign(
+                    event.target.value as "top" | "middle" | "bottom",
+                  )}
+                >
+                  <option value="top">Top</option>
+                  <option value="middle">Middle</option>
+                  <option value="bottom">Bottom</option>
+                </select>
+              </div>
+              <div className="inspector-arrange">
+                <button aria-label="Bring to Front"
+                  onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>
+                <button aria-label="Bring Forward"
+                  onClick={() => commit(bringForward(doc, selectedIds))}>Fwd</button>
+                <button aria-label="Send Backward"
+                  onClick={() => commit(sendBackward(doc, selectedIds))}>Back</button>
+                <button aria-label="Send to Back"
+                  onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
+              </div>
+            </>}
+            {(object.type === "image" || object.type === "group") && (
+              <div className="inspector-arrange">
+                <button aria-label="Bring to Front"
+                  onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>
+                <button aria-label="Bring Forward"
+                  onClick={() => commit(bringForward(doc, selectedIds))}>Fwd</button>
+                <button aria-label="Send Backward"
+                  onClick={() => commit(sendBackward(doc, selectedIds))}>Back</button>
+                <button aria-label="Send to Back"
+                  onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
+              </div>
+            )}
             {object.type === "connector" && <>
               <div className="inspector-row">
                 <label>Start</label>

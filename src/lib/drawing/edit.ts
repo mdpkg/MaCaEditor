@@ -8,6 +8,43 @@ import { createImageObject, newId } from "./factory";
 
 export type AlignKind = "left" | "center" | "right" | "top" | "middle" | "bottom";
 
+export function findObjectById(
+  objects: DrawingObject[],
+  id: string,
+): DrawingObject | undefined {
+  for (const object of objects) {
+    if (object.id === id) return object;
+    if (object.type === "group") {
+      const member = findObjectById(object.members, id);
+      if (member) return member;
+    }
+  }
+  return undefined;
+}
+
+function mapObjectById(
+  object: DrawingObject,
+  id: string,
+  update: (object: DrawingObject) => DrawingObject,
+): DrawingObject {
+  if (object.id === id) return update(object);
+  if (object.type !== "group") return object;
+  const members = object.members.map((member) => mapObjectById(member, id, update));
+  if (members.every((member, index) => member === object.members[index])) return object;
+  return updateGroupBounds({ ...object, members });
+}
+
+function updateGroupBounds(group: GroupObject): GroupObject {
+  const boundsMembers = group.members.filter((member) => member.type !== "connector");
+  const measured = boundsMembers.length > 0 ? boundsMembers : group.members;
+  if (measured.length === 0) return group;
+  const minX = Math.min(...measured.map((member) => member.x));
+  const minY = Math.min(...measured.map((member) => member.y));
+  const maxX = Math.max(...measured.map((member) => member.x + member.width));
+  const maxY = Math.max(...measured.map((member) => member.y + member.height));
+  return { ...group, x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
 export function updateConnectorEnds(
   doc: DrawingDocument,
   id: string,
@@ -147,8 +184,8 @@ export function moveObject(
 ): DrawingDocument {
   return {
     ...doc,
-    objects: doc.objects.map((o) =>
-      o.id === id ? translateObject(o, dx, dy) : o,
+    objects: doc.objects.map((object) =>
+      mapObjectById(object, id, (target) => translateObject(target, dx, dy)),
     ),
   };
 }
@@ -174,6 +211,21 @@ function translateObject(object: DrawingObject, dx: number, dy: number): Drawing
   return { ...object, x: object.x + dx, y: object.y + dy };
 }
 
+function translateSelectedObject(
+  object: DrawingObject,
+  selected: Set<string>,
+  dx: number,
+  dy: number,
+): DrawingObject {
+  if (selected.has(object.id)) return translateObject(object, dx, dy);
+  if (object.type !== "group") return object;
+  const members = object.members.map((member) =>
+    translateSelectedObject(member, selected, dx, dy),
+  );
+  if (members.every((member, index) => member === object.members[index])) return object;
+  return updateGroupBounds({ ...object, members });
+}
+
 export function moveObjectsFromDragStart(
   original: DrawingDocument,
   ids: string[],
@@ -186,7 +238,7 @@ export function moveObjectsFromDragStart(
   return {
     ...original,
     objects: original.objects.map((object) =>
-      selected.has(object.id) ? translateObject(object, dx, dy) : object,
+      translateSelectedObject(object, selected, dx, dy),
     ),
   };
 }
@@ -199,7 +251,7 @@ export function moveObjectsFromDragStartSnapped(
   current: { x: number; y: number },
   gridSize: number,
 ): DrawingDocument {
-  const anchor = original.objects.find((object) => object.id === anchorId);
+  const anchor = findObjectById(original.objects, anchorId);
   if (!anchor || gridSize <= 0) return moveObjectsFromDragStart(original, ids, start, current);
   const rawDx = current.x - start.x;
   const rawDy = current.y - start.y;
@@ -363,6 +415,15 @@ export function deleteObjects(
   ids: string[],
 ): DrawingDocument {
   const idSet = new Set(ids);
+  const collectDescendantIds = (object: DrawingObject) => {
+    idSet.add(object.id);
+    if (object.type === "group") {
+      object.members.forEach(collectDescendantIds);
+    }
+  };
+  doc.objects
+    .filter((object) => idSet.has(object.id))
+    .forEach(collectDescendantIds);
   return {
     ...doc,
     objects: doc.objects.filter((o) => {
