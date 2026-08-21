@@ -424,6 +424,24 @@ body {
   cursor: pointer;
 }
 
+.drawing-context-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 230px;
+  max-height: min(520px, calc(100vh - 16px));
+  overflow: auto;
+  scrollbar-width: none;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 24%);
+}
+
+.drawing-context-menu::-webkit-scrollbar {
+  display: none;
+}
+
 .inspector-row textarea {
   min-height: 64px;
   resize: vertical;

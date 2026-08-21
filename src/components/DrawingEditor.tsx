@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ConnectorEndMarker, DrawingDocument, DrawingObject, LineDashStyle } from "../lib/drawing/model";
+import type { ConnectorEndMarker, DrawingDocument, DrawingObject, LineDashStyle, ObjectStyle } from "../lib/drawing/model";
 import { renderSvg } from "../lib/drawing/svg";
 import { createConnector, createObject, type ToolKind } from "../lib/drawing/factory";
 import {
@@ -128,6 +128,11 @@ export function DrawingEditor({
     currentX: number;
     currentY: number;
   } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    objectId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [dragging, setDragging] = useState<{
     type: "move" | "resize" | "rotate" | "create" | "canvasResize" | "marquee";
     id?: string;
@@ -154,6 +159,17 @@ export function DrawingEditor({
       shapeTextRef.current.value.length,
     );
   }, [textFocusRequest]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
 
   const selectedObjects = useMemo(
     () => doc.objects.filter((o) => selectedIds.includes(o.id)),
@@ -256,6 +272,7 @@ export function DrawingEditor({
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     e.preventDefault();
+    setContextMenu(null);
     e.currentTarget.setPointerCapture(e.pointerId);
     const canvasResize = (e.target as SVGElement).dataset.canvasResize;
     if (canvasResize === "width" || canvasResize === "height" || canvasResize === "both") {
@@ -392,6 +409,18 @@ export function DrawingEditor({
       origW: obj.width,
       origH: obj.height,
     });
+  };
+
+  const handleContextMenu = (e: React.MouseEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const hit = hitTest(x, y);
+    if (!hit) {
+      setContextMenu(null);
+      return;
+    }
+    setSelectedIds([hit.id]);
+    setContextMenu({ objectId: hit.id, x: e.clientX, y: e.clientY });
   };
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -856,6 +885,7 @@ export function DrawingEditor({
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onContextMenu={handleContextMenu}
           onDoubleClick={handleDoubleClick}
           onWheel={handleWheel}
         >
@@ -1044,6 +1074,81 @@ export function DrawingEditor({
         <span>Snap {snap ? "On" : "Off"}</span>
         <span>{Math.round(doc.canvas.width)} × {Math.round(doc.canvas.height)}</span>
       </div>
+      {contextMenu && (() => {
+        const object = doc.objects.find((candidate) => candidate.id === contextMenu.objectId);
+        if (!object) return null;
+        const supportsLine = ([...TEXT_SHAPE_TYPES, "line", "arrow", "connector"] as string[])
+          .includes(object.type);
+        const style = object.style as ObjectStyle;
+        return createPortal(
+          <div
+            className="drawing-context-menu drawing-inspector"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            {isTextShapeType(object.type) && <>
+              <div className="inspector-row">
+                <label>Fill</label>
+                <ColorPicker kind="fill" value={toColor(style.fill)} onChange={updateFill} />
+              </div>
+              <div className="inspector-row">
+                <label>Fill opacity</label>
+                <input aria-label="Fill opacity" type="number" min="0" max="100"
+                  value={Math.round((style.fillOpacity ?? 1) * 100)}
+                  onChange={(event) => updateOpacity("fill", Number(event.target.value))} />
+                <span>%</span>
+              </div>
+            </>}
+            {supportsLine && <>
+              <div className="inspector-row">
+                <label>Color</label>
+                <ColorPicker kind="stroke" value={toColor(style.stroke)} onChange={updateStroke} />
+              </div>
+              <div className="inspector-row">
+                <label>Weight</label>
+                <input type="number" min="0.25" step="0.25"
+                  value={style.strokeWidth ?? 1}
+                  onChange={(event) => updateStrokeWidth(Number(event.target.value))} />
+              </div>
+              <div className="inspector-row">
+                <label>Line opacity</label>
+                <input aria-label="Line opacity" type="number" min="0" max="100"
+                  value={Math.round((style.strokeOpacity ?? 1) * 100)}
+                  onChange={(event) => updateOpacity("stroke", Number(event.target.value))} />
+                <span>%</span>
+              </div>
+              <div className="inspector-row">
+                <label>Dashes</label>
+                <select value={style.dashStyle ?? "solid"}
+                  onChange={(event) => updateDashStyle(event.target.value as LineDashStyle)}>
+                  {LINE_DASH_OPTIONS.map((option) =>
+                    <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+            </>}
+            {object.type === "connector" && <>
+              <div className="inspector-row">
+                <label>Start</label>
+                <select value={object.startMarker ?? "none"}
+                  onChange={(event) => updateConnectorEnd("start", event.target.value as ConnectorEndMarker)}>
+                  <option value="none">None</option><option value="arrow">Arrow</option>
+                  <option value="crowFoot">Crow's Foot</option>
+                </select>
+              </div>
+              <div className="inspector-row">
+                <label>End</label>
+                <select value={object.endMarker ?? "arrow"}
+                  onChange={(event) => updateConnectorEnd("end", event.target.value as ConnectorEndMarker)}>
+                  <option value="none">None</option><option value="arrow">Arrow</option>
+                  <option value="crowFoot">Crow's Foot</option>
+                </select>
+              </div>
+            </>}
+          </div>,
+          document.body,
+        );
+      })()}
       {(() => {
         const inspector = <div className="drawing-inspector">
         <h4>Properties</h4>

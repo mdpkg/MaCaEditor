@@ -47,6 +47,74 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("opens shape properties in a context menu and applies changes", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+
+    act(() => canvas.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, clientX: 110, clientY: 110,
+    })));
+
+    const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
+    expect(menu).not.toBeNull();
+    expect(menu.querySelector('input[aria-label="Fill opacity"]')).not.toBeNull();
+    const red = menu.querySelector('[data-color-kind="fill"][title="Red"]') as HTMLButtonElement;
+    act(() => red.click());
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects[0].style).toMatchObject({ fill: "#ff0000" });
+    act(() => root.unmount());
+  });
+
+  test("opens connector properties in a context menu", () => {
+    const connectorDoc: DrawingDocument = {
+      ...initial,
+      objects: [
+        initial.objects[0],
+        { ...initial.objects[0], id: "rect-2", x: 300, zIndex: 2 },
+        {
+          id: "connector-1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+          rotation: 0, zIndex: 3, from: { objectId: "rect-1" },
+          to: { objectId: "rect-2" }, style: {},
+        },
+      ],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <DrawingEditor doc={connectorDoc} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+
+    act(() => canvas.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, clientX: 240, clientY: 120,
+    })));
+
+    const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
+    expect(menu.textContent).toContain("Line opacity");
+    expect(menu.textContent).toContain("Start");
+    expect(menu.textContent).toContain("End");
+    expect(menu.textContent).not.toContain("Fill opacity");
+    act(() => root.unmount());
+  });
+
+
   test("applies preset colors to fill and line", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");

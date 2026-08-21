@@ -51,3 +51,15 @@ describe("drawing toolbar dropdowns", () => {
     expect(styles).not.toContain(".drawing-toolbar select.active");
   });
 });
+
+describe("drawing context menu", () => {
+  it("keeps scrolling available while hiding its scrollbar", () => {
+    const start = styles.indexOf(".drawing-context-menu {");
+    const block = start >= 0 ? styles.slice(start, styles.indexOf("}", start)) : "";
+
+    expect(block).toContain("overflow: auto");
+    expect(block).toContain("scrollbar-width: none");
+    expect(styles).toContain(".drawing-context-menu::-webkit-scrollbar");
+    expect(styles).toContain("display: none");
+  });
+});
