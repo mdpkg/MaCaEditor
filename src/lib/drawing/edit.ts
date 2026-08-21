@@ -38,6 +38,25 @@ export function updateObjectRotation(
   };
 }
 
+export function rotateObjectFromDragStart(
+  original: DrawingDocument,
+  id: string,
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  snap: boolean,
+): DrawingDocument {
+  const object = original.objects.find((candidate) => candidate.id === id);
+  if (!object) return original;
+  const centerX = object.x + object.width / 2;
+  const centerY = object.y + object.height / 2;
+  const startAngle = Math.atan2(start.y - centerY, start.x - centerX);
+  const currentAngle = Math.atan2(current.y - centerY, current.x - centerX);
+  let rotation = object.rotation + (currentAngle - startAngle) * 180 / Math.PI;
+  if (snap) rotation = Math.round(rotation / 15) * 15;
+  rotation = ((rotation % 360) + 360) % 360;
+  return updateObjectRotation(original, id, rotation);
+}
+
 /** 画像オブジェクトを挿入する。src はサニタイズされる。 */
 export function insertImageObject(
   doc: DrawingDocument,

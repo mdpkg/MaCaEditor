@@ -321,6 +321,10 @@ body {
   -webkit-user-select: none;
 }
 
+.object-rotate-handle {
+  cursor: grab;
+}
+
 .canvas-resize-handle {
   fill: transparent;
   stroke: none;

@@ -15,6 +15,7 @@ import {
   moveObjectsFromDragStartSnapped,
   resizeCanvasFromDrag,
   resizeObjectFromDragStart,
+  rotateObjectFromDragStart,
   selectObjectsInRect,
   sendBackward,
   sendToBack,
@@ -104,7 +105,7 @@ export function DrawingEditor({
     currentY: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "create" | "canvasResize" | "marquee";
+    type: "move" | "resize" | "rotate" | "create" | "canvasResize" | "marquee";
     id?: string;
     ids?: string[];
     startX: number;
@@ -246,6 +247,22 @@ export function DrawingEditor({
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const rotateObjectId = (e.target as SVGElement).dataset.objectRotate;
+    if (rotateObjectId) {
+      const object = doc.objects.find((candidate) => candidate.id === rotateObjectId);
+      if (object) {
+        setSelectedIds([rotateObjectId]);
+        setDragging({
+          type: "rotate",
+          id: rotateObjectId,
+          startX: x,
+          startY: y,
+          before: doc,
+        });
+        dragPreviewRef.current = doc;
+        return;
+      }
+    }
     const objectResize = (e.target as SVGElement).dataset.objectResize;
     const objectId = (e.target as SVGElement).dataset.objectId;
     if (objectResize && objectId) {
@@ -399,6 +416,19 @@ export function DrawingEditor({
       return;
     }
 
+    if (dragging.type === "rotate" && dragging.id && dragging.before) {
+      const next = rotateObjectFromDragStart(
+        dragging.before,
+        dragging.id,
+        { x: dragging.startX, y: dragging.startY },
+        { x, y },
+        snap,
+      );
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "move" && dragging.id) {
       const original = dragging.before ?? doc;
       const start = { x: dragging.startX, y: dragging.startY };
@@ -452,7 +482,7 @@ export function DrawingEditor({
       setRedoStack([]);
       onChange(after);
       onDirty(after);
-    } else if (dragging?.type === "resize" && dragging.before) {
+    } else if ((dragging?.type === "resize" || dragging?.type === "rotate") && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -879,6 +909,26 @@ export function DrawingEditor({
                     stroke="#2d6cdf"
                     strokeWidth={1}
                     strokeDasharray="4 2"
+                  />
+                  <line
+                    className="object-rotate-stem"
+                    x1={obj.x + obj.width / 2}
+                    y1={obj.y - 4}
+                    x2={obj.x + obj.width / 2}
+                    y2={obj.y - 24}
+                    stroke="#2d6cdf"
+                    strokeWidth={1 / zoom}
+                    pointerEvents="none"
+                  />
+                  <circle
+                    className="object-rotate-handle"
+                    data-object-rotate={obj.id}
+                    cx={obj.x + obj.width / 2}
+                    cy={obj.y - 28}
+                    r={6 / zoom}
+                    fill="#ffffff"
+                    stroke="#2d6cdf"
+                    strokeWidth={2 / zoom}
                   />
                   {obj.type !== "group" && [
                     "nw",

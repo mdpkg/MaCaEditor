@@ -15,6 +15,7 @@ import {
   resizeCanvasFromDrag,
   resizeObject,
   resizeObjectFromDragStart,
+  rotateObjectFromDragStart,
   redo,
   selectGroup,
   selectObject,
@@ -317,6 +318,36 @@ describe("updateObjectRotation", () => {
     const updated = updateObjectRotation(doc([rect("r1", 100, 80)]), "r1", 45);
 
     expect(updated.objects[0].rotation).toBe(45);
+  });
+});
+
+describe("rotateObjectFromDragStart", () => {
+  test("rotates around the object center from the drag angle", () => {
+    const original = doc([rect("r1", 100, 100)]);
+
+    const rotated = rotateObjectFromDragStart(
+      original,
+      "r1",
+      { x: 150, y: 50 },
+      { x: 200, y: 125 },
+      false,
+    );
+
+    expect(rotated.objects[0].rotation).toBeCloseTo(90);
+  });
+
+  test("snaps rotation to 15 degree increments", () => {
+    const original = doc([{ ...rect("r1", 100, 100), rotation: 10 }]);
+
+    const rotated = rotateObjectFromDragStart(
+      original,
+      "r1",
+      { x: 150, y: 50 },
+      { x: 175, y: 60 },
+      true,
+    );
+
+    expect(rotated.objects[0].rotation % 15).toBe(0);
   });
 });
 
