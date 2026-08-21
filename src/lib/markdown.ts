@@ -56,3 +56,20 @@ export function insertMarkdownImages(
     cursor: position + insertion.length - suffix.length,
   };
 }
+
+export function insertMarkdownBlock(
+  content: string,
+  cursor: number | null,
+  block: string,
+): { content: string; cursor: number } {
+  const position = cursor === null ? content.length : Math.max(0, Math.min(cursor, content.length));
+  const before = content.slice(0, position);
+  const after = content.slice(position);
+  const prefix = before.length > 0 && !before.endsWith("\n") ? "\n" : "";
+  const suffix = after.length > 0 && !after.startsWith("\n") ? "\n" : "";
+  const insertion = `${prefix}${block}${suffix}`;
+  return {
+    content: before + insertion + after,
+    cursor: position + insertion.length - suffix.length,
+  };
+}

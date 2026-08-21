@@ -12,6 +12,7 @@ interface Props {
   onInsertDrawing: () => void;
   onInsertPlantUml: () => void;
   onInsertMermaid: () => void;
+  onInsertTable: () => void;
   onAddImage: () => void;
 }
 
@@ -29,6 +30,7 @@ export function Toolbar({
   onInsertDrawing,
   onInsertPlantUml,
   onInsertMermaid,
+  onInsertTable,
   onAddImage,
 }: Props) {
   const [openMenu, setOpenMenu] = useState<Menu>(null);
@@ -89,6 +91,7 @@ export function Toolbar({
         )}
       </div>
 
+      <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
       <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
       {dirty && <span className="dirty-indicator">●</span>}
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { insertMarkdownImages, relativePackagePath, resolvePackagePath } from "./markdown";
+import { insertMarkdownBlock, insertMarkdownImages, relativePackagePath, resolvePackagePath } from "./markdown";
 
 describe("resolvePackagePath", () => {
   test("resolves relative image path", () => {
@@ -62,5 +62,19 @@ describe("Markdown image insertion", () => {
     expect(result.content).toBe(
       "![スクリーンショット 2022](<images/スクリーンショット 2022.png>)",
     );
+  });
+});
+
+describe("Markdown block insertion", () => {
+  test("inserts a table at the cursor with surrounding line breaks", () => {
+    const table = "|  |  |\n| --- | --- |\n|  |  |\n|  |  |";
+    const result = insertMarkdownBlock("beforeafter", 6, table);
+    expect(result.content).toBe(`before\n${table}\nafter`);
+    expect(result.cursor).toBe(`before\n${table}`.length);
+  });
+
+  test("appends a block when no cursor is available", () => {
+    const result = insertMarkdownBlock("# Title", null, "table");
+    expect(result.content).toBe("# Title\ntable");
   });
 });

@@ -30,13 +30,14 @@ describe("Toolbar menus", () => {
         onInsertDrawing={onInsertDrawing}
         onInsertPlantUml={noop}
         onInsertMermaid={noop}
+        onInsertTable={noop}
         onAddImage={noop}
       />,
     ));
 
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
-    expect(topLevel).toEqual(["File", "Insert Diagram", "Add Image"]);
+    expect(topLevel).toEqual(["File", "Insert Diagram", "Insert Table", "Add Image"]);
 
     const fileButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "File") as HTMLButtonElement;

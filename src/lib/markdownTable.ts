@@ -6,6 +6,8 @@ export interface MarkdownTableData {
   rows: string[][];
 }
 
+export const EMPTY_2X2_MARKDOWN_TABLE = "|  |  |\n| --- | --- |\n|  |  |\n|  |  |";
+
 function splitRow(line: string): string[] {
   const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   const cells: string[] = [];

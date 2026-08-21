@@ -36,7 +36,7 @@ import {
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
 import type { FileInfo } from "./types";
-import { insertMarkdownImages } from "./lib/markdown";
+import { insertMarkdownBlock, insertMarkdownImages } from "./lib/markdown";
 import { isSaveShortcut } from "./lib/shortcuts";
 import {
   droppedFileToImage,
@@ -58,6 +58,7 @@ import {
   saveMermaidToDocument,
 } from "./lib/mermaid/docIntegration";
 import { renderMermaid } from "./lib/mermaid/renderer";
+import { EMPTY_2X2_MARKDOWN_TABLE } from "./lib/markdownTable";
 
 type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "table";
 
@@ -440,6 +441,23 @@ export default function App() {
     }
   };
 
+  const handleInsertTable = () => {
+    if (!doc) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    if (!markdownFile || markdownFile.content === null) return;
+    const cursor = markdownFile.path === selectedPath ? editorCursorRef.current : null;
+    const inserted = insertMarkdownBlock(markdownFile.content, cursor, EMPTY_2X2_MARKDOWN_TABLE);
+    editorCursorRef.current = inserted.cursor;
+    setDoc(updateFileContent(doc, markdownFile.path, inserted.content));
+    setSelectedPath(markdownFile.path);
+    setTableEdit(null);
+    setMode("split");
+    setStatus("Inserted 2 × 2 table");
+    setError(null);
+  };
+
   const handleDropImages = async (files: File[]) => {
     const supported = files.filter((file) => isSupportedImageName(file.name));
     if (supported.length === 0) {
@@ -621,6 +639,7 @@ export default function App() {
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
         onInsertMermaid={handleInsertMermaid}
+        onInsertTable={handleInsertTable}
         onAddImage={handleAddImage}
       />
       <div className="main-layout">

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { parseMarkdownTable, serializeMarkdownTable } from "./markdownTable";
+import { EMPTY_2X2_MARKDOWN_TABLE, parseMarkdownTable, serializeMarkdownTable } from "./markdownTable";
 
 describe("Markdown table model", () => {
+  test("provides an empty two-column, two-row table with a header", () => {
+    expect(EMPTY_2X2_MARKDOWN_TABLE).toBe("|  |  |\n| --- | --- |\n|  |  |\n|  |  |");
+  });
   test("parses headers, rows, escaped pipes, and alignment", () => {
     const table = parseMarkdownTable([
       "| Name | Description | Value |",
