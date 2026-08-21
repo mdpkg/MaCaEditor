@@ -8,6 +8,7 @@ import { Toolbar } from "./components/Toolbar";
 import { DrawingEditor } from "./components/DrawingEditor";
 import { PlantUmlEditor } from "./components/PlantUmlEditor";
 import { MermaidEditor } from "./components/MermaidEditor";
+import { MarkdownTableEditor } from "./components/MarkdownTableEditor";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
@@ -58,7 +59,13 @@ import {
 } from "./lib/mermaid/docIntegration";
 import { renderMermaid } from "./lib/mermaid/renderer";
 
-type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid";
+type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "table";
+
+interface TableEditContext {
+  path: string;
+  start: number;
+  end: number;
+}
 
 export default function App() {
   const [doc, setDoc] = useState<DocumentState | null>(null);
@@ -70,6 +77,7 @@ export default function App() {
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
   const [mermaidPath, setMermaidPath] = useState<string | null>(null);
+  const [tableEdit, setTableEdit] = useState<TableEditContext | null>(null);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
 
@@ -230,6 +238,7 @@ export default function App() {
 
   const handleSelect = (path: string) => {
     editorCursorRef.current = null;
+    setTableEdit(null);
     setSelectedPath(path);
     if (path.endsWith(".draw.json")) {
       const file = doc?.files.find((f) => f.path === path);
@@ -554,6 +563,24 @@ export default function App() {
     handleSelect(sourcePath);
   };
 
+  const handleEditTable = (path: string, start: number, end: number) => {
+    setSelectedPath(path);
+    setTableEdit({ path, start, end });
+    setMode("table");
+  };
+
+  const handleTableChange = (markdown: string) => {
+    if (!tableEdit) return;
+    setDoc((current) => {
+      if (!current) return current;
+      const file = current.files.find((candidate) => candidate.path === tableEdit.path);
+      if (!file?.is_text || file.content === null) return current;
+      const content = `${file.content.slice(0, tableEdit.start)}${markdown}${file.content.slice(tableEdit.end)}`;
+      return updateFileContent(current, tableEdit.path, content);
+    });
+    setTableEdit((current) => current ? { ...current, end: current.start + markdown.length } : current);
+  };
+
   const resolveDiscard = (discard: boolean) => {
     setError(null);
     if (discard && pendingRef.current) {
@@ -663,7 +690,22 @@ export default function App() {
               />
             ) : null;
           })()}
-          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && displayFile && displayFile.is_text && (
+          {doc && mode === "table" && tableEdit && (() => {
+            const file = doc.files.find((candidate) => candidate.path === tableEdit.path);
+            const source = file?.content?.slice(tableEdit.start, tableEdit.end);
+            return source ? (
+              <MarkdownTableEditor
+                key={`${tableEdit.path}:${tableEdit.start}`}
+                source={source}
+                onChange={handleTableChange}
+                onDone={() => {
+                  setTableEdit(null);
+                  setMode("split");
+                }}
+              />
+            ) : null;
+          })()}
+          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "table" && displayFile && displayFile.is_text && (
             <>
               {mode === "preview" && (
                 <div className="preview-only">
@@ -675,6 +717,7 @@ export default function App() {
                     onEditDrawing={handleEditDrawingFromPreview}
                     onEditPlantUml={handleEditPlantUmlFromPreview}
                     onEditMermaid={handleEditMermaidFromPreview}
+                    onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -696,12 +739,13 @@ export default function App() {
                     onEditDrawing={handleEditDrawingFromPreview}
                     onEditPlantUml={handleEditPlantUmlFromPreview}
                     onEditMermaid={handleEditMermaidFromPreview}
+                    onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                   />
                 </div>
               )}
             </>
           )}
-          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && displayFile && !displayFile.is_text && (
+          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "table" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
               {displayFile.base64 && (
                 <img src={`data:${imageMediaType(displayFile.path)};base64,${displayFile.base64}`} alt="" />

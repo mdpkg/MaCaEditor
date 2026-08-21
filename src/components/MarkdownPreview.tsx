@@ -17,6 +17,7 @@ interface Props {
   onEditDrawing?: (drawPath: string) => void;
   onEditPlantUml?: (sourcePath: string) => void;
   onEditMermaid?: (sourcePath: string) => void;
+  onEditTable?: (start: number, end: number) => void;
 }
 
 function packageUrl(baseDir: string, url: string): string {
@@ -56,8 +57,28 @@ export function MarkdownPreview({
   onEditDrawing,
   onEditPlantUml,
   onEditMermaid,
+  onEditTable,
 }: Props) {
   const components: Components = {
+    table({ node, ...props }) {
+      const start = node?.position?.start.offset;
+      const end = node?.position?.end.offset;
+      return <table
+        {...props}
+        className={onEditTable ? "editable-markdown-table" : undefined}
+        role={onEditTable ? "button" : undefined}
+        tabIndex={onEditTable ? 0 : undefined}
+        onClick={() => {
+          if (start !== undefined && end !== undefined) onEditTable?.(start, end);
+        }}
+        onKeyDown={(event) => {
+          if ((event.key === "Enter" || event.key === " ") && start !== undefined && end !== undefined) {
+            event.preventDefault();
+            onEditTable?.(start, end);
+          }
+        }}
+      />;
+    },
     img({ src = "", alt = "", ...props }) {
       const resolved = resolvePackagePath(baseDir, decodePackageUrl(src));
       const file = resolved ? files.find((candidate) => candidate.path === resolved) : undefined;

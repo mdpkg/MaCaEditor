@@ -49,6 +49,29 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test("reports the Markdown source range when a table is clicked", () => {
+    const onEditTable = vi.fn();
+    const markdown = "Before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={markdown}
+        baseDir=""
+        files={[]}
+        onEditTable={onEditTable}
+      />,
+    ));
+
+    act(() => (container.querySelector("table") as HTMLTableElement).click());
+
+    const start = markdown.indexOf("| A | B |");
+    const end = start + "| A | B |\n| --- | --- |\n| 1 | 2 |".length;
+    expect(onEditTable).toHaveBeenCalledWith(start, end);
+    act(() => root.unmount());
+  });
+
   test("resolves package images and reports a missing image", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
