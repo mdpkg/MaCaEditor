@@ -1,25 +1,22 @@
+import { CodeEditor } from "./CodeEditor";
+
 interface Props {
   value: string;
   onChange: (value: string) => void;
   onCursorChange?: (position: number) => void;
+  vimMode?: boolean;
 }
 
-export function MarkdownEditor({ value, onChange, onCursorChange }: Props) {
-  const reportCursor = (element: HTMLTextAreaElement) => {
-    onCursorChange?.(element.selectionStart);
-  };
+export function MarkdownEditor({ value, onChange, onCursorChange, vimMode = false }: Props) {
   return (
-    <textarea
+    <CodeEditor
       className="markdown-editor"
       value={value}
-      onChange={(e) => {
-        onChange(e.target.value);
-        reportCursor(e.target);
-      }}
-      onClick={(e) => reportCursor(e.currentTarget)}
-      onKeyUp={(e) => reportCursor(e.currentTarget)}
-      onSelect={(e) => reportCursor(e.currentTarget)}
-      spellCheck={false}
+      onChange={onChange}
+      onCursorChange={onCursorChange}
+      vimMode={vimMode}
+      language="markdown"
+      ariaLabel="Markdown source"
     />
   );
 }

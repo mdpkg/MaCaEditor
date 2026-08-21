@@ -79,6 +79,7 @@ export default function App() {
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
   const [mermaidPath, setMermaidPath] = useState<string | null>(null);
   const [tableEdit, setTableEdit] = useState<TableEditContext | null>(null);
+  const [vimMode, setVimMode] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
 
@@ -641,6 +642,8 @@ export default function App() {
         onInsertMermaid={handleInsertMermaid}
         onInsertTable={handleInsertTable}
         onAddImage={handleAddImage}
+        vimMode={vimMode}
+        onVimModeChange={setVimMode}
       />
       <div className="main-layout">
         <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
@@ -690,6 +693,7 @@ export default function App() {
                 initialSvg={svgFile?.content ?? ""}
                 onSourceChange={handlePlantUmlSourceChange}
                 onRendered={handlePlantUmlRendered}
+                vimMode={vimMode}
               />
             ) : null;
           })()}
@@ -706,6 +710,7 @@ export default function App() {
                 initialSvg={svgFile?.content ?? ""}
                 onSourceChange={handleMermaidSourceChange}
                 onRendered={handleMermaidRendered}
+                vimMode={vimMode}
               />
             ) : null;
           })()}
@@ -749,6 +754,7 @@ export default function App() {
                     value={displayContent}
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
+                    vimMode={vimMode}
                   />
                   <MarkdownPreview
                     markdown={displayContent}

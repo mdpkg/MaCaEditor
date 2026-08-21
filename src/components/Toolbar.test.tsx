@@ -12,6 +12,7 @@ afterEach(() => {
 describe("Toolbar menus", () => {
   test("groups file and diagram commands and removes rename and delete", () => {
     const onInsertDrawing = vi.fn();
+    const onVimModeChange = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -32,6 +33,8 @@ describe("Toolbar menus", () => {
         onInsertMermaid={noop}
         onInsertTable={noop}
         onAddImage={noop}
+        vimMode={false}
+        onVimModeChange={onVimModeChange}
       />,
     ));
 
@@ -45,6 +48,12 @@ describe("Toolbar menus", () => {
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
       .toEqual(["New", "Open", "Save", "Save As", "Import Folder", "Export Folder"]);
     expect(container.querySelector('[role="separator"]')).not.toBeNull();
+    expect(container.querySelector('.toolbar-menu-items input[type="checkbox"]')).toBeNull();
+    const vimCheckbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(vimCheckbox.checked).toBe(false);
+    expect(vimCheckbox.closest("label")?.previousElementSibling?.textContent).toBe("Add Image");
+    act(() => vimCheckbox.click());
+    expect(onVimModeChange).toHaveBeenCalledWith(true);
 
     const diagramButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "Insert Diagram") as HTMLButtonElement;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { renderPlantUml } from "../lib/plantuml/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
+import { CodeEditor } from "./CodeEditor";
 
 interface Props {
   source: string;
@@ -8,6 +9,7 @@ interface Props {
   onSourceChange: (source: string) => void;
   onRendered: (source: string, svg: string) => void;
   render?: (source: string) => Promise<string>;
+  vimMode?: boolean;
 }
 
 export function PlantUmlEditor({
@@ -16,6 +18,7 @@ export function PlantUmlEditor({
   onSourceChange,
   onRendered,
   render = renderPlantUml,
+  vimMode = false,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +50,12 @@ export function PlantUmlEditor({
     <div className="plantuml-editor">
       <div className="plantuml-source-pane">
         <div className="plantuml-pane-title">PlantUML</div>
-        <textarea
+        <CodeEditor
           className="plantuml-source"
           value={source}
-          onChange={(event) => onSourceChange(event.target.value)}
-          spellCheck={false}
-          aria-label="PlantUML source"
+          onChange={onSourceChange}
+          vimMode={vimMode}
+          ariaLabel="PlantUML source"
         />
       </div>
       <div className="plantuml-preview-pane">

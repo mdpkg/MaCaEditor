@@ -14,6 +14,8 @@ interface Props {
   onInsertMermaid: () => void;
   onInsertTable: () => void;
   onAddImage: () => void;
+  vimMode: boolean;
+  onVimModeChange: (enabled: boolean) => void;
 }
 
 type Menu = "file" | "diagram" | null;
@@ -32,6 +34,8 @@ export function Toolbar({
   onInsertMermaid,
   onInsertTable,
   onAddImage,
+  vimMode,
+  onVimModeChange,
 }: Props) {
   const [openMenu, setOpenMenu] = useState<Menu>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -93,6 +97,14 @@ export function Toolbar({
 
       <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
       <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
+      <label className="toolbar-vim-mode">
+        <input
+          type="checkbox"
+          checked={vimMode}
+          onChange={(event) => onVimModeChange(event.target.checked)}
+        />
+        Vim mode
+      </label>
       {dirty && <span className="dirty-indicator">●</span>}
     </div>
   );

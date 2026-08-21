@@ -3,6 +3,22 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { PlantUmlEditor } from "./PlantUmlEditor";
 
+vi.mock("./CodeEditor", () => ({
+  CodeEditor: ({ value, onChange, className, ariaLabel }: {
+    value: string;
+    onChange: (value: string) => void;
+    className: string;
+    ariaLabel: string;
+  }) => (
+    <textarea
+      className={className}
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 afterEach(() => {

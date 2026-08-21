@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { renderMermaid } from "../lib/mermaid/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
+import { CodeEditor } from "./CodeEditor";
 
 interface Props {
   source: string;
@@ -8,10 +9,11 @@ interface Props {
   onSourceChange: (source: string) => void;
   onRendered: (source: string, svg: string) => void;
   render?: (source: string) => Promise<string>;
+  vimMode?: boolean;
 }
 
 export function MermaidEditor({
-  source, initialSvg, onSourceChange, onRendered, render = renderMermaid,
+  source, initialSvg, onSourceChange, onRendered, render = renderMermaid, vimMode = false,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +45,12 @@ export function MermaidEditor({
     <div className="mermaid-editor">
       <div className="mermaid-source-pane">
         <div className="diagram-pane-title">Mermaid</div>
-        <textarea
+        <CodeEditor
           className="mermaid-source"
           value={source}
-          onChange={(event) => onSourceChange(event.target.value)}
-          spellCheck={false}
-          aria-label="Mermaid source"
+          onChange={onSourceChange}
+          vimMode={vimMode}
+          ariaLabel="Mermaid source"
         />
       </div>
       <div className="mermaid-preview-pane">
