@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { DrawingDocument, DrawingObject, LineDashStyle } from "../lib/drawing/model";
+import type { ConnectorEndMarker, DrawingDocument, DrawingObject, LineDashStyle } from "../lib/drawing/model";
 import { renderSvg } from "../lib/drawing/svg";
 import { createConnector, createObject, type ToolKind } from "../lib/drawing/factory";
 import {
@@ -20,6 +20,7 @@ import {
   sendToBack,
   type AlignKind,
   type History,
+  updateConnectorEnds,
   ungroupObjects,
   updateShapeText,
   updateShapeTextAlignment,
@@ -586,6 +587,16 @@ export function DrawingEditor({
     commit(next);
   };
 
+  const updateConnectorEnd = (end: "start" | "end", marker: ConnectorEndMarker) => {
+    if (!selected || selected.type !== "connector") return;
+    commit(updateConnectorEnds(
+      doc,
+      selected.id,
+      end === "start" ? marker : selected.startMarker ?? "none",
+      end === "end" ? marker : selected.endMarker ?? "arrow",
+    ));
+  };
+
   const updateFontSize = (fontSize: number) => {
     const next = {
       ...doc,
@@ -1009,6 +1020,34 @@ export function DrawingEditor({
                     {LINE_DASH_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
+                  </select>
+                </div>
+              </>
+            )}
+            {selected.type === "connector" && (
+              <>
+                <div className="inspector-row">
+                  <label>Start</label>
+                  <select
+                    aria-label="Connector start"
+                    value={selected.startMarker ?? "none"}
+                    onChange={(e) => updateConnectorEnd("start", e.target.value as ConnectorEndMarker)}
+                  >
+                    <option value="none">None</option>
+                    <option value="arrow">Arrow</option>
+                    <option value="crowFoot">Crow's Foot</option>
+                  </select>
+                </div>
+                <div className="inspector-row">
+                  <label>End</label>
+                  <select
+                    aria-label="Connector end"
+                    value={selected.endMarker ?? "arrow"}
+                    onChange={(e) => updateConnectorEnd("end", e.target.value as ConnectorEndMarker)}
+                  >
+                    <option value="none">None</option>
+                    <option value="arrow">Arrow</option>
+                    <option value="crowFoot">Crow's Foot</option>
                   </select>
                 </div>
               </>

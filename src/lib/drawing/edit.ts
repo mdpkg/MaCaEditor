@@ -1,4 +1,5 @@
 import type {
+  ConnectorEndMarker,
   DrawingDocument,
   DrawingObject,
   GroupObject,
@@ -6,6 +7,22 @@ import type {
 import { createImageObject, newId } from "./factory";
 
 export type AlignKind = "left" | "center" | "right" | "top" | "middle" | "bottom";
+
+export function updateConnectorEnds(
+  doc: DrawingDocument,
+  id: string,
+  startMarker: ConnectorEndMarker,
+  endMarker: ConnectorEndMarker,
+): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((object) =>
+      object.id === id && object.type === "connector"
+        ? { ...object, startMarker, endMarker }
+        : object,
+    ),
+  };
+}
 
 /** 画像オブジェクトを挿入する。src はサニタイズされる。 */
 export function insertImageObject(

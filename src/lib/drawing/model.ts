@@ -114,8 +114,12 @@ export interface ConnectorObject extends BaseObject {
   curve?: boolean;
   /** true の場合は水平・垂直のカギ線コネクタとして描画する。 */
   elbow?: boolean;
+  startMarker?: ConnectorEndMarker;
+  endMarker?: ConnectorEndMarker;
   style: ObjectStyle;
 }
+
+export type ConnectorEndMarker = "none" | "arrow" | "crowFoot";
 
 export interface GroupObject extends BaseObject {
   type: "group";

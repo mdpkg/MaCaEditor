@@ -102,6 +102,16 @@ describe("DrawingEditor", () => {
     expect(container.querySelector(".connector-selection")).not.toBeNull();
     const colorInput = container.querySelector('.inspector-row input[type="color"]');
     expect(colorInput).not.toBeNull();
+    const startMenu = container.querySelector('select[aria-label="Connector start"]') as HTMLSelectElement;
+    const endMenu = container.querySelector('select[aria-label="Connector end"]') as HTMLSelectElement;
+    expect(startMenu.value).toBe("none");
+    expect(endMenu.value).toBe("arrow");
+    act(() => {
+      startMenu.value = "crowFoot";
+      startMenu.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const withCrowFoot = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(withCrowFoot.objects[2]).toMatchObject({ startMarker: "crowFoot", endMarker: "arrow" });
     act(() => root.unmount());
   });
 

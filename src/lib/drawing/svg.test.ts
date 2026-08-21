@@ -431,6 +431,31 @@ describe("svg renderer", () => {
     expect(svg).toContain('d="M 100 25 C 200 25 229.28932188134524 154.28932188134524 300 225"');
   });
 
+  test("renders independently selected connector end markers", () => {
+    const svg = renderSvg(doc([
+      {
+        id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 2,
+        from: { objectId: "a" }, to: { objectId: "b" }, startMarker: "crowFoot", endMarker: "arrow", style: {},
+      },
+      { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "rectangle", x: 300, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+    ]));
+
+    expect(svg).toContain('marker-start="url(#crow-foot)"');
+    expect(svg).toContain('marker-end="url(#arrowhead)"');
+  });
+
+  test("keeps the legacy connector default of no start and an arrow end", () => {
+    const svg = renderSvg(doc([
+      { id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 2, from: { objectId: "a" }, to: { objectId: "b" }, style: {} },
+      { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "rectangle", x: 300, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+    ]));
+
+    expect(svg).not.toContain("marker-start=");
+    expect(svg).toContain('marker-end="url(#arrowhead)"');
+  });
+
   test("connects vertical shapes at their nearest edges", () => {
     const svg = renderSvg(doc([
       { id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 2, from: { objectId: "top" }, to: { objectId: "bottom" }, style: {} },

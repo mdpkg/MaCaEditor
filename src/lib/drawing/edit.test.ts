@@ -23,6 +23,7 @@ import {
   sendToBack,
   ungroupObjects,
   undo,
+  updateConnectorEnds,
   updateShapeText,
   updateShapeTextAlignment,
   type History,
@@ -279,6 +280,19 @@ describe("resizeCanvasFromDrag", () => {
     const resized = resizeCanvasFromDrag(doc([]), "both", -2000, -2000, true);
 
     expect(resized.canvas).toMatchObject({ width: 100, height: 100 });
+  });
+});
+
+describe("updateConnectorEnds", () => {
+  test("updates the start and end independently", () => {
+    const connector: DrawingObject = {
+      id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+      rotation: 0, zIndex: 1, from: { objectId: "a" }, to: { objectId: "b" }, style: {},
+    };
+
+    const updated = updateConnectorEnds(doc([connector]), "c1", "crowFoot", "arrow");
+
+    expect(updated.objects[0]).toMatchObject({ startMarker: "crowFoot", endMarker: "arrow" });
   });
 });
 

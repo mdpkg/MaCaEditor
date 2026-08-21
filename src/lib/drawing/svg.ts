@@ -185,14 +185,19 @@ function renderConnector(
   const geometry = connectorGeometry(obj, objects);
   if (!geometry) return "";
   const { from, to, c1, c2 } = geometry;
+  const markerId = (marker: "none" | "arrow" | "crowFoot") =>
+    marker === "arrow" ? "arrowhead" : marker === "crowFoot" ? "crow-foot" : null;
+  const startMarker = markerId(obj.startMarker ?? "none");
+  const endMarker = markerId(obj.endMarker ?? "arrow");
+  const markers = `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
   if (geometry.points) {
     const points = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
-    return `<polyline points="${points}" fill="none" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
+    return `<polyline points="${points}" fill="none" ${svgLineStyle(obj.style)}${markers} />`;
   }
   if (c1 && c2) {
-    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
+    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)}${markers} />`;
   }
-  return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
+  return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)}${markers} />`;
 }
 
 /** グループを SVG の <g> として描画する。 */
@@ -283,8 +288,12 @@ export function renderSvg(
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewX} ${viewY} ${width} ${height}">
 <defs>
-<marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+<marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
 <polygon points="0 0, 10 3, 0 6" fill="#000000" />
+</marker>
+<marker id="crow-foot" markerWidth="12" markerHeight="10" refX="9" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
+<polyline points="0,0 9,3 0,6" fill="none" stroke="#000000" />
+<line x1="0" y1="3" x2="9" y2="3" stroke="#000000" />
 </marker>
 </defs>
 ${body}
