@@ -13,6 +13,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - Markdownファイルの編集とリアルタイムプレビュー
 - GitHub Flavored Markdown（GFM）対応
 - テーブル、タスクリスト、取り消し線、URL自動リンク
+- プレビュー上のテーブルをクリックしてGUIで編集
 - 日本語や空白を含む画像ファイル名への対応
 - GitHub風のプレビュースタイル
 - ファイルツリーのMarkdownファイルをダブルクリックして編集
@@ -44,21 +45,31 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - SVGへの画像追加
 - Markdownプレビュー上の図をクリックして再編集
 
+### PlantUML・Mermaid
+
+- PlantUMLとMermaidのダイアグラムを新規作成
+- テキスト形式の定義とSVGプレビューを左右に並べて表示
+- 入力内容に合わせたプレビューの自動更新
+- 構文エラーの表示
+- Markdownのカーソル位置または末尾へダイアグラムを挿入
+- Markdownプレビュー上のダイアグラムをクリックして再編集
+- PlantUMLは`plantuml.js`、Mermaidは`mermaid.js`を使用し、アプリ内で描画
+
 ## 基本的な使い方
 
 ### `.mdpkg` を編集する
 
-1. **Open** で `.mdpkg` ファイルを開きます。
+1. **File** メニューの **Open** で `.mdpkg` ファイルを開きます。
 2. 左側のファイルツリーからMarkdownファイルを選択します。
 3. Markdownファイルをダブルクリックするか、プレビュー画面の **Edit** を押します。
 4. Markdownを編集し、プレビューで表示を確認します。
-5. **Save** または `Ctrl+S` で保存します。
+5. **File** メニューの **Save** または `Ctrl+S` で保存します。
 
 ### 新しい `.mdpkg` を作成する
 
-1. **New** を押します。
+1. **File** メニューの **New** を押します。
 2. Markdownを編集し、必要に応じて画像や図を追加します。
-3. **Save** または **Save As** で保存先を指定します。
+3. **File** メニューの **Save** または **Save As** で保存先を指定します。
 
 ### 画像を追加する
 
@@ -71,22 +82,29 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 ### 図を追加する
 
 1. Markdownの挿入位置へカーソルを置きます。
-2. **Insert Drawing** を押します。
+2. **Insert Diagram** メニューから **SVG** を選択します。
 3. Drawing Editorで図を作成します。
 4. 図のリンクがMarkdownのカーソル位置へ挿入されます。カーソル位置がない場合は末尾へ挿入されます。
 5. Markdownプレビュー上の図をクリックすると、再びDrawing Editorで編集できます。
+
+PlantUMLまたはMermaidを作成する場合は、**Insert Diagram** メニューから該当する形式を選択します。表示されたテキストエディタへ定義を入力すると、右側のSVGプレビューが自動更新されます。
+
+### 表を追加・編集する
+
+- Markdownプレビュー上の表をクリックすると、表編集画面へ移動します。
+- 表編集画面では、セルの直接編集、行と列の追加・削除、列の左・中央・右揃え、TSVの貼り付けができます。
+- **完了** を押すと、編集結果をMarkdownへ反映して分割編集画面へ戻ります。
+- `Ctrl+Z`または`Cmd+Z`で表編集の操作を取り消せます。
 
 ### ファイル名を変更・削除する
 
 1. ファイルツリーで画像またはダイアグラムを右クリックします。
 2. **Rename** または **Delete** を選択します。
 
-上部ツールバーの **Rename** と **Delete** も利用できます。
-
 ### フォルダとの間で入出力する
 
-- **Import Folder**: フォルダの内容から `.mdpkg` を作成します。
-- **Export Folder**: 開いている `.mdpkg` の内容をフォルダへ出力します。
+- **File** → **Import Folder**: フォルダの内容から `.mdpkg` を作成します。
+- **File** → **Export Folder**: 開いている `.mdpkg` の内容をフォルダへ出力します。
 
 ## Drawing Editorの操作
 
@@ -136,7 +154,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 ## 現在対応していない機能
 
-- PlantUML、Mermaid、Graphvizなどの図をDrawing Editorで編集する機能
+- Graphvizなど、SVG・PlantUML・Mermaid以外の図形式
 - draw.io、Excalidraw、PowerPointとのインポート／エクスポート
 - HTMLやPDFへのエクスポート
 - リアルタイム共同編集やクラウド同期
