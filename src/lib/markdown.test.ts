@@ -54,4 +54,13 @@ describe("Markdown image insertion", () => {
     const result = insertMarkdownImages("", null, "README.md", ["images/a.png", "images/b.jpg"]);
     expect(result.content).toBe("![a](images/a.png)\n![b](images/b.jpg)");
   });
+
+  test("wraps an image path containing spaces as a CommonMark destination", () => {
+    const result = insertMarkdownImages(
+      "", null, "README.md", ["images/スクリーンショット 2022.png"],
+    );
+    expect(result.content).toBe(
+      "![スクリーンショット 2022](<images/スクリーンショット 2022.png>)",
+    );
+  });
 });

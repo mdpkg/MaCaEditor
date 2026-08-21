@@ -41,7 +41,9 @@ export function insertMarkdownImages(
   const links = imagePaths.map((path) => {
     const fileName = path.slice(path.lastIndexOf("/") + 1);
     const alt = fileName.replace(/\.[^.]+$/, "");
-    return `![${alt}](${relativePackagePath(markdownPath, path)})`;
+    const relativePath = relativePackagePath(markdownPath, path);
+    const destination = /\s/.test(relativePath) ? `<${relativePath}>` : relativePath;
+    return `![${alt}](${destination})`;
   }).join("\n");
   const before = content.slice(0, position);
   const after = content.slice(position);
