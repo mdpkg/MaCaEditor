@@ -64,10 +64,12 @@ export function connectorGeometry(connector: ConnectorObject, objects: DrawingOb
   const dx = geometry.to.x - geometry.from.x;
   const dy = geometry.to.y - geometry.from.y;
   const handle = Math.min(120, Math.max(40, Math.max(Math.abs(dx), Math.abs(dy)) * 0.5));
+  const sourceDistance = Math.max(Math.hypot(dx, dy), 0.001);
+  const towardSource = { x: -dx / sourceDistance, y: -dy / sourceDistance };
   return {
     ...geometry,
     c1: { x: geometry.from.x + fromSite.outward.x * handle, y: geometry.from.y + fromSite.outward.y * handle },
-    c2: { x: geometry.to.x + toSite.outward.x * handle, y: geometry.to.y + toSite.outward.y * handle },
+    c2: { x: geometry.to.x + towardSource.x * handle, y: geometry.to.y + towardSource.y * handle },
   };
 }
 

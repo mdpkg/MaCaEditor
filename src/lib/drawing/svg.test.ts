@@ -422,13 +422,13 @@ describe("svg renderer", () => {
     expect(svg).toContain('d="M 100 25 C 200 25 200 25 300 25"');
   });
 
-  test("curved connector forms a smooth S curve between offset shapes", () => {
+  test("curved connector approaches the arrow from the source anchor", () => {
     const svg = renderSvg(doc([
       { id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 2, curve: true, from: { objectId: "a" }, to: { objectId: "b" }, style: {} },
       { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
       { id: "b", type: "rectangle", x: 300, y: 200, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
     ]));
-    expect(svg).toContain('d="M 100 25 C 200 25 200 225 300 225"');
+    expect(svg).toContain('d="M 100 25 C 200 25 229.28932188134524 154.28932188134524 300 225"');
   });
 
   test("connects vertical shapes at their nearest edges", () => {

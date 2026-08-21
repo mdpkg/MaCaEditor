@@ -24,8 +24,23 @@ describe("connector hit testing", () => {
 
   it("selects a point on a curved connector", () => {
     const geometry = connectorGeometry(connector(true), shapes)!;
-    expect(isPointOnConnector(geometry, 200, 125, 8)).toBe(true);
+    expect(isPointOnConnector(geometry, 211, 98, 8)).toBe(true);
     expect(isPointOnConnector(geometry, 200, 175, 8)).toBe(false);
+  });
+
+  it("aims the curved connector tail at the source anchor", () => {
+    const geometry = connectorGeometry(connector(true), shapes)!;
+    const tail = {
+      x: geometry.c2!.x - geometry.to.x,
+      y: geometry.c2!.y - geometry.to.y,
+    };
+    const towardSource = {
+      x: geometry.from.x - geometry.to.x,
+      y: geometry.from.y - geometry.to.y,
+    };
+
+    expect(tail.x * towardSource.y - tail.y * towardSource.x).toBeCloseTo(0);
+    expect(tail.x * towardSource.x + tail.y * towardSource.y).toBeGreaterThan(0);
   });
 
   it("creates an orthogonal route and hit-tests every elbow segment", () => {
