@@ -7,6 +7,7 @@ import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { DrawingEditor } from "./components/DrawingEditor";
 import { PlantUmlEditor } from "./components/PlantUmlEditor";
+import { MermaidEditor } from "./components/MermaidEditor";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
@@ -49,8 +50,15 @@ import {
   savePlantUmlToDocument,
 } from "./lib/plantuml/docIntegration";
 import { renderPlantUml } from "./lib/plantuml/renderer";
+import {
+  DEFAULT_MERMAID_SOURCE,
+  addMermaidToDocument,
+  findMermaidResourceBySource,
+  saveMermaidToDocument,
+} from "./lib/mermaid/docIntegration";
+import { renderMermaid } from "./lib/mermaid/renderer";
 
-type Mode = "preview" | "split" | "drawing" | "plantuml";
+type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid";
 
 export default function App() {
   const [doc, setDoc] = useState<DocumentState | null>(null);
@@ -61,6 +69,7 @@ export default function App() {
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
+  const [mermaidPath, setMermaidPath] = useState<string | null>(null);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
 
@@ -97,6 +106,7 @@ export default function App() {
         setDrawingDoc(null);
         setDrawingPath(null);
         setPlantUmlPath(null);
+        setMermaidPath(null);
         setError(null);
         setStatus(`Opened ${result}`);
       } catch (e) {
@@ -155,6 +165,7 @@ export default function App() {
         setDrawingDoc(null);
         setDrawingPath(null);
         setPlantUmlPath(null);
+        setMermaidPath(null);
         setError(null);
         setStatus(`Created ${result}`);
       } catch (e) {
@@ -181,6 +192,7 @@ export default function App() {
           setDrawingDoc(null);
           setDrawingPath(null);
           setPlantUmlPath(null);
+          setMermaidPath(null);
           setError(null);
           setStatus(`Imported ${folder}`);
         } catch (e) {
@@ -226,6 +238,8 @@ export default function App() {
           const parsed = parseDrawingFile(file.content);
           setDrawingDoc(parsed);
           setDrawingPath(path);
+          setPlantUmlPath(null);
+          setMermaidPath(null);
           setMode("drawing");
           return;
         } catch (e) {
@@ -237,12 +251,22 @@ export default function App() {
     }
     if (path.endsWith(".puml") && findPlantUmlResourceBySource(doc?.manifest ?? {}, path)) {
       setPlantUmlPath(path);
+      setMermaidPath(null);
       setDrawingDoc(null);
       setDrawingPath(null);
       setMode("plantuml");
       return;
     }
+    if (path.endsWith(".mmd") && findMermaidResourceBySource(doc?.manifest ?? {}, path)) {
+      setMermaidPath(path);
+      setPlantUmlPath(null);
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setMode("mermaid");
+      return;
+    }
     setPlantUmlPath(null);
+    setMermaidPath(null);
     setMode("preview");
   };
 
@@ -275,6 +299,8 @@ export default function App() {
     setDoc(state);
     setDrawingDoc(empty);
     setDrawingPath(drawPath);
+    setPlantUmlPath(null);
+    setMermaidPath(null);
     setMode("drawing");
     setStatus("Inserted Drawing");
   };
@@ -296,6 +322,7 @@ export default function App() {
       setDoc(added.state);
       setSelectedPath(added.sourcePath);
       setPlantUmlPath(added.sourcePath);
+      setMermaidPath(null);
       setDrawingDoc(null);
       setDrawingPath(null);
       setMode("plantuml");
@@ -319,6 +346,48 @@ export default function App() {
       : current);
     setStatus("PlantUML preview updated");
   }, [plantUmlPath]);
+
+  const handleInsertMermaid = async () => {
+    if (!doc) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    setStatus("Rendering Mermaid…");
+    try {
+      const svg = await renderMermaid(DEFAULT_MERMAID_SOURCE);
+      const added = addMermaidToDocument(doc, DEFAULT_MERMAID_SOURCE, svg, "Mermaid", {
+        markdownPath: markdownFile?.path,
+        cursor,
+      });
+      editorCursorRef.current = added.cursor;
+      setDoc(added.state);
+      setSelectedPath(added.sourcePath);
+      setMermaidPath(added.sourcePath);
+      setPlantUmlPath(null);
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setMode("mermaid");
+      setStatus("Inserted Mermaid");
+      setError(null);
+    } catch (reason) {
+      setError(`Unable to render Mermaid: ${String(reason)}`);
+      setStatus("Error");
+    }
+  };
+
+  const handleMermaidSourceChange = useCallback((source: string) => {
+    setDoc((current) => current && mermaidPath
+      ? updateFileContent(current, mermaidPath, source)
+      : current);
+  }, [mermaidPath]);
+
+  const handleMermaidRendered = useCallback((source: string, svg: string) => {
+    setDoc((current) => current && mermaidPath
+      ? saveMermaidToDocument(current, mermaidPath, source, svg)
+      : current);
+    setStatus("Mermaid preview updated");
+  }, [mermaidPath]);
 
   const addImportedImages = (images: ImportedImage[]) => {
     if (!doc || images.length === 0) return;
@@ -398,6 +467,7 @@ export default function App() {
       setSelectedPath(renamed.path);
       if (drawingPath === path) setDrawingPath(renamed.path);
       if (plantUmlPath === path) setPlantUmlPath(renamed.path);
+      if (mermaidPath === path) setMermaidPath(renamed.path);
       setStatus(`Renamed to ${renamed.path}`);
       setError(null);
     } catch (e) {
@@ -421,6 +491,10 @@ export default function App() {
       }
       if (plantUmlPath && !next.files.some((file) => file.path === plantUmlPath)) {
         setPlantUmlPath(null);
+        setMode("preview");
+      }
+      if (mermaidPath && !next.files.some((file) => file.path === mermaidPath)) {
+        setMermaidPath(null);
         setMode("preview");
       }
       setStatus(`Deleted ${fileName}`);
@@ -479,6 +553,10 @@ export default function App() {
     handleSelect(sourcePath);
   };
 
+  const handleEditMermaidFromPreview = (sourcePath: string) => {
+    handleSelect(sourcePath);
+  };
+
   const resolveDiscard = (discard: boolean) => {
     setError(null);
     if (discard && pendingRef.current) {
@@ -518,6 +596,7 @@ export default function App() {
         onExport={handleExport}
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
+        onInsertMermaid={handleInsertMermaid}
         onAddImage={handleAddImage}
         canRename={renameable}
         onRename={handleRename}
@@ -575,7 +654,23 @@ export default function App() {
               />
             ) : null;
           })()}
-          {doc && mode !== "drawing" && mode !== "plantuml" && displayFile && displayFile.is_text && (
+          {doc && mode === "mermaid" && mermaidPath && (() => {
+            const sourceFile = doc.files.find((file) => file.path === mermaidPath);
+            const resource = findMermaidResourceBySource(doc.manifest, mermaidPath);
+            const svgFile = resource
+              ? doc.files.find((file) => file.path === resource.rendered)
+              : undefined;
+            return sourceFile?.content !== null && sourceFile?.content !== undefined ? (
+              <MermaidEditor
+                key={mermaidPath}
+                source={sourceFile.content}
+                initialSvg={svgFile?.content ?? ""}
+                onSourceChange={handleMermaidSourceChange}
+                onRendered={handleMermaidRendered}
+              />
+            ) : null;
+          })()}
+          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && displayFile && displayFile.is_text && (
             <>
               {mode === "preview" && (
                 <div className="preview-only">
@@ -586,6 +681,7 @@ export default function App() {
                     manifest={doc.manifest}
                     onEditDrawing={handleEditDrawingFromPreview}
                     onEditPlantUml={handleEditPlantUmlFromPreview}
+                    onEditMermaid={handleEditMermaidFromPreview}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -606,12 +702,13 @@ export default function App() {
                     manifest={doc.manifest}
                     onEditDrawing={handleEditDrawingFromPreview}
                     onEditPlantUml={handleEditPlantUmlFromPreview}
+                    onEditMermaid={handleEditMermaidFromPreview}
                   />
                 </div>
               )}
             </>
           )}
-          {doc && mode !== "drawing" && mode !== "plantuml" && displayFile && !displayFile.is_text && (
+          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
               {displayFile.base64 && (
                 <img src={`data:${imageMediaType(displayFile.path)};base64,${displayFile.base64}`} alt="" />

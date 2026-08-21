@@ -95,6 +95,20 @@ describe("asset rename", () => {
     expect(renamed.state.files[0].content).toBe("![Sequence](diagrams/ログインシーケンス.svg)");
   });
 
+  it("renames Mermaid source and rendered files together", () => {
+    const current = state(["diagrams/flow.mmd", "diagrams/flow.svg"]);
+    current.manifest = {
+      resources: [{ source: "diagrams/flow.mmd", rendered: "diagrams/flow.svg", type: "mermaid" }],
+    };
+    current.files.unshift({
+      path: "README.md", is_text: true, content: "![Flow](diagrams/flow.svg)", base64: null,
+    });
+    const renamed = renameAsset(current, "diagrams/flow.mmd", "処理フロー");
+    expect(renamed.path).toBe("diagrams/処理フロー.mmd");
+    expect(renamed.state.files.map((file) => file.path)).toContain("diagrams/処理フロー.svg");
+    expect(renamed.state.files[0].content).toBe("![Flow](diagrams/処理フロー.svg)");
+  });
+
   it("rejects a name already used in the same folder", () => {
     expect(() => renameAsset(state(["images/a.png", "images/b.png"]), "images/a.png", "b"))
       .toThrow("already exists");
@@ -158,6 +172,19 @@ describe("asset deletion", () => {
 
       expect(deleted.files.map((file) => file.path)).toEqual(["README.md"]);
       expect(deleted.files[0].content).toBe("before\n\nafter");
+      expect(deleted.manifest.resources).toEqual([]);
+    },
+  );
+
+  it.each(["diagrams/flow.mmd", "diagrams/flow.svg"])(
+    "deletes Mermaid source, rendered file, and resource from %s",
+    (selected) => {
+      const current = state(["diagrams/flow.mmd", "diagrams/flow.svg"]);
+      current.manifest = {
+        resources: [{ source: "diagrams/flow.mmd", rendered: "diagrams/flow.svg", type: "mermaid" }],
+      };
+      const deleted = deleteAsset(current, selected);
+      expect(deleted.files).toEqual([]);
       expect(deleted.manifest.resources).toEqual([]);
     },
   );

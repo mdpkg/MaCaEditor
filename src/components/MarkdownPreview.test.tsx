@@ -161,4 +161,29 @@ describe("MarkdownPreview", () => {
     expect(onEditPlantUml).toHaveBeenCalledWith("diagrams/sequence.puml");
     act(() => root.unmount());
   });
+
+  test("opens the Mermaid editor when its rendered SVG is clicked", () => {
+    const onEditMermaid = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![flow](diagrams/flow.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/flow.svg", is_text: true,
+          content: '<svg><text>Flow</text></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{
+          type: "mermaid", source: "diagrams/flow.mmd", rendered: "diagrams/flow.svg",
+        }] }}
+        onEditMermaid={onEditMermaid}
+      />,
+    ));
+
+    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    expect(onEditMermaid).toHaveBeenCalledWith("diagrams/flow.mmd");
+    act(() => root.unmount());
+  });
 });

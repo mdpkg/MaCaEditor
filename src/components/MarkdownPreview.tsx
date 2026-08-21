@@ -7,6 +7,7 @@ import { sanitizeHtml } from "../lib/sanitize";
 import { findResourceByRendered } from "../lib/drawing/docIntegration";
 import { imageMediaType } from "../lib/document";
 import { findPlantUmlResourceByRendered } from "../lib/plantuml/docIntegration";
+import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
 
 interface Props {
   markdown: string;
@@ -15,6 +16,7 @@ interface Props {
   manifest?: Record<string, unknown>;
   onEditDrawing?: (drawPath: string) => void;
   onEditPlantUml?: (sourcePath: string) => void;
+  onEditMermaid?: (sourcePath: string) => void;
 }
 
 function packageUrl(baseDir: string, url: string): string {
@@ -53,6 +55,7 @@ export function MarkdownPreview({
   manifest,
   onEditDrawing,
   onEditPlantUml,
+  onEditMermaid,
 }: Props) {
   const components: Components = {
     img({ src = "", alt = "", ...props }) {
@@ -70,8 +73,13 @@ export function MarkdownPreview({
         const plantUmlResource = manifest
           ? findPlantUmlResourceByRendered(manifest, resolved ?? "")
           : undefined;
-        const sourcePath = drawingResource?.source ?? plantUmlResource?.source;
-        const editDiagram = drawingResource ? onEditDrawing : onEditPlantUml;
+        const mermaidResource = manifest
+          ? findMermaidResourceByRendered(manifest, resolved ?? "")
+          : undefined;
+        const sourcePath = drawingResource?.source ?? plantUmlResource?.source ?? mermaidResource?.source;
+        const editDiagram = drawingResource
+          ? onEditDrawing
+          : plantUmlResource ? onEditPlantUml : onEditMermaid;
         return <span
           className="drawing-image"
           data-drawpath={sourcePath ?? ""}

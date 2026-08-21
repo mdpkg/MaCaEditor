@@ -102,7 +102,7 @@ function diagramResourceForPath(state: DocumentState, path: string) {
   return state.manifest.resources.find((item) =>
     typeof item === "object" &&
     item !== null &&
-    ["drawing", "plantuml"].includes((item as { type?: string }).type ?? "") &&
+    ["drawing", "plantuml", "mermaid"].includes((item as { type?: string }).type ?? "") &&
     ((item as { source?: string }).source === path ||
       (item as { rendered?: string }).rendered === path),
   ) as { source: string; rendered: string; type: string } | undefined;
@@ -180,11 +180,15 @@ export function renameAsset(
   const replacements = new Map<string, string>();
   let selectedNewPath: string;
 
-  if (resource?.type === "drawing" || resource?.type === "plantuml") {
+  if (resource && ["drawing", "plantuml", "mermaid"].includes(resource.type)) {
     const suffixPattern = resource.type === "drawing"
       ? /(?:\.draw\.json|\.svg)$/i
-      : /(?:\.puml|\.svg)$/i;
-    const sourceSuffix = resource.type === "drawing" ? ".draw.json" : ".puml";
+      : resource.type === "plantuml"
+        ? /(?:\.puml|\.svg)$/i
+        : /(?:\.mmd|\.svg)$/i;
+    const sourceSuffix = resource.type === "drawing"
+      ? ".draw.json"
+      : resource.type === "plantuml" ? ".puml" : ".mmd";
     const name = safeAssetName(requestedName.replace(suffixPattern, ""));
     const sourceDir = resource.source.includes("/")
       ? `${resource.source.slice(0, resource.source.lastIndexOf("/"))}/`
