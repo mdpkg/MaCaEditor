@@ -8,6 +8,8 @@ interface Props {
   selectedPath: string | null;
   onSelect: (path: string) => void;
   onDropImages: (files: File[]) => void;
+  canRename: (path: string) => boolean;
+  onRename: (path: string) => void;
   canDelete: (path: string) => boolean;
   onDelete: (path: string) => void;
 }
@@ -82,7 +84,8 @@ function TreeItem({
 }
 
 export function FileTree({
-  files, selectedPath, onSelect, onDropImages, canDelete, onDelete,
+  files, selectedPath, onSelect, onDropImages,
+  canRename, onRename, canDelete, onDelete,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
@@ -100,7 +103,7 @@ export function FileTree({
   }, [contextMenu]);
 
   const openContextMenu = (event: React.MouseEvent, path: string) => {
-    if (!canDelete(path)) return;
+    if (!canRename(path) && !canDelete(path)) return;
     event.preventDefault();
     onSelect(path);
     setContextMenu({ path, x: event.clientX, y: event.clientY });
@@ -126,10 +129,18 @@ export function FileTree({
           onPointerDown={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <button type="button" onClick={() => {
-            onDelete(contextMenu.path);
-            setContextMenu(null);
-          }}>Delete</button>
+          {canRename(contextMenu.path) && (
+            <button type="button" onClick={() => {
+              onRename(contextMenu.path);
+              setContextMenu(null);
+            }}>Rename</button>
+          )}
+          {canDelete(contextMenu.path) && (
+            <button type="button" onClick={() => {
+              onDelete(contextMenu.path);
+              setContextMenu(null);
+            }}>Delete</button>
+          )}
         </div>,
         document.body,
       )}

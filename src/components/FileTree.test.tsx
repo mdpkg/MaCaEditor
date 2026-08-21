@@ -25,6 +25,8 @@ describe("FileTree", () => {
         selectedPath={null}
         onSelect={onSelect}
         onDropImages={vi.fn()}
+        canRename={(path) => path.startsWith("images/")}
+        onRename={vi.fn()}
         canDelete={(path) => path.startsWith("images/")}
         onDelete={onDelete}
       />,
@@ -40,7 +42,11 @@ describe("FileTree", () => {
     const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
     expect(menu.style.left).toBe("40px");
     expect(menu.style.top).toBe("50px");
-    act(() => (menu.querySelector("button") as HTMLButtonElement).click());
+    expect([...menu.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Rename", "Delete",
+    ]);
+    act(() => ([...menu.querySelectorAll("button")]
+      .find((button) => button.textContent === "Delete") as HTMLButtonElement).click());
     expect(onDelete).toHaveBeenCalledWith("images/photo.png");
     expect(document.querySelector(".file-tree-context-menu")).toBeNull();
     act(() => root.unmount());
@@ -56,6 +62,8 @@ describe("FileTree", () => {
         selectedPath={null}
         onSelect={vi.fn()}
         onDropImages={vi.fn()}
+        canRename={() => false}
+        onRename={vi.fn()}
         canDelete={() => false}
         onDelete={vi.fn()}
       />,
@@ -64,6 +72,36 @@ describe("FileTree", () => {
     act(() => readme.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true, cancelable: true,
     })));
+    expect(document.querySelector(".file-tree-context-menu")).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("renames a file from its context menu", () => {
+    const onRename = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <FileTree
+        files={[{ path: "images/photo.png", is_text: false, content: null, base64: "AAAA" }]}
+        selectedPath={null}
+        onSelect={vi.fn()}
+        onDropImages={vi.fn()}
+        canRename={() => true}
+        onRename={onRename}
+        canDelete={() => true}
+        onDelete={vi.fn()}
+      />,
+    ));
+    const image = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "photo.png") as HTMLDivElement;
+    act(() => image.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true,
+    })));
+    const rename = [...document.querySelectorAll(".file-tree-context-menu button")]
+      .find((button) => button.textContent === "Rename") as HTMLButtonElement;
+    act(() => rename.click());
+    expect(onRename).toHaveBeenCalledWith("images/photo.png");
     expect(document.querySelector(".file-tree-context-menu")).toBeNull();
     act(() => root.unmount());
   });

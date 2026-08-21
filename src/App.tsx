@@ -303,25 +303,26 @@ export default function App() {
     }
   };
 
-  const renameable = selectedPath !== null && (
-    /\.(png|jpe?g|gif|webp|bmp)$/i.test(selectedPath) ||
+  const isRenameablePath = (path: string | null) => path !== null && (
+    /\.(png|jpe?g|gif|webp|bmp)$/i.test(path) ||
     doc?.manifest.resources instanceof Array && doc.manifest.resources.some((item) =>
       typeof item === "object" && item !== null &&
-      ((item as { source?: string }).source === selectedPath || (item as { rendered?: string }).rendered === selectedPath))
+      ((item as { source?: string }).source === path || (item as { rendered?: string }).rendered === path))
   );
+  const renameable = isRenameablePath(selectedPath);
   const deletable = doc !== null && isDeletableAsset(doc, selectedPath);
 
-  const handleRename = () => {
-    if (!doc || !selectedPath || !renameable) return;
-    const fileName = selectedPath.slice(selectedPath.lastIndexOf("/") + 1);
+  const handleRename = (path: string | null = selectedPath) => {
+    if (!doc || !path || !isRenameablePath(path)) return;
+    const fileName = path.slice(path.lastIndexOf("/") + 1);
     const currentName = fileName.replace(/\.draw\.json$|\.[^.]+$/i, "");
     const requested = window.prompt("New name", currentName);
     if (requested === null || requested.trim() === "" || requested === currentName) return;
     try {
-      const renamed = renameAsset(doc, selectedPath, requested);
+      const renamed = renameAsset(doc, path, requested);
       setDoc(renamed.state);
       setSelectedPath(renamed.path);
-      if (drawingPath === selectedPath) setDrawingPath(renamed.path);
+      if (drawingPath === path) setDrawingPath(renamed.path);
       setStatus(`Renamed to ${renamed.path}`);
       setError(null);
     } catch (e) {
@@ -447,6 +448,8 @@ export default function App() {
               selectedPath={selectedPath}
               onSelect={handleSelect}
               onDropImages={handleDropImages}
+              canRename={isRenameablePath}
+              onRename={handleRename}
               canDelete={(path) => doc !== null && isDeletableAsset(doc, path)}
               onDelete={handleDelete}
             />
