@@ -4,6 +4,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 名称の **MaCa** は、**Ma**rkdownと**Ca**nvasに由来します。Markdown文書の編集とSVGベースの作図を1つのアプリケーションで行い、文章、画像、図をまとめて管理できます。
 
+<img width="1922" height="1082" alt="MaCaEditor" src="https://github.com/user-attachments/assets/7a6e0681-354d-4619-83c2-9bdf94d3034a" />
+
 ## 主な機能
 
 ### Markdownの編集とプレビュー
