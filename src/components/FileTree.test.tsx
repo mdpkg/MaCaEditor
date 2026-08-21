@@ -10,6 +10,42 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("opens a Markdown file for editing on double-click", () => {
+    const onSelect = vi.fn();
+    const onEditMarkdown = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <FileTree
+        files={[
+          { path: "docs/guide.md", is_text: true, content: "Guide", base64: null },
+          { path: "images/photo.png", is_text: false, content: null, base64: "AAAA" },
+        ]}
+        selectedPath={null}
+        onSelect={onSelect}
+        onEditMarkdown={onEditMarkdown}
+        onDropImages={vi.fn()}
+        canRename={() => false}
+        onRename={vi.fn()}
+        canDelete={() => false}
+        onDelete={vi.fn()}
+      />,
+    ));
+    const guide = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    const image = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "photo.png") as HTMLDivElement;
+
+    act(() => guide.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(onSelect).toHaveBeenCalledWith("docs/guide.md");
+    expect(onEditMarkdown).toHaveBeenCalledWith("docs/guide.md");
+
+    act(() => image.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(onEditMarkdown).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  });
+
   test("deletes a deletable file from its context menu", () => {
     const onSelect = vi.fn();
     const onDelete = vi.fn();

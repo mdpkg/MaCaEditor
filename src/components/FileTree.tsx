@@ -7,6 +7,7 @@ interface Props {
   files: FileInfo[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  onEditMarkdown?: (path: string) => void;
   onDropImages: (files: File[]) => void;
   canRename: (path: string) => boolean;
   onRename: (path: string) => void;
@@ -18,6 +19,7 @@ function TreeItem({
   node,
   selectedPath,
   onSelect,
+  onEditMarkdown,
   depth,
   onDropImages,
   onContextMenu,
@@ -25,6 +27,7 @@ function TreeItem({
   node: TreeNode;
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  onEditMarkdown?: (path: string) => void;
   depth: number;
   onDropImages: (files: File[]) => void;
   onContextMenu: (event: React.MouseEvent, path: string) => void;
@@ -38,6 +41,11 @@ function TreeItem({
         className={`tree-item ${selectedPath === node.path ? "selected" : ""}`}
         style={{ paddingLeft: depth * 12 + 8 }}
         onClick={() => onSelect(node.path)}
+        onDoubleClick={() => {
+          if (!/\.(md|markdown)$/i.test(node.path)) return;
+          onSelect(node.path);
+          onEditMarkdown?.(node.path);
+        }}
         onContextMenu={(event) => onContextMenu(event, node.path)}
       >
         {node.name}
@@ -74,6 +82,7 @@ function TreeItem({
             node={child}
             selectedPath={selectedPath}
             onSelect={onSelect}
+            onEditMarkdown={onEditMarkdown}
             depth={depth + 1}
             onDropImages={onDropImages}
             onContextMenu={onContextMenu}
@@ -84,7 +93,7 @@ function TreeItem({
 }
 
 export function FileTree({
-  files, selectedPath, onSelect, onDropImages,
+  files, selectedPath, onSelect, onEditMarkdown, onDropImages,
   canRename, onRename, canDelete, onDelete,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
@@ -117,6 +126,7 @@ export function FileTree({
           node={node}
           selectedPath={selectedPath}
           onSelect={onSelect}
+          onEditMarkdown={onEditMarkdown}
           depth={0}
           onDropImages={onDropImages}
           onContextMenu={openContextMenu}

@@ -197,6 +197,13 @@ export default function App() {
     setMode("split");
   };
 
+  const handleEditMarkdown = (path: string) => {
+    if (!/\.(md|markdown)$/i.test(path)) return;
+    editorCursorRef.current = null;
+    setSelectedPath(path);
+    setMode("split");
+  };
+
   const handleSelect = (path: string) => {
     editorCursorRef.current = null;
     setSelectedPath(path);
@@ -453,6 +460,7 @@ export default function App() {
               files={doc?.files ?? []}
               selectedPath={selectedPath}
               onSelect={handleSelect}
+              onEditMarkdown={handleEditMarkdown}
               onDropImages={handleDropImages}
               canRename={isRenameablePath}
               onRename={handleRename}
