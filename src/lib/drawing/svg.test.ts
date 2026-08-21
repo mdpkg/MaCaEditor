@@ -42,6 +42,17 @@ describe("svg renderer", () => {
     expect(svg).toContain('viewBox="80 60 240 100"');
   });
 
+  test("uses the callout body for text while including its tail in fitted bounds", () => {
+    const svg = renderSvg(doc([{
+      id: "callout-1", type: "autoShape", preset: "callout",
+      x: 100, y: 80, width: 100, height: 80, rotation: 0, zIndex: 1,
+      style: {}, text: "Body", adjustments: { tailAngle: 90 },
+    }]), { fitToContent: true, margin: 0 });
+
+    expect(svg).toContain('viewBox="100 80 100 102.4"');
+    expect(svg).toContain('<text x="150" y="120"');
+  });
+
   test("includes all objects in fitted SVG bounds", () => {
     const svg = renderSvg(doc([
       { id: "a", type: "rectangle", x: -20, y: 40, width: 50, height: 60, rotation: 0, zIndex: 1, style: {} },

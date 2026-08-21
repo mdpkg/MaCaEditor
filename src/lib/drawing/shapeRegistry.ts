@@ -23,6 +23,53 @@ function path(d: string, attributes: string): string {
   return `<path d="${d}" ${attributes} />`;
 }
 
+function calloutPoints(shape: AutoShapeObject): Array<[number, number]> {
+  const angle = ((shape.adjustments?.tailAngle ?? 90) % 360 + 360) % 360;
+  const radians = angle * Math.PI / 180;
+  const dx = Math.cos(radians);
+  const dy = Math.sin(radians);
+  const left = shape.x;
+  const right = shape.x + shape.width;
+  const top = shape.y;
+  const bottom = shape.y + shape.height;
+  const centerX = (left + right) / 2;
+  const centerY = (top + bottom) / 2;
+  const edgeScale = Math.min(
+    Math.abs(dx) > 1e-6 ? shape.width / (2 * Math.abs(dx)) : Infinity,
+    Math.abs(dy) > 1e-6 ? shape.height / (2 * Math.abs(dy)) : Infinity,
+  );
+  const tailLength = Math.min(shape.width, shape.height) * 0.28;
+  const tipScale = edgeScale + tailLength;
+  const tip: [number, number] = [centerX + dx * tipScale, centerY + dy * tipScale];
+  const baseHalfX = shape.width * 0.07;
+  const baseHalfY = shape.height * 0.09;
+  const side = Math.abs(dx) * shape.height >= Math.abs(dy) * shape.width
+    ? (dx >= 0 ? "right" : "left")
+    : (dy >= 0 ? "bottom" : "top");
+
+  if (side === "right" || side === "left") {
+    const edge = side === "right" ? right : left;
+    const edgeY = Math.max(top + baseHalfY, Math.min(bottom - baseHalfY, centerY + dy * (edge - centerX) / dx));
+    if (side === "right") return [[left, top], [right, top], [right, edgeY - baseHalfY], tip, [right, edgeY + baseHalfY], [right, bottom], [left, bottom]];
+    return [[left, top], [right, top], [right, bottom], [left, bottom], [left, edgeY + baseHalfY], tip, [left, edgeY - baseHalfY]];
+  }
+
+  const edge = side === "bottom" ? bottom : top;
+  const edgeX = Math.max(left + baseHalfX, Math.min(right - baseHalfX, centerX + dx * (edge - centerY) / dy));
+  if (side === "bottom") return [[left, top], [right, top], [right, bottom], [edgeX + baseHalfX, bottom], tip, [edgeX - baseHalfX, bottom], [left, bottom]];
+  return [[left, top], [edgeX - baseHalfX, top], tip, [edgeX + baseHalfX, top], [right, top], [right, bottom], [left, bottom]];
+}
+
+export function getAutoShapeOutlinePoints(shape: AutoShapeObject): Array<[number, number]> {
+  if (shape.preset === "callout") return calloutPoints(shape);
+  return [
+    [shape.x, shape.y],
+    [shape.x + shape.width, shape.y],
+    [shape.x + shape.width, shape.y + shape.height],
+    [shape.x, shape.y + shape.height],
+  ];
+}
+
 const definitions: ShapeDefinition[] = [
   {
     id: "cylinder", label: "Cylinder", category: "Basic", width: 120, height: 90,
@@ -44,7 +91,7 @@ const definitions: ShapeDefinition[] = [
   },
   {
     id: "callout", label: "Callout", category: "Basic", width: 140, height: 90,
-    render: (s, a) => polygon([[s.x, s.y], [s.x + s.width, s.y], [s.x + s.width, s.y + s.height * 0.72], [s.x + s.width * 0.48, s.y + s.height * 0.72], [s.x + s.width * 0.28, s.y + s.height], [s.x + s.width * 0.34, s.y + s.height * 0.72], [s.x, s.y + s.height * 0.72]], a),
+    render: (s, a) => polygon(getAutoShapeOutlinePoints(s), a),
   },
   {
     id: "flowProcess", label: "Process", category: "Flowchart", width: 130, height: 70,

@@ -25,4 +25,50 @@ describe("shape registry", () => {
   test("returns undefined for an unknown preset", () => {
     expect(getShapeDefinition("unknown")).toBeUndefined();
   });
+
+  test.each([
+    [0, "138,70"],
+    [90, "60,148"],
+    [180, "-18,70"],
+    [270, "60,-8"],
+  ])("points the callout tail at %i degrees", (tailAngle, tip) => {
+    const definition = getShapeDefinition("callout");
+    const shape: AutoShapeObject = {
+      id: "callout-1", type: "autoShape", preset: "callout",
+      x: 10, y: 20, width: 100, height: 100,
+      rotation: 0, zIndex: 1, style: {}, adjustments: { tailAngle },
+    };
+
+    expect(definition?.render(shape, "")).toContain(tip);
+  });
+
+  test("attaches a near-corner tail to the edge its tip is outside", () => {
+    const definition = getShapeDefinition("callout");
+    const shape: AutoShapeObject = {
+      id: "callout-1", type: "autoShape", preset: "callout",
+      x: 10, y: 20, width: 100, height: 100,
+      rotation: 0, zIndex: 1, style: {}, adjustments: { tailAngle: 310 },
+    };
+
+    const rendered = definition?.render(shape, "") ?? "";
+    const coordinates = [...rendered.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)]
+      .map((match) => [Number(match[1]), Number(match[2])]);
+
+    expect(coordinates[2][1]).toBeLessThan(20);
+    expect(coordinates[1][1]).toBe(coordinates[3][1]);
+  });
+
+  test("uses the callout body, excluding its tail, as the shape bounds", () => {
+    const definition = getShapeDefinition("callout");
+    const shape: AutoShapeObject = {
+      id: "callout-1", type: "autoShape", preset: "callout",
+      x: 10, y: 20, width: 100, height: 80,
+      rotation: 0, zIndex: 1, style: {}, adjustments: { tailAngle: 90 },
+    };
+
+    const rendered = definition?.render(shape, "") ?? "";
+
+    expect(rendered).toContain("10,20 110,20 110,100");
+    expect(rendered).toContain("60,122.4");
+  });
 });

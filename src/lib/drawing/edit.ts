@@ -75,6 +75,23 @@ export function updateObjectRotation(
   };
 }
 
+export function updateAutoShapeAdjustment(
+  doc: DrawingDocument,
+  id: string,
+  name: string,
+  value: number,
+): DrawingDocument {
+  if (!Number.isFinite(value)) return doc;
+  return {
+    ...doc,
+    objects: doc.objects.map((object) => mapObjectById(object, id, (current) =>
+      current.type === "autoShape"
+        ? { ...current, adjustments: { ...current.adjustments, [name]: value } }
+        : current,
+    )),
+  };
+}
+
 export function updateObjectOpacity(
   doc: DrawingDocument,
   ids: string[],

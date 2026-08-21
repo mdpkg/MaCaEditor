@@ -23,6 +23,7 @@ import {
   type AlignKind,
   type History,
   updateConnectorEnds,
+  updateAutoShapeAdjustment,
   updateObjectOpacity,
   updateObjectRotation,
   ungroupObjects,
@@ -751,6 +752,11 @@ export function DrawingEditor({
     commit(updateObjectRotation(doc, selected.id, rotation));
   };
 
+  const updateCalloutTailAngle = (angle: number) => {
+    if (!selected || selected.type !== "autoShape" || selected.preset !== "callout") return;
+    commit(updateAutoShapeAdjustment(doc, selected.id, "tailAngle", angle));
+  };
+
   const updateFontSize = (fontSize: number) => {
     const next = {
       ...doc,
@@ -1393,6 +1399,20 @@ export function DrawingEditor({
                   </select>
                 </div>
               </>
+            )}
+            {selected.type === "autoShape" && selected.preset === "callout" && (
+              <div className="inspector-row">
+                <label>Tail direction</label>
+                <input
+                  aria-label="Callout tail direction"
+                  type="range"
+                  min="0"
+                  max="359"
+                  value={Math.round(selected.adjustments?.tailAngle ?? 90)}
+                  onChange={(e) => updateCalloutTailAngle(Number(e.target.value))}
+                />
+                <span>{Math.round(selected.adjustments?.tailAngle ?? 90)}°</span>
+              </div>
             )}
             {(isTextShapeType(selected.type) || selected.type === "text") && (
               <div className="inspector-row">

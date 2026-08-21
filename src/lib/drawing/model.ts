@@ -85,6 +85,7 @@ export interface UserObject extends BaseObject {
 export interface AutoShapeObject extends BaseObject {
   type: "autoShape";
   preset: string;
+  adjustments?: Record<string, number>;
   style: ObjectStyle;
   text?: string;
   textStyle?: ShapeTextStyle;

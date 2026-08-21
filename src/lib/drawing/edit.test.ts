@@ -27,6 +27,7 @@ import {
   undo,
   updateConnectorEnds,
   updateObjectRotation,
+  updateAutoShapeAdjustment,
   updateObjectOpacity,
   updateShapeText,
   updateShapeTextAlignment,
@@ -355,6 +356,20 @@ describe("updateObjectRotation", () => {
     const updated = updateObjectRotation(doc([rect("r1", 100, 80)]), "r1", 45);
 
     expect(updated.objects[0].rotation).toBe(45);
+  });
+});
+
+describe("updateAutoShapeAdjustment", () => {
+  test("updates an auto shape adjustment", () => {
+    const original = doc([{
+      id: "callout-1", type: "autoShape", preset: "callout",
+      x: 0, y: 0, width: 100, height: 80, rotation: 0, zIndex: 1,
+      style: {},
+    }]);
+
+    const updated = updateAutoShapeAdjustment(original, "callout-1", "tailAngle", 275);
+
+    expect(updated.objects[0]).toMatchObject({ adjustments: { tailAngle: 275 } });
   });
 });
 

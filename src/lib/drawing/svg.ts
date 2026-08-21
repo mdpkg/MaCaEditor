@@ -16,7 +16,7 @@ import type {
 } from "./model";
 import { svgLineStyle } from "./lineStyle";
 import { connectorGeometry } from "./connector";
-import { getShapeDefinition } from "./shapeRegistry";
+import { getAutoShapeOutlinePoints, getShapeDefinition } from "./shapeRegistry";
 
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 
@@ -57,6 +57,15 @@ function objectBounds(object: DrawingObject): Bounds | null {
     return bounds
       ? rotateBounds(bounds, object.x + object.width / 2, object.y + object.height / 2, object.rotation)
       : null;
+  }
+  if (object.type === "autoShape" && object.preset === "callout") {
+    const points = getAutoShapeOutlinePoints(object);
+    return rotateBounds({
+      minX: Math.min(...points.map(([x]) => x)),
+      minY: Math.min(...points.map(([, y]) => y)),
+      maxX: Math.max(...points.map(([x]) => x)),
+      maxY: Math.max(...points.map(([, y]) => y)),
+    }, object.x + object.width / 2, object.y + object.height / 2, object.rotation);
   }
   const bounds = {
     minX: Math.min(object.x, object.x + object.width),
