@@ -1,162 +1,146 @@
 # MaCa Editor
 
-**MaCa Editor** is a Markdown Package (`.mdpkg`) editor designed to evolve into a Markdown editor with built-in WYSIWYG diagramming.
+MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://github.com/mdpkg/mdpkg-spec)に則った `.mdpkg` ファイルを閲覧・編集するためのデスクトップエディタです。
 
-## 名前の由来
+名称の **MaCa** は、**Ma**rkdownと**Ca**nvasに由来します。Markdown文書の編集とSVGベースの作図を1つのアプリケーションで行い、文章、画像、図をまとめて管理できます。
 
-- **Ma** = Markdown
-- **Ca** = Canvas
-- **Editor** = Editor
+## 主な機能
 
-長期的には、Markdown エディタに WYSIWYG 作図ツールが統合されたドキュメントエディタを目指します。
+### Markdownの編集とプレビュー
 
-## アプリ概要
+- Markdownファイルの編集とリアルタイムプレビュー
+- GitHub Flavored Markdown（GFM）対応
+- テーブル、タスクリスト、取り消し線、URL自動リンク
+- 日本語や空白を含む画像ファイル名への対応
+- GitHub風のプレビュースタイル
+- ファイルツリーのMarkdownファイルをダブルクリックして編集
 
-MaCa Editor は、Markdown Package（`.mdpkg`）を閲覧・編集・保存するデスクトップアプリケーションです。
+### ファイルと画像の管理
 
-`.mdpkg` は ZIP アーカイブで、専用アプリがなくても展開すれば通常の Markdown・画像・図ソースとして利用できます。MaCa Editor はこの設計思想を壊さないように動作します。
+- `.mdpkg` の新規作成、読み込み、保存、別名保存
+- フォルダからのインポートとフォルダへのエクスポート
+- パッケージ内のファイルをツリー表示
+- PNG、JPEG、GIF、WebP、BMP画像の追加
+- `images` フォルダへの画像のドラッグ＆ドロップ
+- 画像とダイアグラムのリネーム、削除
+- ファイルツリーの右クリックメニューからリネーム、削除
+- 画像やダイアグラムのリンクを、Markdownのカーソル位置または末尾へ挿入
 
-## 対応機能 (v2)
+### Drawing Editor
 
-- `.mdpkg` を開く / 保存 / 別名保存
-- 新規 Markdown Package を作成
-- フォルダへ展開（Export Folder）
-- フォルダから `.mdpkg` を作成（Import Folder）
-- Markdown の編集とプレビュー（GFM 基本）
-- パッケージ内の相対画像・リンクの解決
-- ファイルツリー表示
-- manifest.json の解析・検証・保存（未知フィールドは保持）
-- ZIP Slip / パストラバーサル / 危険な HTML の防止
-- **WYSIWYG Drawing Editor（Canvas）**
-  - Rectangle / Ellipse / Text / Line / Arrow / Connector
-  - Select / Move / Resize / Delete / Copy / Paste / Duplicate
-  - Undo / Redo / Z-order / Alignment
-  - Zoom / Pan / Grid / Snap
-  - `.draw.json`（編集可能ソース）と `.svg`（レンダリング済み）の両方を保持
-  - Markdown への図挿入、Preview から Drawing Editor を開く
+- 矩形、角丸矩形、楕円、ファイル、ユーザー、テキスト、画像
+- 直線、矢印、直線コネクタ、曲線コネクタ、カギコネクタ
+- オブジェクトの選択、複数選択、移動、リサイズ、回転
+- グリッド表示、スナップ、ズーム、描画エリアのサイズ変更
+- コピー、貼り付け、複製、削除、Undo、Redo
+- 前面・背面への移動と整列
+- グループ化、グループ解除、ネストしたグループ
+- ダブルクリックによるグループ内要素の個別選択
+- 塗りつぶし、線色、透明度、太さ、線スタイル
+- コネクタ両端の矢印・鳥足設定
+- シェイプ内の複数行テキストと水平・垂直配置
+- SVGへの画像追加
+- Markdownプレビュー上の図をクリックして再編集
 
-## Drawing Editor の使い方
+## 基本的な使い方
 
-1. Markdown を開き、ツールバーの **Insert Drawing** を押す
-2. Drawing Editor が開き、`diagrams/drawing-N.draw.json` と `.svg` が生成される
-3. ツールバーから Select / Rect / Ellipse / Text / Line / Arrow / Connector を選ぶ
-4. Canvas 上で Drag または Click してオブジェクトを作成
-5. Select ツールでオブジェクトを選択・移動・リサイズ
-6. 右の Properties パネルで位置・サイズ・色・テキストを編集
-7. Markdown Preview 上の図をクリックすると Drawing Editor に戻れる
-8. Save で `.mdpkg` に保存される
+### `.mdpkg` を編集する
 
-### キーボードショートカット
+1. **Open** で `.mdpkg` ファイルを開きます。
+2. 左側のファイルツリーからMarkdownファイルを選択します。
+3. Markdownファイルをダブルクリックするか、プレビュー画面の **Edit** を押します。
+4. Markdownを編集し、プレビューで表示を確認します。
+5. **Save** または `Ctrl+S` で保存します。
+
+### 新しい `.mdpkg` を作成する
+
+1. **New** を押します。
+2. Markdownを編集し、必要に応じて画像や図を追加します。
+3. **Save** または **Save As** で保存先を指定します。
+
+### 画像を追加する
+
+1. Markdownの挿入位置へカーソルを置きます。
+2. **Add Image** を押して画像を選択します。
+3. 画像のリンクがカーソル位置へ挿入されます。カーソル位置がない場合はMarkdownの末尾へ挿入されます。
+
+ファイルツリーの `images` フォルダへ画像をドラッグ＆ドロップして追加することもできます。
+
+### 図を追加する
+
+1. Markdownの挿入位置へカーソルを置きます。
+2. **Insert Drawing** を押します。
+3. Drawing Editorで図を作成します。
+4. 図のリンクがMarkdownのカーソル位置へ挿入されます。カーソル位置がない場合は末尾へ挿入されます。
+5. Markdownプレビュー上の図をクリックすると、再びDrawing Editorで編集できます。
+
+### ファイル名を変更・削除する
+
+1. ファイルツリーで画像またはダイアグラムを右クリックします。
+2. **Rename** または **Delete** を選択します。
+
+上部ツールバーの **Rename** と **Delete** も利用できます。
+
+### フォルダとの間で入出力する
+
+- **Import Folder**: フォルダの内容から `.mdpkg` を作成します。
+- **Export Folder**: 開いている `.mdpkg` の内容をフォルダへ出力します。
+
+## Drawing Editorの操作
+
+### オブジェクトを作成する
+
+ツールバーからシェイプ、線、コネクタ、テキスト、画像のいずれかを選び、描画エリアをクリックまたはドラッグします。オブジェクトを1つ作成すると、自動的にSelectモードへ戻ります。
+
+### オブジェクトを選択する
+
+- クリックすると1つのオブジェクトを選択します。
+- `Ctrl`を押しながらクリックすると複数選択できます。
+- 何もない場所から範囲をドラッグすると、範囲内に完全に収まるオブジェクトを選択します。
+- グループをダブルクリックすると、グループ内のオブジェクトを個別に選択できます。
+
+### オブジェクトを編集する
+
+- ドラッグして移動します。
+- 選択枠のハンドルをドラッグしてサイズを変更します。
+- 選択枠上部の回転ハンドルをドラッグして回転します。
+- Propertiesまたは右クリックメニューから色、線、透明度、テキスト配置、前面・背面を変更します。
+- 複数選択したオブジェクトはまとめて移動、整列、グループ化できます。
+
+## キーボードショートカット
+
+### アプリケーション
 
 | 操作 | キー |
 |---|---|
-| Delete | Delete / Backspace |
-| Copy | Ctrl+C |
-| Paste | Ctrl+V |
-| Duplicate | Ctrl+D |
-| Undo | Ctrl+Z |
-| Redo | Ctrl+Y |
-| Move | Arrow Keys（Shift で大きく） |
-| Zoom | Ctrl + Wheel |
+| 保存 | `Ctrl+S` |
 
-## Drawing Format（`.draw.json`）
+### Drawing Editor
 
-```json
-{
-  "format": "maca-drawing",
-  "version": "1.0",
-  "canvas": { "width": 1200, "height": 800, "gridSize": 10 },
-  "objects": [
-    {
-      "id": "rect-1",
-      "type": "rectangle",
-      "x": 100,
-      "y": 100,
-      "width": 200,
-      "height": 80,
-      "rotation": 0,
-      "zIndex": 1,
-      "style": { "fill": "#ffffff", "stroke": "#000000", "strokeWidth": 1 },
-      "text": "API"
-    }
-  ]
-}
-```
+| 操作 | キー |
+|---|---|
+| 削除 | `Delete` / `Backspace` |
+| コピー | `Ctrl+C` |
+| 貼り付け | `Ctrl+V` |
+| 複製 | `Ctrl+D` |
+| Undo | `Ctrl+Z` |
+| Redo | `Ctrl+Y` |
+| 移動 | 矢印キー |
+| 大きく移動 | `Shift` + 矢印キー |
+| ズーム | `Ctrl` + マウスホイール |
+| 複数選択 | `Ctrl` + クリック、または範囲ドラッグ |
 
-`.draw.json` が source of truth で、`.svg` はそこから完全再生成されます。`.svg` は JavaScript を含まない静的 SVG で、通常の Markdown Viewer でも表示できます。
+テキスト入力欄へフォーカスがある場合、`Backspace`などの文字編集キーはシェイプ操作には使用されません。
 
-## v2 で未対応の機能
+## 現在対応していない機能
 
-- PlantUML / Mermaid / Graphviz の WYSIWYG 編集
-- draw.io / Excalidraw / PowerPoint import/export
-- PDF / HTML Export
-- リアルタイム共同編集・クラウド同期
-- プラグインシステム・AI 機能
-- 高度な Connector ルーティング・Group・リッチテキスト
+- PlantUML、Mermaid、Graphvizなどの図をDrawing Editorで編集する機能
+- draw.io、Excalidraw、PowerPointとのインポート／エクスポート
+- HTMLやPDFへのエクスポート
+- リアルタイム共同編集やクラウド同期
 
-## 開発環境
+## ライセンス
 
-- Node.js / npm
-- Rust / Cargo
-- Tauri 2
-- React 18 + TypeScript + Vite
+MaCa Editorは[MIT License](LICENSE)で提供されます。
 
-## 起動方法
-
-```bash
-npm install
-npm run tauri dev
-```
-
-## ビルド方法
-
-```bash
-npm run tauri build
-```
-
-## テスト方法
-
-```bash
-# フロントエンド
-npm test
-
-# Rust 側
-cd src-tauri
-cargo test
-```
-
-## 採用した主要ライブラリと採用理由
-
-- **Tauri 2**: 軽量なデスクトップシェル。Rust でネイティブ処理、WebView で UI を実現
-- **React + TypeScript**: 文書 UI の構築と型安全性
-- **Vite**: 高速な開発サーバーとビルド
-- **zip crate**: ZIP 読み書き（`.mdpkg` の実体）
-- **Vitest**: フロントエンドのロジックテスト
-- **Drawing Canvas**: 独自の軽量 SVG ベース Canvas を実装。Drawing Library の内部データ形式を `.draw.json` に保存せず、MaCa Editor 独自の domain model と分離
-
-## アーキテクチャ
-
-```
-MaCa Editor
-├─ Tauri / Rust
-│  ├─ .mdpkg 読み込み (package_loader)
-│  ├─ ZIP 読み書き (package_writer / atomic_save)
-│  ├─ パス検証 (path_validator)
-│  ├─ manifest 読み書き (manifest / package_validation)
-│  └─ Tauri commands
-└─ React / TypeScript
-   ├─ UI (App / components)
-   ├─ Markdown Editor / Preview
-   ├─ File Tree
-   ├─ Document State (lib/document)
-   └─ Drawing (lib/drawing)
-      ├─ model.ts        Drawing Domain Model
-      ├─ drawing.ts      parse / validate / serialize
-      ├─ svg.ts          SVG Renderer
-      ├─ edit.ts         move / resize / z-order / align / history
-      ├─ clipboard.ts    copy / paste
-      ├─ factory.ts      object factory
-      └─ docIntegration  MDPKG 統合
-```
-
-詳細は `docs/architecture.md` を参照してください。
+Copyright (c) 2026 mikoto2000 &lt;mikoto2000@gmail.com&gt;
