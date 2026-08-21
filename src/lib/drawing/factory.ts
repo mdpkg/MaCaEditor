@@ -1,5 +1,6 @@
 import type { DrawingDocument, DrawingObject } from "./model";
 import { sanitizeImageSrc } from "../sanitize";
+import { getShapeDefinition } from "./shapeRegistry";
 
 /** 新しい一意 ID を生成する。 */
 export function newId(prefix: string, existing: Set<string>): string {
@@ -25,7 +26,8 @@ export type ToolKind =
   | "image"
   | "connector"
   | "curveConnector"
-  | "elbowConnector";
+  | "elbowConnector"
+  | `autoShape:${string}`;
 
 /** 四角形オブジェクトを生成する。 */
 export function createRectangleObject(
@@ -159,6 +161,25 @@ export function createObject(
   x: number,
   y: number,
 ): DrawingObject {
+  if (tool.startsWith("autoShape:")) {
+    const preset = tool.slice("autoShape:".length);
+    const definition = getShapeDefinition(preset);
+    if (!definition) throw new Error(`unknown auto shape preset: ${preset}`);
+    const existing = new Set(doc.objects.map((object) => object.id));
+    return {
+      id: newId(preset, existing),
+      type: "autoShape",
+      preset,
+      x,
+      y,
+      width: definition.width,
+      height: definition.height,
+      rotation: 0,
+      zIndex: Math.max(0, ...doc.objects.map((object) => object.zIndex)) + 1,
+      style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+      text: "",
+    };
+  }
   const existing = new Set(doc.objects.map((o) => o.id));
   const id = newId(tool, existing);
   const zIndex = Math.max(0, ...doc.objects.map((o) => o.zIndex)) + 1;
@@ -292,5 +313,7 @@ export function createObject(
       };
     case "select":
       throw new Error("select tool does not create objects");
+    default:
+      throw new Error(`unknown drawing tool: ${tool}`);
   }
 }

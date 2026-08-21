@@ -82,6 +82,20 @@ describe("drawing document parsing", () => {
     expect(() => validateDrawingDocument(doc)).not.toThrow();
   });
 
+  test("validates a registered auto shape and rejects an unknown preset", () => {
+    const doc = parseDrawingDocument(validJson);
+    doc.objects = [{
+      id: "decision-1", type: "autoShape", preset: "flowDecision",
+      x: 10, y: 20, width: 120, height: 90, rotation: 0, zIndex: 1,
+      text: "Choose", style: {},
+    }];
+    expect(() => validateDrawingDocument(doc)).not.toThrow();
+    const shape = doc.objects[0];
+    if (shape.type !== "autoShape") throw new Error("expected auto shape");
+    doc.objects[0] = { ...shape, preset: "unknown" };
+    expect(() => validateDrawingDocument(doc)).toThrow("unknown auto shape preset");
+  });
+
   test("rejects invalid json", () => {
     expect(() => parseDrawingDocument("not json")).toThrow();
   });

@@ -11,6 +11,7 @@ import type {
   TextObject,
 } from "./model";
 import { sanitizeImageSrc } from "../sanitize";
+import { isAutoShapePreset } from "./shapeRegistry";
 
 export const DRAWING_FORMAT = "maca-drawing";
 export const DRAWING_VERSION = "1.0";
@@ -59,6 +60,9 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
         throw new DrawingError(`unknown object type: ${obj.type}`);
       }
       validateNumeric(obj);
+      if (obj.type === "autoShape" && !isAutoShapePreset(obj.preset)) {
+        throw new DrawingError(`unknown auto shape preset: ${obj.preset}`);
+      }
       if (obj.type === "group") {
         if (!Array.isArray(obj.members)) {
           throw new DrawingError(`group "${obj.id}" members must be an array`);
@@ -87,6 +91,7 @@ function isKnownType(type: string): boolean {
     "ellipse",
     "file",
     "user",
+    "autoShape",
     "text",
     "line",
     "arrow",

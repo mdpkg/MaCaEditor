@@ -82,6 +82,14 @@ export interface UserObject extends BaseObject {
   textStyle?: ShapeTextStyle;
 }
 
+export interface AutoShapeObject extends BaseObject {
+  type: "autoShape";
+  preset: string;
+  style: ObjectStyle;
+  text?: string;
+  textStyle?: ShapeTextStyle;
+}
+
 export interface TextObject extends BaseObject {
   type: "text";
   text: string;
@@ -135,6 +143,7 @@ export type DrawingObject =
   | EllipseObject
   | FileObject
   | UserObject
+  | AutoShapeObject
   | TextObject
   | LineObject
   | ArrowObject

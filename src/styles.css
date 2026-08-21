@@ -915,6 +915,66 @@ body {
   color: #fff;
 }
 
+.shape-picker {
+  position: relative;
+}
+
+.drawing-toolbar .shape-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shape-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1200;
+  width: 230px;
+  max-height: min(520px, 70vh);
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.shape-picker-category + .shape-picker-category {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.shape-picker-category-label {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.drawing-toolbar .shape-picker-item {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  text-align: left;
+}
+
+.drawing-toolbar .shape-picker-item:hover,
+.drawing-toolbar .shape-picker-item:focus-visible {
+  background: rgba(128, 128, 128, 0.15);
+  outline: none;
+}
+
+.shape-picker-icon {
+  width: 30px;
+  height: 24px;
+  overflow: visible;
+}
+
 .drawing-toolbar-spacer {
   flex: 1;
 }

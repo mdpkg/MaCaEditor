@@ -1,5 +1,6 @@
 import type {
   ArrowObject,
+  AutoShapeObject,
   ConnectorObject,
   DrawingDocument,
   DrawingObject,
@@ -15,6 +16,7 @@ import type {
 } from "./model";
 import { svgLineStyle } from "./lineStyle";
 import { connectorGeometry } from "./connector";
+import { getShapeDefinition } from "./shapeRegistry";
 
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 
@@ -90,7 +92,7 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-type TextShape = RectangleObject | RoundedRectangleObject | EllipseObject | FileObject | UserObject;
+type TextShape = RectangleObject | RoundedRectangleObject | EllipseObject | FileObject | UserObject | AutoShapeObject;
 
 function svgFillStyle(obj: TextShape): string {
   const fill = obj.style.fill ?? "#ffffff";
@@ -182,6 +184,13 @@ function renderUser(obj: UserObject): string {
   return `${head}${body}${renderShapeText(obj)}`;
 }
 
+function renderAutoShape(obj: AutoShapeObject): string {
+  const definition = getShapeDefinition(obj.preset);
+  if (!definition) return "";
+  const attributes = `${svgFillStyle(obj)} ${svgLineStyle(obj.style)}`;
+  return `${definition.render(obj, attributes)}${renderShapeText(obj)}`;
+}
+
 function renderImage(obj: ImageObject): string {
   if (!obj.src || obj.src.length === 0) return "";
   const x = obj.x;
@@ -242,6 +251,7 @@ function renderObject(object: DrawingObject, siblings: DrawingObject[]): string 
     case "ellipse": content = renderEllipse(object); break;
     case "file": content = renderFile(object); break;
     case "user": content = renderUser(object); break;
+    case "autoShape": content = renderAutoShape(object); break;
     case "text": content = renderText(object); break;
     case "image": content = renderImage(object); break;
     case "line": return renderLine(object);

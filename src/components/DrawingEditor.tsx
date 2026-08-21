@@ -33,6 +33,8 @@ import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
 import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
 import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector";
+import { SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
+import { ShapePicker, type ShapePickerItem } from "./ShapePicker";
 
 export interface DrawingEditorProps {
   doc: DrawingDocument;
@@ -44,13 +46,21 @@ export interface DrawingEditorProps {
 
 type Tool = ToolKind;
 
-const SHAPE_TOOLS: { id: Tool; label: string }[] = [
-  { id: "rectangle", label: "Rect" },
-  { id: "roundedRectangle", label: "Round Rect" },
-  { id: "ellipse", label: "Ellipse" },
-  { id: "file", label: "File" },
-  { id: "user", label: "User" },
+const LEGACY_SHAPE_TOOLS: ShapePickerItem[] = [
+  { id: "rectangle", label: "Rect", category: "Legacy" },
+  { id: "roundedRectangle", label: "Round Rect", category: "Legacy" },
+  { id: "ellipse", label: "Ellipse", category: "Legacy" },
+  { id: "file", label: "File", category: "Legacy" },
+  { id: "user", label: "User", category: "Legacy" },
 ];
+
+const AUTO_SHAPE_TOOLS = SHAPE_DEFINITIONS.map((shape) => ({
+  id: `autoShape:${shape.id}` as Tool,
+  label: shape.label,
+  category: shape.category,
+}));
+
+const SHAPE_TOOLS = [...LEGACY_SHAPE_TOOLS, ...AUTO_SHAPE_TOOLS];
 
 const DIRECT_TOOLS: { id: Tool; label: string }[] = [
   { id: "text", label: "Text" },
@@ -87,7 +97,7 @@ function ColorPicker({ kind, value, onChange }: {
   </div>;
 }
 
-const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse", "file", "user"];
+const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse", "file", "user", "autoShape"];
 
 function isTextShapeType(type: string): boolean {
   return TEXT_SHAPE_TYPES.includes(type);
@@ -856,21 +866,17 @@ export function DrawingEditor({
         >
           Select
         </button>
-        <select
-          aria-label="Shape"
-          title="Shape"
-          className={SHAPE_TOOLS.some((shape) => shape.id === tool) ? "active" : ""}
-          value={SHAPE_TOOLS.some((shape) => shape.id === tool) ? tool : ""}
-          onChange={(event) => {
-            setTool(event.target.value ? event.target.value as Tool : "select");
+        <ShapePicker
+          items={SHAPE_TOOLS}
+          onActivate={() => {
+            setTool("select");
             setConnectorStart(null);
           }}
-        >
-          <option value="">Shape</option>
-          {SHAPE_TOOLS.map((shape) => (
-            <option key={shape.id} value={shape.id}>{shape.label}</option>
-          ))}
-        </select>
+          onSelect={(nextTool) => {
+            setTool(nextTool);
+            setConnectorStart(null);
+          }}
+        />
         <select
           aria-label="Connector"
           title="Connector"

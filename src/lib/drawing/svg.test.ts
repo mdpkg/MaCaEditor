@@ -19,6 +19,19 @@ describe("svg renderer", () => {
     expect(svg).toContain('height="800"');
   });
 
+  test("renders an auto shape with text and style", () => {
+    const svg = renderSvg(doc([{
+      id: "decision-1", type: "autoShape", preset: "flowDecision",
+      x: 100, y: 80, width: 120, height: 90, rotation: 0, zIndex: 1,
+      style: { fill: "#ffff00", stroke: "#ff0000", strokeWidth: 2 },
+      text: "Decision",
+    }]));
+    expect(svg).toContain("<polygon");
+    expect(svg).toContain('fill="#ffff00"');
+    expect(svg).toContain('stroke="#ff0000"');
+    expect(svg).toContain(">Decision</text>");
+  });
+
   test("fits the exported SVG to object bounds with a margin", () => {
     const svg = renderSvg(doc([{
       id: "r1", type: "rectangle", x: 100, y: 80, width: 200, height: 60,

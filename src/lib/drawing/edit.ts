@@ -386,7 +386,7 @@ export function updateShapeText(
   return {
     ...doc,
     objects: doc.objects.map((object) =>
-      object.id === id && ["rectangle", "roundedRectangle", "ellipse", "file", "user"].includes(object.type)
+      object.id === id && ["rectangle", "roundedRectangle", "ellipse", "file", "user", "autoShape"].includes(object.type)
         ? { ...object, text }
         : object,
     ),
@@ -402,7 +402,7 @@ export function updateShapeTextAlignment(
   return {
     ...doc,
     objects: doc.objects.map((object) =>
-      object.id === id && ["rectangle", "roundedRectangle", "ellipse", "file", "user"].includes(object.type)
+      object.id === id && ["rectangle", "roundedRectangle", "ellipse", "file", "user", "autoShape"].includes(object.type)
         ? { ...object, textStyle: { align, verticalAlign } }
         : object,
     ),

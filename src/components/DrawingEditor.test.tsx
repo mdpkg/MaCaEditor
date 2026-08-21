@@ -736,11 +736,11 @@ describe("DrawingEditor", () => {
     }
 
     act(() => root.render(<Harness />));
-    const shapeMenu = container.querySelector('select[aria-label="Shape"]') as HTMLSelectElement;
-    act(() => {
-      shapeMenu.value = "rectangle";
-      shapeMenu.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const shapeMenu = container.querySelector('button[aria-label="Shape"]') as HTMLButtonElement;
+    act(() => shapeMenu.click());
+    const rectangleItem = Array.from(container.querySelectorAll('.shape-picker-item'))
+      .find((item) => item.textContent === "Rect") as HTMLButtonElement;
+    act(() => rectangleItem.click());
     const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
@@ -760,7 +760,7 @@ describe("DrawingEditor", () => {
     act(() => root.unmount());
   });
 
-  test("groups shape tools in a select menu", () => {
+  test("groups shape tools in an icon menu", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -768,10 +768,19 @@ describe("DrawingEditor", () => {
       <DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />,
     ));
 
-    const menu = container.querySelector('select[aria-label="Shape"]') as HTMLSelectElement;
-    const options = Array.from(menu.options).map((option) => option.textContent);
-    expect(options).toEqual(["Shape", "Rect", "Round Rect", "Ellipse", "File", "User"]);
-    const buttons = Array.from(container.querySelectorAll(".drawing-toolbar button"))
+    const trigger = container.querySelector('button[aria-label="Shape"]') as HTMLButtonElement;
+    act(() => trigger.click());
+    const options = Array.from(container.querySelectorAll(".shape-picker-item"))
+      .map((option) => option.textContent);
+    expect(options).toEqual(expect.arrayContaining([
+      "Rect", "Round Rect", "Ellipse", "File", "User",
+      "Cylinder", "Cube", "Callout", "Decision", "Document",
+      "Left Arrow", "Right Arrow", "Up / Down Arrow",
+    ]));
+    expect(Array.from(container.querySelectorAll(".shape-picker-category-label")).map((label) => label.textContent))
+      .toEqual(["Basic Shapes", "Basic", "Flowchart", "Arrows"]);
+    expect(container.querySelectorAll(".shape-picker-icon")).toHaveLength(options.length);
+    const buttons = Array.from(container.querySelectorAll(".drawing-toolbar > button"))
       .map((button) => button.textContent);
     expect(buttons).not.toContain("File");
     expect(buttons).not.toContain("User");
@@ -780,7 +789,6 @@ describe("DrawingEditor", () => {
   });
 
   test.each([
-    ["Shape", "rectangle"],
     ["Connector", "connector"],
   ])("returns to Select when the %s menu placeholder is selected", (label, tool) => {
     const container = document.createElement("div");

@@ -64,6 +64,24 @@ describe("createObject", () => {
     });
   });
 
+  test("creates a registered auto shape", () => {
+    const obj = createObject(emptyDoc(), "autoShape:flowDecision", 40, 50);
+    expect(obj).toMatchObject({
+      type: "autoShape",
+      preset: "flowDecision",
+      x: 40,
+      y: 50,
+      width: 120,
+      height: 90,
+      text: "",
+    });
+  });
+
+  test("rejects an unknown auto shape", () => {
+    expect(() => createObject(emptyDoc(), "autoShape:unknown", 0, 0))
+      .toThrow("unknown auto shape preset");
+  });
+
   test("createEllipseObject creates ellipse with default size and style", () => {
     const obj = createEllipseObject(emptyDoc(), 100, 100);
     expect(obj.type).toBe("ellipse");
