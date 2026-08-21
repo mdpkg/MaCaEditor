@@ -17,6 +17,7 @@
     "@replit/codemirror-vim": "^6.4.0",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-store": "^2.4.4",
     "codemirror": "^6.0.2",
     "mermaid": "^11.16.1",
     "react": "^18.3.1",

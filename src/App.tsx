@@ -59,6 +59,7 @@ import {
 } from "./lib/mermaid/docIntegration";
 import { renderMermaid } from "./lib/mermaid/renderer";
 import { EMPTY_2X2_MARKDOWN_TABLE } from "./lib/markdownTable";
+import { loadVimMode, saveVimMode } from "./lib/editorPreferences";
 
 type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "table";
 
@@ -80,6 +81,7 @@ export default function App() {
   const [mermaidPath, setMermaidPath] = useState<string | null>(null);
   const [tableEdit, setTableEdit] = useState<TableEditContext | null>(null);
   const [vimMode, setVimMode] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
 
@@ -96,6 +98,20 @@ export default function App() {
     const idx = doc.entrypoint.lastIndexOf("/");
     return idx >= 0 ? doc.entrypoint.slice(0, idx) : "";
   }, [doc]);
+
+  useEffect(() => {
+    let active = true;
+    void loadVimMode().then((enabled) => {
+      if (!active) return;
+      setVimMode(enabled);
+      setPreferencesLoaded(true);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (preferencesLoaded) void saveVimMode(vimMode);
+  }, [preferencesLoaded, vimMode]);
 
   useEffect(() => {
     if (doc && !selectedPath) {
