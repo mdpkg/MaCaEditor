@@ -63,6 +63,29 @@ const CONNECTOR_TOOLS: { id: Tool; label: string }[] = [
   { id: "elbowConnector", label: "Elbow" },
 ];
 
+const COLOR_PRESETS = [
+  { name: "Black", value: "#000000" }, { name: "White", value: "#ffffff" },
+  { name: "Gray", value: "#808080" }, { name: "Red", value: "#ff0000" },
+  { name: "Light Blue", value: "#00b0f0" }, { name: "Blue", value: "#0070c0" },
+  { name: "Light Green", value: "#92d050" }, { name: "Green", value: "#00b050" },
+  { name: "Yellow", value: "#ffff00" }, { name: "Orange", value: "#ffc000" },
+  { name: "Purple", value: "#7030a0" }, { name: "Dark Navy", value: "#1f4e78" },
+] as const;
+
+function ColorPicker({ kind, value, onChange }: {
+  kind: "fill" | "stroke"; value: string; onChange: (color: string) => void;
+}) {
+  return <div className="color-picker-with-presets">
+    <input aria-label={`${kind === "fill" ? "Fill" : "Line"} color`} type="color" value={value}
+      onChange={(event) => onChange(event.target.value)} />
+    <div className="color-presets">{COLOR_PRESETS.map((preset) => <button
+      key={preset.value} type="button" className="color-preset" data-color-kind={kind}
+      title={preset.name} aria-label={`${kind} ${preset.name}`}
+      style={{ backgroundColor: preset.value }} onClick={() => onChange(preset.value)}
+    />)}</div>
+  </div>;
+}
+
 const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse", "file", "user"];
 
 function isTextShapeType(type: string): boolean {
@@ -1074,10 +1097,10 @@ export function DrawingEditor({
               <>
                 <div className="inspector-row">
                   <label>Fill</label>
-                  <input
-                    type="color"
+                  <ColorPicker
+                    kind="fill"
                     value={toColor((selected.style as { fill?: string }).fill)}
-                    onChange={(e) => updateFill(e.target.value)}
+                    onChange={updateFill}
                   />
                 </div>
                 <div className="inspector-row">
@@ -1098,10 +1121,10 @@ export function DrawingEditor({
               <>
                 <div className="inspector-row">
                   <label>Color</label>
-                  <input
-                    type="color"
+                  <ColorPicker
+                    kind="stroke"
                     value={toColor((selected.style as { stroke?: string }).stroke)}
-                    onChange={(e) => updateStroke(e.target.value)}
+                    onChange={updateStroke}
                   />
                 </div>
                 <div className="inspector-row">

@@ -47,6 +47,33 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("applies preset colors to fill and line", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    const fillRed = container.querySelector('[data-color-kind="fill"][title="Red"]') as HTMLButtonElement;
+    const lineBlue = container.querySelector('[data-color-kind="stroke"][title="Blue"]') as HTMLButtonElement;
+    act(() => fillRed.click());
+    act(() => lineBlue.click());
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects[0].style).toMatchObject({ fill: "#ff0000", stroke: "#0070c0" });
+    expect(container.querySelectorAll('[data-color-kind="fill"]')).toHaveLength(12);
+    act(() => root.unmount());
+  });
+
   test("edits fill and line opacity independently", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");
