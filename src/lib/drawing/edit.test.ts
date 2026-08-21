@@ -134,7 +134,7 @@ describe("moveObject", () => {
 });
 
 describe("selectObjectsInRect", () => {
-  test("selects shapes and lines intersecting a normalized drag rectangle", () => {
+  test("selects shapes and lines fully contained in a normalized drag rectangle", () => {
     const line: DrawingObject = {
       id: "line-1", type: "line", x: 250, y: 100, x2: 320, y2: 150,
       width: 0, height: 0, rotation: 0, zIndex: 2, style: {},
@@ -148,12 +148,27 @@ describe("selectObjectsInRect", () => {
     expect(selected).toEqual(["inside", "line-1"]);
   });
 
-  test("selects a partially intersecting shape", () => {
+  test("does not select a partially intersecting shape", () => {
     expect(selectObjectsInRect(
       doc([rect("partial", 100, 100)]),
       { x: 190, y: 120 },
       { x: 220, y: 160 },
-    )).toEqual(["partial"]);
+    )).toEqual([]);
+  });
+
+  test("selects a rotated shape only when all rotated corners are contained", () => {
+    const rotated = { ...rect("rotated", 100, 100), rotation: 45 };
+
+    expect(selectObjectsInRect(
+      doc([rotated]),
+      { x: 80, y: 60 },
+      { x: 220, y: 240 },
+    )).toEqual(["rotated"]);
+    expect(selectObjectsInRect(
+      doc([rotated]),
+      { x: 100, y: 100 },
+      { x: 200, y: 200 },
+    )).toEqual([]);
   });
 });
 

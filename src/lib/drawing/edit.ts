@@ -78,19 +78,25 @@ export function selectObjectsInRect(
   const bottom = Math.max(start.y, end.y);
   return doc.objects.filter((object) => {
     if (object.type === "connector") return false;
-    const objectLeft = object.type === "line" || object.type === "arrow"
-      ? Math.min(object.x, object.x2)
-      : Math.min(object.x, object.x + object.width);
-    const objectRight = object.type === "line" || object.type === "arrow"
-      ? Math.max(object.x, object.x2)
-      : Math.max(object.x, object.x + object.width);
-    const objectTop = object.type === "line" || object.type === "arrow"
-      ? Math.min(object.y, object.y2)
-      : Math.min(object.y, object.y + object.height);
-    const objectBottom = object.type === "line" || object.type === "arrow"
-      ? Math.max(object.y, object.y2)
-      : Math.max(object.y, object.y + object.height);
-    return objectRight >= left && objectLeft <= right && objectBottom >= top && objectTop <= bottom;
+    if (object.type === "line" || object.type === "arrow") {
+      return object.x >= left && object.x <= right && object.x2 >= left && object.x2 <= right &&
+        object.y >= top && object.y <= bottom && object.y2 >= top && object.y2 <= bottom;
+    }
+    const cx = object.x + object.width / 2;
+    const cy = object.y + object.height / 2;
+    const radians = object.rotation * Math.PI / 180;
+    const corners = [
+      { x: object.x, y: object.y },
+      { x: object.x + object.width, y: object.y },
+      { x: object.x + object.width, y: object.y + object.height },
+      { x: object.x, y: object.y + object.height },
+    ].map((point) => ({
+      x: cx + (point.x - cx) * Math.cos(radians) - (point.y - cy) * Math.sin(radians),
+      y: cy + (point.x - cx) * Math.sin(radians) + (point.y - cy) * Math.cos(radians),
+    }));
+    return corners.every((point) =>
+      point.x >= left && point.x <= right && point.y >= top && point.y <= bottom,
+    );
   }).map((object) => object.id);
 }
 
