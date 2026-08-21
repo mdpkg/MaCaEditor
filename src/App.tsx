@@ -6,6 +6,7 @@ import { MarkdownPreview } from "./components/MarkdownPreview";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { DrawingEditor } from "./components/DrawingEditor";
+import { PlantUmlEditor } from "./components/PlantUmlEditor";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
@@ -41,8 +42,15 @@ import {
   isSupportedImageName,
 } from "./lib/imageImport";
 import type { ImportedImage } from "./types";
+import {
+  DEFAULT_PLANTUML_SOURCE,
+  addPlantUmlToDocument,
+  findPlantUmlResourceBySource,
+  savePlantUmlToDocument,
+} from "./lib/plantuml/docIntegration";
+import { renderPlantUml } from "./lib/plantuml/renderer";
 
-type Mode = "preview" | "split" | "drawing";
+type Mode = "preview" | "split" | "drawing" | "plantuml";
 
 export default function App() {
   const [doc, setDoc] = useState<DocumentState | null>(null);
@@ -52,6 +60,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
+  const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
 
@@ -87,6 +96,7 @@ export default function App() {
         setMode("preview");
         setDrawingDoc(null);
         setDrawingPath(null);
+        setPlantUmlPath(null);
         setError(null);
         setStatus(`Opened ${result}`);
       } catch (e) {
@@ -144,6 +154,7 @@ export default function App() {
         setMode("preview");
         setDrawingDoc(null);
         setDrawingPath(null);
+        setPlantUmlPath(null);
         setError(null);
         setStatus(`Created ${result}`);
       } catch (e) {
@@ -169,6 +180,7 @@ export default function App() {
           setMode("preview");
           setDrawingDoc(null);
           setDrawingPath(null);
+          setPlantUmlPath(null);
           setError(null);
           setStatus(`Imported ${folder}`);
         } catch (e) {
@@ -223,6 +235,14 @@ export default function App() {
         }
       }
     }
+    if (path.endsWith(".puml") && findPlantUmlResourceBySource(doc?.manifest ?? {}, path)) {
+      setPlantUmlPath(path);
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setMode("plantuml");
+      return;
+    }
+    setPlantUmlPath(null);
     setMode("preview");
   };
 
@@ -258,6 +278,47 @@ export default function App() {
     setMode("drawing");
     setStatus("Inserted Drawing");
   };
+
+  const handleInsertPlantUml = async () => {
+    if (!doc) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    setStatus("Rendering PlantUML…");
+    try {
+      const svg = await renderPlantUml(DEFAULT_PLANTUML_SOURCE);
+      const added = addPlantUmlToDocument(doc, DEFAULT_PLANTUML_SOURCE, svg, "PlantUML", {
+        markdownPath: markdownFile?.path,
+        cursor,
+      });
+      editorCursorRef.current = added.cursor;
+      setDoc(added.state);
+      setSelectedPath(added.sourcePath);
+      setPlantUmlPath(added.sourcePath);
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setMode("plantuml");
+      setStatus("Inserted PlantUML");
+      setError(null);
+    } catch (reason) {
+      setError(`Unable to render PlantUML: ${String(reason)}`);
+      setStatus("Error");
+    }
+  };
+
+  const handlePlantUmlSourceChange = useCallback((source: string) => {
+    setDoc((current) => current && plantUmlPath
+      ? updateFileContent(current, plantUmlPath, source)
+      : current);
+  }, [plantUmlPath]);
+
+  const handlePlantUmlRendered = useCallback((source: string, svg: string) => {
+    setDoc((current) => current && plantUmlPath
+      ? savePlantUmlToDocument(current, plantUmlPath, source, svg)
+      : current);
+    setStatus("PlantUML preview updated");
+  }, [plantUmlPath]);
 
   const addImportedImages = (images: ImportedImage[]) => {
     if (!doc || images.length === 0) return;
@@ -336,6 +397,7 @@ export default function App() {
       setDoc(renamed.state);
       setSelectedPath(renamed.path);
       if (drawingPath === path) setDrawingPath(renamed.path);
+      if (plantUmlPath === path) setPlantUmlPath(renamed.path);
       setStatus(`Renamed to ${renamed.path}`);
       setError(null);
     } catch (e) {
@@ -355,6 +417,10 @@ export default function App() {
       if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
         setDrawingDoc(null);
         setDrawingPath(null);
+        setMode("preview");
+      }
+      if (plantUmlPath && !next.files.some((file) => file.path === plantUmlPath)) {
+        setPlantUmlPath(null);
         setMode("preview");
       }
       setStatus(`Deleted ${fileName}`);
@@ -409,6 +475,10 @@ export default function App() {
     }
   };
 
+  const handleEditPlantUmlFromPreview = (sourcePath: string) => {
+    handleSelect(sourcePath);
+  };
+
   const resolveDiscard = (discard: boolean) => {
     setError(null);
     if (discard && pendingRef.current) {
@@ -447,6 +517,7 @@ export default function App() {
         onImport={handleImport}
         onExport={handleExport}
         onInsertDrawing={handleInsertDrawing}
+        onInsertPlantUml={handleInsertPlantUml}
         onAddImage={handleAddImage}
         canRename={renameable}
         onRename={handleRename}
@@ -488,7 +559,23 @@ export default function App() {
               propertiesPanelId="drawing-properties-panel"
             />
           )}
-          {doc && mode !== "drawing" && displayFile && displayFile.is_text && (
+          {doc && mode === "plantuml" && plantUmlPath && (() => {
+            const sourceFile = doc.files.find((file) => file.path === plantUmlPath);
+            const resource = findPlantUmlResourceBySource(doc.manifest, plantUmlPath);
+            const svgFile = resource
+              ? doc.files.find((file) => file.path === resource.rendered)
+              : undefined;
+            return sourceFile?.content !== null && sourceFile?.content !== undefined ? (
+              <PlantUmlEditor
+                key={plantUmlPath}
+                source={sourceFile.content}
+                initialSvg={svgFile?.content ?? ""}
+                onSourceChange={handlePlantUmlSourceChange}
+                onRendered={handlePlantUmlRendered}
+              />
+            ) : null;
+          })()}
+          {doc && mode !== "drawing" && mode !== "plantuml" && displayFile && displayFile.is_text && (
             <>
               {mode === "preview" && (
                 <div className="preview-only">
@@ -498,6 +585,7 @@ export default function App() {
                     files={doc.files}
                     manifest={doc.manifest}
                     onEditDrawing={handleEditDrawingFromPreview}
+                    onEditPlantUml={handleEditPlantUmlFromPreview}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -517,12 +605,13 @@ export default function App() {
                     files={doc.files}
                     manifest={doc.manifest}
                     onEditDrawing={handleEditDrawingFromPreview}
+                    onEditPlantUml={handleEditPlantUmlFromPreview}
                   />
                 </div>
               )}
             </>
           )}
-          {doc && mode !== "drawing" && displayFile && !displayFile.is_text && (
+          {doc && mode !== "drawing" && mode !== "plantuml" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
               {displayFile.base64 && (
                 <img src={`data:${imageMediaType(displayFile.path)};base64,${displayFile.base64}`} alt="" />

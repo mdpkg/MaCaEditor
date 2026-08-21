@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@plantuml/core": "^1.2026.6",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "react": "^18.3.1",

@@ -6,6 +6,7 @@ import { resolvePackagePath } from "../lib/markdown";
 import { sanitizeHtml } from "../lib/sanitize";
 import { findResourceByRendered } from "../lib/drawing/docIntegration";
 import { imageMediaType } from "../lib/document";
+import { findPlantUmlResourceByRendered } from "../lib/plantuml/docIntegration";
 
 interface Props {
   markdown: string;
@@ -13,6 +14,7 @@ interface Props {
   files: FileInfo[];
   manifest?: Record<string, unknown>;
   onEditDrawing?: (drawPath: string) => void;
+  onEditPlantUml?: (sourcePath: string) => void;
 }
 
 function packageUrl(baseDir: string, url: string): string {
@@ -50,6 +52,7 @@ export function MarkdownPreview({
   files,
   manifest,
   onEditDrawing,
+  onEditPlantUml,
 }: Props) {
   const components: Components = {
     img({ src = "", alt = "", ...props }) {
@@ -63,19 +66,24 @@ export function MarkdownPreview({
         />;
       }
       if (file?.is_text && file.content?.trim().startsWith("<svg")) {
-        const resource = manifest ? findResourceByRendered(manifest, resolved ?? "") : undefined;
+        const drawingResource = manifest ? findResourceByRendered(manifest, resolved ?? "") : undefined;
+        const plantUmlResource = manifest
+          ? findPlantUmlResourceByRendered(manifest, resolved ?? "")
+          : undefined;
+        const sourcePath = drawingResource?.source ?? plantUmlResource?.source;
+        const editDiagram = drawingResource ? onEditDrawing : onEditPlantUml;
         return <span
           className="drawing-image"
-          data-drawpath={resource?.source ?? ""}
-          role={resource?.source && onEditDrawing ? "button" : undefined}
-          tabIndex={resource?.source && onEditDrawing ? 0 : undefined}
+          data-drawpath={sourcePath ?? ""}
+          role={sourcePath && editDiagram ? "button" : undefined}
+          tabIndex={sourcePath && editDiagram ? 0 : undefined}
           onClick={() => {
-            if (resource?.source) onEditDrawing?.(resource.source);
+            if (sourcePath) editDiagram?.(sourcePath);
           }}
           onKeyDown={(event) => {
-            if (resource?.source && (event.key === "Enter" || event.key === " ")) {
+            if (sourcePath && (event.key === "Enter" || event.key === " ")) {
               event.preventDefault();
-              onEditDrawing?.(resource.source);
+              editDiagram?.(sourcePath);
             }
           }}
           dangerouslySetInnerHTML={{ __html: sanitizeHtml(file.content) }}

@@ -78,6 +78,23 @@ describe("asset rename", () => {
     ]);
   });
 
+  it("renames PlantUML source and rendered files together", () => {
+    const current = state(["diagrams/sequence.puml", "diagrams/sequence.svg"]);
+    current.manifest = {
+      resources: [{ source: "diagrams/sequence.puml", rendered: "diagrams/sequence.svg", type: "plantuml" }],
+    };
+    current.files.unshift({
+      path: "README.md", is_text: true,
+      content: "![Sequence](diagrams/sequence.svg)", base64: null,
+    });
+
+    const renamed = renameAsset(current, "diagrams/sequence.puml", "ログインシーケンス");
+
+    expect(renamed.path).toBe("diagrams/ログインシーケンス.puml");
+    expect(renamed.state.files.map((file) => file.path)).toContain("diagrams/ログインシーケンス.svg");
+    expect(renamed.state.files[0].content).toBe("![Sequence](diagrams/ログインシーケンス.svg)");
+  });
+
   it("rejects a name already used in the same folder", () => {
     expect(() => renameAsset(state(["images/a.png", "images/b.png"]), "images/a.png", "b"))
       .toThrow("already exists");
@@ -122,6 +139,26 @@ describe("asset deletion", () => {
       expect(deleted.manifest.resources).toEqual([
         { source: "other.puml", rendered: "diagrams/keep.svg", type: "plantuml" },
       ]);
+    },
+  );
+
+  it.each(["diagrams/sequence.puml", "diagrams/sequence.svg"])(
+    "deletes PlantUML source, rendered file, resource, and Markdown reference from %s",
+    (selected) => {
+      const current = state(["diagrams/sequence.puml", "diagrams/sequence.svg"]);
+      current.manifest = {
+        resources: [{ source: "diagrams/sequence.puml", rendered: "diagrams/sequence.svg", type: "plantuml" }],
+      };
+      current.files.unshift({
+        path: "README.md", is_text: true,
+        content: "before\n![Sequence](diagrams/sequence.svg)\nafter", base64: null,
+      });
+
+      const deleted = deleteAsset(current, selected);
+
+      expect(deleted.files.map((file) => file.path)).toEqual(["README.md"]);
+      expect(deleted.files[0].content).toBe("before\n\nafter");
+      expect(deleted.manifest.resources).toEqual([]);
     },
   );
 

@@ -97,12 +97,12 @@ function replaceMarkdownPaths(content: string, markdownPath: string, replacement
   });
 }
 
-function drawingResourceForPath(state: DocumentState, path: string) {
+function diagramResourceForPath(state: DocumentState, path: string) {
   if (!Array.isArray(state.manifest.resources)) return undefined;
   return state.manifest.resources.find((item) =>
     typeof item === "object" &&
     item !== null &&
-    (item as { type?: string }).type === "drawing" &&
+    ["drawing", "plantuml"].includes((item as { type?: string }).type ?? "") &&
     ((item as { source?: string }).source === path ||
       (item as { rendered?: string }).rendered === path),
   ) as { source: string; rendered: string; type: string } | undefined;
@@ -110,7 +110,7 @@ function drawingResourceForPath(state: DocumentState, path: string) {
 
 export function isDeletableAsset(state: DocumentState, path: string | null): boolean {
   if (!path) return false;
-  return drawingResourceForPath(state, path) !== undefined ||
+  return diagramResourceForPath(state, path) !== undefined ||
     /^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path);
 }
 
@@ -129,7 +129,7 @@ function removeMarkdownImageReferences(
 }
 
 export function deleteAsset(state: DocumentState, path: string): DocumentState {
-  const drawing = drawingResourceForPath(state, path);
+  const drawing = diagramResourceForPath(state, path);
   const deletedPaths = new Set<string>();
   if (drawing) {
     deletedPaths.add(drawing.source);
@@ -180,10 +180,20 @@ export function renameAsset(
   const replacements = new Map<string, string>();
   let selectedNewPath: string;
 
-  if (resource?.type === "drawing") {
-    const name = safeAssetName(requestedName.replace(/(?:\.draw\.json|\.svg)$/i, ""));
-    replacements.set(resource.source, `${prefix}${name}.draw.json`);
-    replacements.set(resource.rendered, `${prefix}${name}.svg`);
+  if (resource?.type === "drawing" || resource?.type === "plantuml") {
+    const suffixPattern = resource.type === "drawing"
+      ? /(?:\.draw\.json|\.svg)$/i
+      : /(?:\.puml|\.svg)$/i;
+    const sourceSuffix = resource.type === "drawing" ? ".draw.json" : ".puml";
+    const name = safeAssetName(requestedName.replace(suffixPattern, ""));
+    const sourceDir = resource.source.includes("/")
+      ? `${resource.source.slice(0, resource.source.lastIndexOf("/"))}/`
+      : "";
+    const renderedDir = resource.rendered.includes("/")
+      ? `${resource.rendered.slice(0, resource.rendered.lastIndexOf("/"))}/`
+      : "";
+    replacements.set(resource.source, `${sourceDir}${name}${sourceSuffix}`);
+    replacements.set(resource.rendered, `${renderedDir}${name}.svg`);
     selectedNewPath = replacements.get(path)!;
   } else {
     const extension = path.slice(path.lastIndexOf("/") + 1).match(/(\.[^.]+)$/)?.[1] ?? "";

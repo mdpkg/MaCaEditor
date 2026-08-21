@@ -8,6 +8,7 @@ interface Props {
   onImport: () => void;
   onExport: () => void;
   onInsertDrawing: () => void;
+  onInsertPlantUml: () => void;
   onAddImage: () => void;
   canRename: boolean;
   onRename: () => void;
@@ -25,6 +26,7 @@ export function Toolbar({
   onImport,
   onExport,
   onInsertDrawing,
+  onInsertPlantUml,
   onAddImage,
   canRename,
   onRename,
@@ -47,6 +49,9 @@ export function Toolbar({
       </button>
       <button onClick={onInsertDrawing} disabled={!hasDocument}>
         Insert Drawing
+      </button>
+      <button onClick={onInsertPlantUml} disabled={!hasDocument}>
+        Insert PlantUML
       </button>
       <button onClick={onAddImage} disabled={!hasDocument}>
         Add Image

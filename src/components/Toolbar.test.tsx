@@ -28,6 +28,7 @@ describe("Toolbar asset deletion", () => {
         onImport={noop}
         onExport={noop}
         onInsertDrawing={noop}
+        onInsertPlantUml={noop}
         onAddImage={noop}
         canRename={true}
         onRename={noop}

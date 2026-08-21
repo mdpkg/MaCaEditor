@@ -134,4 +134,31 @@ describe("MarkdownPreview", () => {
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     act(() => root.unmount());
   });
+
+  test("opens the PlantUML editor when its rendered SVG is clicked", () => {
+    const onEditPlantUml = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![sequence](diagrams/sequence.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/sequence.svg", is_text: true,
+          content: '<svg><text>Sequence</text></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{
+          type: "plantuml", source: "diagrams/sequence.puml", rendered: "diagrams/sequence.svg",
+        }] }}
+        onEditPlantUml={onEditPlantUml}
+      />,
+    ));
+
+    const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
+    act(() => diagram.click());
+
+    expect(onEditPlantUml).toHaveBeenCalledWith("diagrams/sequence.puml");
+    act(() => root.unmount());
+  });
 });
