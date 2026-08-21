@@ -10,6 +10,7 @@ interface Props {
   onRendered: (source: string, svg: string) => void;
   render?: (source: string) => Promise<string>;
   vimMode?: boolean;
+  onSave?: () => void | Promise<void>;
 }
 
 export function PlantUmlEditor({
@@ -19,6 +20,7 @@ export function PlantUmlEditor({
   onRendered,
   render = renderPlantUml,
   vimMode = false,
+  onSave,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +57,7 @@ export function PlantUmlEditor({
           value={source}
           onChange={onSourceChange}
           vimMode={vimMode}
+          onSave={onSave}
           ariaLabel="PlantUML source"
         />
       </div>

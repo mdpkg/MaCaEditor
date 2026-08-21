@@ -710,6 +710,7 @@ export default function App() {
                 onSourceChange={handlePlantUmlSourceChange}
                 onRendered={handlePlantUmlRendered}
                 vimMode={vimMode}
+                onSave={handleSave}
               />
             ) : null;
           })()}
@@ -727,6 +728,7 @@ export default function App() {
                 onSourceChange={handleMermaidSourceChange}
                 onRendered={handleMermaidRendered}
                 vimMode={vimMode}
+                onSave={handleSave}
               />
             ) : null;
           })()}
@@ -771,6 +773,7 @@ export default function App() {
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
                     vimMode={vimMode}
+                    onSave={handleSave}
                   />
                   <MarkdownPreview
                     markdown={displayContent}

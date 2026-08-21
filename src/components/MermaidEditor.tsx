@@ -10,10 +10,11 @@ interface Props {
   onRendered: (source: string, svg: string) => void;
   render?: (source: string) => Promise<string>;
   vimMode?: boolean;
+  onSave?: () => void | Promise<void>;
 }
 
 export function MermaidEditor({
-  source, initialSvg, onSourceChange, onRendered, render = renderMermaid, vimMode = false,
+  source, initialSvg, onSourceChange, onRendered, render = renderMermaid, vimMode = false, onSave,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function MermaidEditor({
           value={source}
           onChange={onSourceChange}
           vimMode={vimMode}
+          onSave={onSave}
           ariaLabel="Mermaid source"
         />
       </div>
