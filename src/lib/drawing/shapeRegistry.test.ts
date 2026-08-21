@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { getShapeDefinition, SHAPE_DEFINITIONS } from "./shapeRegistry";
+import { getCalloutTailPoint, getShapeDefinition, SHAPE_DEFINITIONS } from "./shapeRegistry";
 import type { AutoShapeObject } from "./model";
 
 describe("shape registry", () => {
@@ -70,6 +70,18 @@ describe("shape registry", () => {
 
     expect(rendered).toContain("10,20 110,20 110,100");
     expect(rendered).toContain("60,122.4");
+  });
+
+  test("exposes the callout tail point for a GUI handle", () => {
+    const shape: AutoShapeObject = {
+      id: "callout-1", type: "autoShape", preset: "callout",
+      x: 10, y: 20, width: 100, height: 80,
+      rotation: 0, zIndex: 1, style: {}, adjustments: { tailAngle: 180 },
+    };
+
+    const tail = getCalloutTailPoint(shape);
+    expect(tail[0]).toBeCloseTo(-12.4);
+    expect(tail[1]).toBeCloseTo(60);
   });
 
   test("renders an elliptical arc arrow with adjustable start and sweep angles", () => {

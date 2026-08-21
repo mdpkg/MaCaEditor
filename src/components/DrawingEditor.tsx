@@ -35,7 +35,7 @@ import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
 import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
 import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector";
-import { getArcArrowGeometry, SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
+import { getArcArrowGeometry, getCalloutTailPoint, SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
 import { ShapePicker, type ShapePickerItem } from "./ShapePicker";
 
 export interface DrawingEditorProps {
@@ -147,7 +147,7 @@ export function DrawingEditor({
     y: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "rotate" | "arcAdjust" | "create" | "canvasResize" | "marquee";
+    type: "move" | "resize" | "rotate" | "arcAdjust" | "calloutAdjust" | "create" | "canvasResize" | "marquee";
     id?: string;
     ids?: string[];
     startX: number;
@@ -310,6 +310,19 @@ export function DrawingEditor({
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const calloutObjectId = (e.target as SVGElement).dataset.calloutTail;
+    if (calloutObjectId) {
+      setSelectedIds([calloutObjectId]);
+      setDragging({
+        type: "calloutAdjust",
+        id: calloutObjectId,
+        startX: x,
+        startY: y,
+        before: doc,
+      });
+      dragPreviewRef.current = doc;
+      return;
+    }
     const arcAdjust = (e.target as SVGElement).dataset.arcAdjust;
     const arcObjectId = (e.target as SVGElement).dataset.objectId;
     if ((arcAdjust === "start" || arcAdjust === "end") && arcObjectId) {
@@ -558,6 +571,19 @@ export function DrawingEditor({
       return;
     }
 
+    if (dragging.type === "calloutAdjust" && dragging.id && dragging.before) {
+      const object = findObjectById(dragging.before.objects, dragging.id);
+      if (!object || object.type !== "autoShape" || object.preset !== "callout") return;
+      const local = pointBeforeRotation(object, x, y);
+      const cx = object.x + object.width / 2;
+      const cy = object.y + object.height / 2;
+      const angle = ((Math.atan2(local.y - cy, local.x - cx) * 180 / Math.PI) % 360 + 360) % 360;
+      const next = updateAutoShapeAdjustment(dragging.before, object.id, "tailAngle", angle);
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "move" && dragging.id) {
       const original = dragging.before ?? doc;
       const start = { x: dragging.startX, y: dragging.startY };
@@ -611,7 +637,7 @@ export function DrawingEditor({
       setRedoStack([]);
       onChange(after);
       onDirty(after);
-    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "arcAdjust") && dragging.before) {
+    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust") && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -1121,6 +1147,20 @@ export function DrawingEditor({
                         strokeWidth={2 / zoom}
                       />
                     </>;
+                  })()}
+                  {obj.type === "autoShape" && obj.preset === "callout" && (() => {
+                    const tail = getCalloutTailPoint(obj);
+                    return <circle
+                      className="callout-tail-handle"
+                      data-callout-tail={obj.id}
+                      aria-label="Callout tail handle"
+                      cx={tail[0]}
+                      cy={tail[1]}
+                      r={6 / zoom}
+                      fill="#8250df"
+                      stroke="#ffffff"
+                      strokeWidth={2 / zoom}
+                    />;
                   })()}
                   {obj.type !== "group" && [
                     "nw",

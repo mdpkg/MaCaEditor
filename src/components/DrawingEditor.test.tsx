@@ -196,6 +196,45 @@ describe("DrawingEditor", () => {
     });
   });
 
+  test("moves a callout tail with its canvas handle", () => {
+    const onDirty = vi.fn();
+    const calloutDoc: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "callout-1", type: "autoShape", preset: "callout",
+        x: 100, y: 100, width: 140, height: 90, rotation: 0, zIndex: 1,
+        style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+        adjustments: { tailAngle: 90 },
+      }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(calloutDoc);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 170, 145)));
+    const handle = container.querySelector('[aria-label="Callout tail handle"]') as SVGCircleElement;
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerdown", 170, 215.2)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 80, 145)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 80, 145)));
+
+    expect(onDirty.mock.lastCall?.[0].objects[0]).toMatchObject({
+      adjustments: { tailAngle: 180 },
+    });
+  });
+
   test("opens shape properties in a context menu and applies changes", () => {
     const onDirty = vi.fn();
     const container = document.createElement("div");

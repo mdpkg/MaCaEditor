@@ -128,6 +128,13 @@ function calloutPoints(shape: AutoShapeObject): Array<[number, number]> {
   return [[left, top], [edgeX - baseHalfX, top], tip, [edgeX + baseHalfX, top], [right, top], [right, bottom], [left, bottom]];
 }
 
+export function getCalloutTailPoint(shape: AutoShapeObject): [number, number] {
+  return calloutPoints(shape).find(([x, y]) =>
+    x < shape.x || x > shape.x + shape.width ||
+    y < shape.y || y > shape.y + shape.height,
+  ) ?? [shape.x + shape.width / 2, shape.y + shape.height];
+}
+
 export function getAutoShapeOutlinePoints(shape: AutoShapeObject): Array<[number, number]> {
   if (shape.preset === "callout") return calloutPoints(shape);
   return [
