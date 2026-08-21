@@ -309,7 +309,7 @@ describe("drawing document parsing", () => {
       '"objects": [\n      { "id": "conn-1", "type": "connector", "x": 0, "y": 0, "width": 0, "height": 0, "rotation": 0, "zIndex": 2, "style": {}, "from": { "objectId": "missing" }, "to": { "objectId": "rect-1" } },',
     );
     expect(() => validateDrawingDocument(parseDrawingDocument(bad))).toThrow(
-      "connector",
+      'connector "conn-1" references missing object',
     );
   });
 

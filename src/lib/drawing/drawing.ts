@@ -63,7 +63,7 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
     if (obj.type === "connector") {
       const conn = obj as ConnectorObject;
       if (!ids.has(conn.from.objectId) || !ids.has(conn.to.objectId)) {
-        throw new DrawingError("connector references missing object");
+        throw new DrawingError(`connector "${conn.id}" references missing object`);
       }
     }
   }
