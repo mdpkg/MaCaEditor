@@ -58,6 +58,30 @@ describe("docIntegration", () => {
     expect(readme?.content).toContain("![Drawing](diagrams/drawing-1.svg)");
   });
 
+  test("inserts the drawing link at the Markdown cursor", () => {
+    const current = state();
+    current.files[0] = { ...current.files[0], content: "beforeafter" };
+    const { state: next, cursor } = addDrawingToDocument(
+      current, drawing(), "diagrams", "Drawing", { markdownPath: "README.md", cursor: 6 },
+    );
+    const readme = next.files.find((file) => file.path === "README.md");
+    expect(readme?.content).toBe("before\n![Drawing](diagrams/drawing-1.svg)\nafter");
+    expect(cursor).toBe("before\n![Drawing](diagrams/drawing-1.svg)".length);
+  });
+
+  test("inserts at the selected nested Markdown file using a relative path", () => {
+    const current = state();
+    current.files.push({
+      path: "docs/guide.md", is_text: true, content: "Guide", base64: null,
+    });
+    const { state: next } = addDrawingToDocument(
+      current, drawing(), "diagrams", "Drawing", { markdownPath: "docs/guide.md", cursor: null },
+    );
+    const guide = next.files.find((file) => file.path === "docs/guide.md");
+    expect(guide?.content).toBe("Guide\n![Drawing](../diagrams/drawing-1.svg)");
+    expect(next.files.find((file) => file.path === "README.md")?.content).toBe("# Hello");
+  });
+
   test("marks document dirty", () => {
     const { state: next } = addDrawingToDocument(state(), drawing(), "diagrams", "Drawing");
     expect(next.dirty).toBe(true);

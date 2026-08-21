@@ -36,11 +36,12 @@ export function insertMarkdownImages(
   cursor: number | null,
   markdownPath: string,
   imagePaths: string[],
+  altTexts?: string[],
 ): { content: string; cursor: number } {
   const position = cursor === null ? content.length : Math.max(0, Math.min(cursor, content.length));
-  const links = imagePaths.map((path) => {
+  const links = imagePaths.map((path, index) => {
     const fileName = path.slice(path.lastIndexOf("/") + 1);
-    const alt = fileName.replace(/\.[^.]+$/, "");
+    const alt = altTexts?.[index] ?? fileName.replace(/\.[^.]+$/, "");
     const relativePath = relativePackagePath(markdownPath, path);
     const destination = /\s/.test(relativePath) ? `<${relativePath}>` : relativePath;
     return `![${alt}](${destination})`;

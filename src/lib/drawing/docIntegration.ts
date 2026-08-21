@@ -1,6 +1,7 @@
 import type { DocumentState } from "../document";
 import type { DrawingDocument } from "./model";
 import { DEFAULT_DRAWING_DIR, generateDrawingFiles, nextDrawingName } from "./integration";
+import { insertMarkdownImages } from "../markdown";
 
 export { DEFAULT_DRAWING_DIR };
 import { parseAndValidate } from "./drawing";
@@ -47,15 +48,22 @@ export function addDrawingToDocument(
   doc: DrawingDocument,
   baseDir: string,
   alt: string,
-): { state: DocumentState; drawPath: string; svgPath: string } {
+  options: { markdownPath?: string; cursor?: number | null } = {},
+): { state: DocumentState; drawPath: string; svgPath: string; cursor: number } {
   const name = nextDrawingName(
     baseDir,
     state.files.map((f) => f.path),
   );
   const files = generateDrawingFiles(doc, baseDir, name);
-  const entrypoint = state.files.find((f) => f.path === state.entrypoint);
-  const entryContent = entrypoint?.content ?? "";
-  const imageRef = `![${alt}](${files.svgPath})`;
+  const markdownPath = options.markdownPath ?? state.entrypoint;
+  const markdownFile = state.files.find((file) => file.path === markdownPath);
+  const inserted = insertMarkdownImages(
+    markdownFile?.content ?? "",
+    options.cursor ?? null,
+    markdownPath,
+    [files.svgPath],
+    [alt],
+  );
 
   const resources = Array.isArray(state.manifest.resources)
     ? state.manifest.resources
@@ -68,8 +76,8 @@ export function addDrawingToDocument(
 
   const newFiles = [
     ...state.files.map((f) =>
-      f.path === state.entrypoint
-        ? { ...f, content: `${entryContent}\n\n${imageRef}\n` }
+      f.path === markdownPath
+        ? { ...f, content: inserted.content }
         : f,
     ),
     { path: files.drawPath, is_text: true, content: files.drawContent, base64: null },
@@ -88,6 +96,7 @@ export function addDrawingToDocument(
     },
     drawPath: files.drawPath,
     svgPath: files.svgPath,
+    cursor: inserted.cursor,
   };
 }
 

@@ -226,6 +226,10 @@ export default function App() {
 
   const handleInsertDrawing = () => {
     if (!doc) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
     const baseDir = DEFAULT_DRAWING_DIR;
     const empty: DrawingDocument = {
       format: "maca-drawing",
@@ -233,12 +237,14 @@ export default function App() {
       canvas: { width: 1200, height: 800, gridSize: 10 },
       objects: [],
     };
-    const { state, drawPath } = addDrawingToDocument(
+    const { state, drawPath, cursor: insertedCursor } = addDrawingToDocument(
       doc,
       empty,
       baseDir,
       "Drawing",
+      { markdownPath: markdownFile?.path, cursor },
     );
+    editorCursorRef.current = insertedCursor;
     setDoc(state);
     setDrawingDoc(empty);
     setDrawingPath(drawPath);
