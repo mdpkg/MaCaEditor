@@ -23,6 +23,74 @@ function path(d: string, attributes: string): string {
   return `<path d="${d}" ${attributes} />`;
 }
 
+export interface ArcArrowGeometry {
+  start: [number, number];
+  end: [number, number];
+  startTangent: [number, number];
+  endTangent: [number, number];
+  rx: number;
+  ry: number;
+  sweepAngle: number;
+}
+
+export function getArcArrowGeometry(shape: AutoShapeObject): ArcArrowGeometry {
+  const startAngle = ((shape.adjustments?.startAngle ?? 200) % 360 + 360) % 360;
+  const sweepAngle = Math.max(1, Math.min(359, shape.adjustments?.sweepAngle ?? 220));
+  const endAngle = startAngle + sweepAngle;
+  const startRadians = startAngle * Math.PI / 180;
+  const endRadians = endAngle * Math.PI / 180;
+  const cx = shape.x + shape.width / 2;
+  const cy = shape.y + shape.height / 2;
+  const rx = shape.width * 0.42;
+  const ry = shape.height * 0.38;
+  const pointAt = (radians: number): [number, number] => [
+    cx + rx * Math.cos(radians),
+    cy + ry * Math.sin(radians),
+  ];
+  const start = pointAt(startRadians);
+  const end = pointAt(endRadians);
+  const tangentAt = (radians: number): [number, number] => {
+    const x = -rx * Math.sin(radians);
+    const y = ry * Math.cos(radians);
+    const length = Math.hypot(x, y) || 1;
+    return [x / length, y / length];
+  };
+  return { start, end, startTangent: tangentAt(startRadians), endTangent: tangentAt(endRadians), rx, ry, sweepAngle };
+}
+
+function arcEndMarker(
+  point: [number, number],
+  direction: [number, number],
+  marker: "none" | "arrow" | "crowFoot",
+  size: number,
+  attributes: string,
+): string {
+  if (marker === "none") return "";
+  const [ux, uy] = direction;
+  const baseX = point[0] - ux * size;
+  const baseY = point[1] - uy * size;
+  const halfWidth = size * 0.55;
+  const left: [number, number] = [baseX - uy * halfWidth, baseY + ux * halfWidth];
+  const right: [number, number] = [baseX + uy * halfWidth, baseY - ux * halfWidth];
+  if (marker === "crowFoot") {
+    const lineAttributes = attributes.replace(/fill="[^"]*"(?: fill-opacity="[^"]*")?/, 'fill="none"');
+    return path(`M ${n(point[0])} ${n(point[1])} L ${n(left[0])} ${n(left[1])} M ${n(point[0])} ${n(point[1])} L ${n(baseX)} ${n(baseY)} M ${n(point[0])} ${n(point[1])} L ${n(right[0])} ${n(right[1])}`, lineAttributes);
+  }
+  const stroke = attributes.match(/stroke="([^"]+)"/)?.[1] ?? "#000000";
+  const arrowAttributes = attributes.replace(/fill="[^"]*"/, `fill="${stroke}"`);
+  return polygon([point, left, right], arrowAttributes);
+}
+
+function arcArrow(shape: AutoShapeObject, attributes: string): string {
+  const geometry = getArcArrowGeometry(shape);
+  const { start, end, startTangent, endTangent, rx, ry, sweepAngle } = geometry;
+  const arrowLength = Math.min(shape.width, shape.height) * 0.16;
+  const lineAttributes = attributes.replace(/fill="[^"]*"(?: fill-opacity="[^"]*")?/, 'fill="none"');
+  const startMarker = arcEndMarker(start, [-startTangent[0], -startTangent[1]], shape.startMarker ?? "none", arrowLength, attributes);
+  const endMarker = arcEndMarker(end, endTangent, shape.endMarker ?? "arrow", arrowLength, attributes);
+  return `${path(`M ${n(start[0])} ${n(start[1])} A ${n(rx)} ${n(ry)} 0 ${sweepAngle > 180 ? 1 : 0} 1 ${n(end[0])} ${n(end[1])}`, lineAttributes)}${startMarker}${endMarker}`;
+}
+
 function calloutPoints(shape: AutoShapeObject): Array<[number, number]> {
   const angle = ((shape.adjustments?.tailAngle ?? 90) % 360 + 360) % 360;
   const radians = angle * Math.PI / 180;
@@ -140,6 +208,10 @@ const definitions: ShapeDefinition[] = [
   {
     id: "upDownArrow", label: "Up / Down Arrow", category: "Arrows", width: 70, height: 150,
     render: (s, a) => polygon([[s.x + s.width / 2, s.y], [s.x + s.width, s.y + s.height * 0.25], [s.x + s.width * 0.72, s.y + s.height * 0.25], [s.x + s.width * 0.72, s.y + s.height * 0.75], [s.x + s.width, s.y + s.height * 0.75], [s.x + s.width / 2, s.y + s.height], [s.x, s.y + s.height * 0.75], [s.x + s.width * 0.28, s.y + s.height * 0.75], [s.x + s.width * 0.28, s.y + s.height * 0.25], [s.x, s.y + s.height * 0.25]], a),
+  },
+  {
+    id: "arcArrow", label: "Arc Arrow", category: "Arrows", width: 150, height: 100,
+    render: arcArrow,
   },
 ];
 

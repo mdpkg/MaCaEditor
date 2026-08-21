@@ -86,6 +86,8 @@ export interface AutoShapeObject extends BaseObject {
   type: "autoShape";
   preset: string;
   adjustments?: Record<string, number>;
+  startMarker?: ConnectorEndMarker;
+  endMarker?: ConnectorEndMarker;
   style: ObjectStyle;
   text?: string;
   textStyle?: ShapeTextStyle;

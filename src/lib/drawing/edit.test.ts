@@ -28,6 +28,7 @@ import {
   updateConnectorEnds,
   updateObjectRotation,
   updateAutoShapeAdjustment,
+  updateAutoShapeEnds,
   updateObjectOpacity,
   updateShapeText,
   updateShapeTextAlignment,
@@ -370,6 +371,20 @@ describe("updateAutoShapeAdjustment", () => {
     const updated = updateAutoShapeAdjustment(original, "callout-1", "tailAngle", 275);
 
     expect(updated.objects[0]).toMatchObject({ adjustments: { tailAngle: 275 } });
+  });
+});
+
+describe("updateAutoShapeEnds", () => {
+  test("updates both end markers of an auto shape", () => {
+    const original = doc([{
+      id: "arc-1", type: "autoShape", preset: "arcArrow",
+      x: 0, y: 0, width: 100, height: 80, rotation: 0, zIndex: 1,
+      style: {},
+    }]);
+
+    const updated = updateAutoShapeEnds(original, "arc-1", "crowFoot", "none");
+
+    expect(updated.objects[0]).toMatchObject({ startMarker: "crowFoot", endMarker: "none" });
   });
 });
 

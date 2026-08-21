@@ -92,6 +92,22 @@ export function updateAutoShapeAdjustment(
   };
 }
 
+export function updateAutoShapeEnds(
+  doc: DrawingDocument,
+  id: string,
+  startMarker: ConnectorEndMarker,
+  endMarker: ConnectorEndMarker,
+): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((object) => mapObjectById(object, id, (current) =>
+      current.type === "autoShape"
+        ? { ...current, startMarker, endMarker }
+        : current,
+    )),
+  };
+}
+
 export function updateObjectOpacity(
   doc: DrawingDocument,
   ids: string[],

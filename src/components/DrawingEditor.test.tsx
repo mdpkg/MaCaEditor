@@ -47,6 +47,115 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("adjusts an arc arrow's start and sweep angles from Properties", () => {
+    const onDirty = vi.fn();
+    const arcDoc: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "arc-1", type: "autoShape", preset: "arcArrow",
+        x: 100, y: 100, width: 150, height: 100, rotation: 0, zIndex: 1,
+        style: { fill: "#ffffff", stroke: "#000000", strokeWidth: 1 },
+      }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(arcDoc);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    canvas.setPointerCapture = vi.fn();
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 170, 150)));
+
+    const start = container.querySelector('input[aria-label="Arc arrow start angle"]') as HTMLInputElement;
+    const sweep = container.querySelector('input[aria-label="Arc arrow sweep angle"]') as HTMLInputElement;
+    const startMarker = container.querySelector('select[aria-label="Arc arrow start marker"]') as HTMLSelectElement;
+    const endMarker = container.querySelector('select[aria-label="Arc arrow end marker"]') as HTMLSelectElement;
+    expect(start.value).toBe("200");
+    expect(sweep.value).toBe("220");
+    expect(startMarker.value).toBe("none");
+    expect(endMarker.value).toBe("arrow");
+    expect(container.querySelector('[aria-label="Arc arrow start handle"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Arc arrow end handle"]')).not.toBeNull();
+    act(() => {
+      startMarker.value = "arrow";
+      startMarker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    act(() => {
+      endMarker.value = "crowFoot";
+      endMarker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    act(() => {
+      setter?.call(start, "45");
+      start.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => {
+      setter?.call(sweep, "120");
+      sweep.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(onDirty.mock.lastCall?.[0].objects[0]).toMatchObject({
+      adjustments: { startAngle: 45, sweepAngle: 120 },
+      startMarker: "arrow",
+      endMarker: "crowFoot",
+    });
+  });
+
+  test("moves an arc arrow endpoint with its canvas handle", () => {
+    const onDirty = vi.fn();
+    const arcDoc: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "arc-1", type: "autoShape", preset: "arcArrow",
+        x: 100, y: 100, width: 150, height: 100, rotation: 0, zIndex: 1,
+        style: { stroke: "#000000", strokeWidth: 1 },
+        adjustments: { startAngle: 0, sweepAngle: 90 },
+      }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(arcDoc);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 175, 150)));
+    const endHandle = container.querySelector('[aria-label="Arc arrow end handle"]') as SVGCircleElement;
+
+    act(() => endHandle.dispatchEvent(pointerEvent("pointerdown", 175, 188)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 112, 150)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 112, 150)));
+
+    expect(onDirty.mock.lastCall?.[0].objects[0]).toMatchObject({
+      adjustments: { startAngle: 0, sweepAngle: 180 },
+    });
+
+    const startHandle = container.querySelector('[aria-label="Arc arrow start handle"]') as SVGCircleElement;
+    act(() => startHandle.dispatchEvent(pointerEvent("pointerdown", 238, 150)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 175, 112)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 175, 112)));
+
+    expect(onDirty.mock.lastCall?.[0].objects[0]).toMatchObject({
+      adjustments: { startAngle: 270, sweepAngle: 270 },
+    });
+  });
+
   test("adjusts a selected callout tail direction from Properties", () => {
     const onDirty = vi.fn();
     const calloutDoc: DrawingDocument = {

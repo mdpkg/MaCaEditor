@@ -9,7 +9,7 @@ describe("shape registry", () => {
       "flowProcess", "flowDecision", "flowTerminator", "flowData",
       "flowDocument", "flowPredefinedProcess",
       "leftArrow", "rightArrow", "upArrow", "downArrow",
-      "leftRightArrow", "upDownArrow",
+      "leftRightArrow", "upDownArrow", "arcArrow",
     ]));
   });
 
@@ -70,5 +70,35 @@ describe("shape registry", () => {
 
     expect(rendered).toContain("10,20 110,20 110,100");
     expect(rendered).toContain("60,122.4");
+  });
+
+  test("renders an elliptical arc arrow with adjustable start and sweep angles", () => {
+    const definition = getShapeDefinition("arcArrow");
+    const shape: AutoShapeObject = {
+      id: "arc-1", type: "autoShape", preset: "arcArrow",
+      x: 10, y: 20, width: 200, height: 100,
+      rotation: 0, zIndex: 1,
+      style: {}, adjustments: { startAngle: 0, sweepAngle: 90 },
+    };
+
+    const rendered = definition?.render(shape, 'fill="#fff" stroke="#123456"') ?? "";
+
+    expect(rendered).toContain("A 84 38 0 0 1 110 108");
+    expect(rendered).toContain('fill="#123456"');
+    expect(rendered).toContain("<polygon");
+  });
+
+  test("renders independently configurable arc arrow end markers", () => {
+    const definition = getShapeDefinition("arcArrow");
+    const shape: AutoShapeObject = {
+      id: "arc-1", type: "autoShape", preset: "arcArrow",
+      x: 0, y: 0, width: 150, height: 100, rotation: 0, zIndex: 1,
+      style: {}, startMarker: "crowFoot", endMarker: "none",
+    };
+
+    const rendered = definition?.render(shape, 'fill="#fff" stroke="#000"') ?? "";
+
+    expect(rendered.match(/<path/g)).toHaveLength(2);
+    expect(rendered).not.toContain("<polygon");
   });
 });

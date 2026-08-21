@@ -24,6 +24,7 @@ import {
   type History,
   updateConnectorEnds,
   updateAutoShapeAdjustment,
+  updateAutoShapeEnds,
   updateObjectOpacity,
   updateObjectRotation,
   ungroupObjects,
@@ -34,7 +35,7 @@ import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
 import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
 import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
 import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector";
-import { SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
+import { getArcArrowGeometry, SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
 import { ShapePicker, type ShapePickerItem } from "./ShapePicker";
 
 export interface DrawingEditorProps {
@@ -146,7 +147,7 @@ export function DrawingEditor({
     y: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "rotate" | "create" | "canvasResize" | "marquee";
+    type: "move" | "resize" | "rotate" | "arcAdjust" | "create" | "canvasResize" | "marquee";
     id?: string;
     ids?: string[];
     startX: number;
@@ -309,6 +310,21 @@ export function DrawingEditor({
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const arcAdjust = (e.target as SVGElement).dataset.arcAdjust;
+    const arcObjectId = (e.target as SVGElement).dataset.objectId;
+    if ((arcAdjust === "start" || arcAdjust === "end") && arcObjectId) {
+      setSelectedIds([arcObjectId]);
+      setDragging({
+        type: "arcAdjust",
+        id: arcObjectId,
+        handle: arcAdjust,
+        startX: x,
+        startY: y,
+        before: doc,
+      });
+      dragPreviewRef.current = doc;
+      return;
+    }
     const rotateObjectId = (e.target as SVGElement).dataset.objectRotate;
     if (rotateObjectId) {
       const object = findObjectById(doc.objects, rotateObjectId);
@@ -517,6 +533,31 @@ export function DrawingEditor({
       return;
     }
 
+    if (dragging.type === "arcAdjust" && dragging.id && dragging.handle && dragging.before) {
+      const object = findObjectById(dragging.before.objects, dragging.id);
+      if (!object || object.type !== "autoShape" || object.preset !== "arcArrow") return;
+      const local = pointBeforeRotation(object, x, y);
+      const cx = object.x + object.width / 2;
+      const cy = object.y + object.height / 2;
+      const rx = object.width * 0.42;
+      const ry = object.height * 0.38;
+      const angle = ((Math.atan2((local.y - cy) / ry, (local.x - cx) / rx) * 180 / Math.PI) % 360 + 360) % 360;
+      const startAngle = ((object.adjustments?.startAngle ?? 200) % 360 + 360) % 360;
+      let next = dragging.before;
+      if (dragging.handle === "start") {
+        const endAngle = (startAngle + (object.adjustments?.sweepAngle ?? 220)) % 360;
+        const sweepAngle = (endAngle - angle + 360) % 360 || 359;
+        next = updateAutoShapeAdjustment(next, object.id, "startAngle", angle);
+        next = updateAutoShapeAdjustment(next, object.id, "sweepAngle", sweepAngle);
+      } else {
+        const sweepAngle = (angle - startAngle + 360) % 360 || 359;
+        next = updateAutoShapeAdjustment(next, object.id, "sweepAngle", sweepAngle);
+      }
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "move" && dragging.id) {
       const original = dragging.before ?? doc;
       const start = { x: dragging.startX, y: dragging.startY };
@@ -570,7 +611,7 @@ export function DrawingEditor({
       setRedoStack([]);
       onChange(after);
       onDirty(after);
-    } else if ((dragging?.type === "resize" || dragging?.type === "rotate") && dragging.before) {
+    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "arcAdjust") && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -755,6 +796,21 @@ export function DrawingEditor({
   const updateCalloutTailAngle = (angle: number) => {
     if (!selected || selected.type !== "autoShape" || selected.preset !== "callout") return;
     commit(updateAutoShapeAdjustment(doc, selected.id, "tailAngle", angle));
+  };
+
+  const updateArcArrowAngle = (name: "startAngle" | "sweepAngle", angle: number) => {
+    if (!selected || selected.type !== "autoShape" || selected.preset !== "arcArrow") return;
+    commit(updateAutoShapeAdjustment(doc, selected.id, name, angle));
+  };
+
+  const updateArcArrowEnd = (end: "start" | "end", marker: ConnectorEndMarker) => {
+    if (!selected || selected.type !== "autoShape" || selected.preset !== "arcArrow") return;
+    commit(updateAutoShapeEnds(
+      doc,
+      selected.id,
+      end === "start" ? marker : selected.startMarker ?? "none",
+      end === "end" ? marker : selected.endMarker ?? "arrow",
+    ));
   };
 
   const updateFontSize = (fontSize: number) => {
@@ -1037,6 +1093,35 @@ export function DrawingEditor({
                     stroke="#2d6cdf"
                     strokeWidth={2 / zoom}
                   />
+                  {obj.type === "autoShape" && obj.preset === "arcArrow" && (() => {
+                    const geometry = getArcArrowGeometry(obj);
+                    return <>
+                      <circle
+                        className="arc-adjust-handle arc-adjust-handle-start"
+                        data-arc-adjust="start"
+                        data-object-id={obj.id}
+                        aria-label="Arc arrow start handle"
+                        cx={geometry.start[0]}
+                        cy={geometry.start[1]}
+                        r={6 / zoom}
+                        fill="#2da44e"
+                        stroke="#ffffff"
+                        strokeWidth={2 / zoom}
+                      />
+                      <circle
+                        className="arc-adjust-handle arc-adjust-handle-end"
+                        data-arc-adjust="end"
+                        data-object-id={obj.id}
+                        aria-label="Arc arrow end handle"
+                        cx={geometry.end[0]}
+                        cy={geometry.end[1]}
+                        r={6 / zoom}
+                        fill="#cf5c00"
+                        stroke="#ffffff"
+                        strokeWidth={2 / zoom}
+                      />
+                    </>;
+                  })()}
                   {obj.type !== "group" && [
                     "nw",
                     "n",
@@ -1413,6 +1498,58 @@ export function DrawingEditor({
                 />
                 <span>{Math.round(selected.adjustments?.tailAngle ?? 90)}°</span>
               </div>
+            )}
+            {selected.type === "autoShape" && selected.preset === "arcArrow" && (
+              <>
+                <div className="inspector-row">
+                  <label>Start</label>
+                  <select
+                    aria-label="Arc arrow start marker"
+                    value={selected.startMarker ?? "none"}
+                    onChange={(e) => updateArcArrowEnd("start", e.target.value as ConnectorEndMarker)}
+                  >
+                    <option value="none">None</option>
+                    <option value="arrow">Arrow</option>
+                    <option value="crowFoot">Crow's Foot</option>
+                  </select>
+                </div>
+                <div className="inspector-row">
+                  <label>End</label>
+                  <select
+                    aria-label="Arc arrow end marker"
+                    value={selected.endMarker ?? "arrow"}
+                    onChange={(e) => updateArcArrowEnd("end", e.target.value as ConnectorEndMarker)}
+                  >
+                    <option value="none">None</option>
+                    <option value="arrow">Arrow</option>
+                    <option value="crowFoot">Crow's Foot</option>
+                  </select>
+                </div>
+                <div className="inspector-row">
+                  <label>Start angle</label>
+                  <input
+                    aria-label="Arc arrow start angle"
+                    type="range"
+                    min="0"
+                    max="359"
+                    value={Math.round(selected.adjustments?.startAngle ?? 200)}
+                    onChange={(e) => updateArcArrowAngle("startAngle", Number(e.target.value))}
+                  />
+                  <span>{Math.round(selected.adjustments?.startAngle ?? 200)}°</span>
+                </div>
+                <div className="inspector-row">
+                  <label>Arc angle</label>
+                  <input
+                    aria-label="Arc arrow sweep angle"
+                    type="range"
+                    min="1"
+                    max="359"
+                    value={Math.round(selected.adjustments?.sweepAngle ?? 220)}
+                    onChange={(e) => updateArcArrowAngle("sweepAngle", Number(e.target.value))}
+                  />
+                  <span>{Math.round(selected.adjustments?.sweepAngle ?? 220)}°</span>
+                </div>
+              </>
             )}
             {(isTextShapeType(selected.type) || selected.type === "text") && (
               <div className="inspector-row">
