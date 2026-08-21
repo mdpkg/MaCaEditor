@@ -24,6 +24,7 @@ import {
   ungroupObjects,
   undo,
   updateConnectorEnds,
+  updateObjectRotation,
   updateShapeText,
   updateShapeTextAlignment,
   type History,
@@ -293,6 +294,14 @@ describe("updateConnectorEnds", () => {
     const updated = updateConnectorEnds(doc([connector]), "c1", "crowFoot", "arrow");
 
     expect(updated.objects[0]).toMatchObject({ startMarker: "crowFoot", endMarker: "arrow" });
+  });
+});
+
+describe("updateObjectRotation", () => {
+  test("rotates a shape by degrees", () => {
+    const updated = updateObjectRotation(doc([rect("r1", 100, 80)]), "r1", 45);
+
+    expect(updated.objects[0].rotation).toBe(45);
   });
 });
 

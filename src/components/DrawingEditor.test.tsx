@@ -47,6 +47,63 @@ function pointerEvent(
 }
 
 describe("DrawingEditor", () => {
+  test("rotates a selected shape from Properties", () => {
+    const onDirty = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(initial);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    const rotation = container.querySelector('input[aria-label="Rotation"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(rotation, "45");
+      rotation.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(changed.objects[0].rotation).toBe(45);
+    expect(container.querySelector(".selection-box")?.getAttribute("transform"))
+      .toBe("rotate(45 140 120)");
+    act(() => root.unmount());
+  });
+
+  test("selects a rotated shape outside its original bounds", () => {
+    const rotated = {
+      ...initial,
+      objects: [{ ...initial.objects[0], rotation: 90 }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <DrawingEditor doc={rotated} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 140, 85)));
+
+    expect(container.querySelector('input[aria-label="Rotation"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
   test("inserts an elbow connector between two shapes", () => {
     const onDirty = vi.fn();
     const second = { ...initial.objects[0], id: "rect-2", x: 300, y: 200, zIndex: 2 };

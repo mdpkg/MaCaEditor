@@ -689,6 +689,48 @@ describe("svg renderer", () => {
     expect(svg).toContain('<line x1="100" y1="25" x2="300" y2="225"');
   });
 
+  test("renders shapes inside a nested group", () => {
+    const svg = renderSvg(doc([{
+      id: "outer", type: "group", x: 0, y: 0, width: 300, height: 200,
+      rotation: 0, zIndex: 2, style: {}, members: [
+        {
+          id: "inner", type: "group", x: 20, y: 30, width: 120, height: 60,
+          rotation: 0, zIndex: 1, style: {}, members: [
+            {
+              id: "nested-shape", type: "rectangle", x: 20, y: 30,
+              width: 120, height: 60, rotation: 0, zIndex: 1,
+              style: { fill: "#ffffff", stroke: "#000000" },
+            },
+          ],
+        },
+      ],
+    }]));
+
+    expect(svg).toContain('id="outer"');
+    expect(svg).toContain('id="inner"');
+    expect(svg).toContain('<rect x="20" y="30" width="120" height="60"');
+  });
+
+  test("rotates a shape and its text around the shape center", () => {
+    const svg = renderSvg(doc([{
+      id: "rotated", type: "rectangle", x: 100, y: 80, width: 120, height: 60,
+      rotation: 45, zIndex: 1, text: "Rotated", style: {},
+    }]));
+
+    expect(svg).toContain('<g transform="rotate(45 160 110)">');
+    expect(svg).toContain('<rect x="100" y="80" width="120" height="60"');
+    expect(svg).toContain('>Rotated</text>');
+  });
+
+  test("includes rotated extents when fitting the SVG to content", () => {
+    const svg = renderSvg(doc([{
+      id: "rotated", type: "rectangle", x: 100, y: 80, width: 120, height: 60,
+      rotation: 90, zIndex: 1, style: {},
+    }]), { fitToContent: true, margin: 0 });
+
+    expect(svg).toContain('width="60" height="120" viewBox="130 50 60 120"');
+  });
+
   test("renders an elbow connector as an orthogonal polyline", () => {
     const svg = renderSvg(doc([
       { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },

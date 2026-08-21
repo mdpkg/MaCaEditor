@@ -18,6 +18,28 @@ import { connectorGeometry } from "./connector";
 
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 
+function rotateBounds(bounds: Bounds, cx: number, cy: number, rotation: number): Bounds {
+  if (!rotation) return bounds;
+  const radians = rotation * Math.PI / 180;
+  const rotate = (x: number, y: number) => ({
+    x: cx + (x - cx) * Math.cos(radians) - (y - cy) * Math.sin(radians),
+    y: cy + (x - cx) * Math.sin(radians) + (y - cy) * Math.cos(radians),
+  });
+  const points = [
+    rotate(bounds.minX, bounds.minY),
+    rotate(bounds.maxX, bounds.minY),
+    rotate(bounds.maxX, bounds.maxY),
+    rotate(bounds.minX, bounds.maxY),
+  ];
+  const clean = (value: number) => Number(value.toFixed(10));
+  return {
+    minX: clean(Math.min(...points.map((point) => point.x))),
+    minY: clean(Math.min(...points.map((point) => point.y))),
+    maxX: clean(Math.max(...points.map((point) => point.x))),
+    maxY: clean(Math.max(...points.map((point) => point.y))),
+  };
+}
+
 function objectBounds(object: DrawingObject): Bounds | null {
   if (object.type === "connector") return null;
   if (object.type === "line" || object.type === "arrow") {
@@ -29,14 +51,23 @@ function objectBounds(object: DrawingObject): Bounds | null {
     };
   }
   if (object.type === "group" && object.members.length > 0) {
-    return contentBounds(object.members);
+    const bounds = contentBounds(object.members);
+    return bounds
+      ? rotateBounds(bounds, object.x + object.width / 2, object.y + object.height / 2, object.rotation)
+      : null;
   }
-  return {
+  const bounds = {
     minX: Math.min(object.x, object.x + object.width),
     minY: Math.min(object.y, object.y + object.height),
     maxX: Math.max(object.x, object.x + object.width),
     maxY: Math.max(object.y, object.y + object.height),
   };
+  return rotateBounds(
+    bounds,
+    object.x + object.width / 2,
+    object.y + object.height / 2,
+    object.rotation,
+  );
 }
 
 function contentBounds(objects: DrawingObject[]): Bounds | null {
@@ -200,36 +231,32 @@ function renderConnector(
   return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)}${markers} />`;
 }
 
+function renderObject(object: DrawingObject, siblings: DrawingObject[]): string {
+  let content = "";
+  switch (object.type) {
+    case "rectangle": content = renderRectangle(object); break;
+    case "roundedRectangle": content = renderRoundedRectangle(object); break;
+    case "ellipse": content = renderEllipse(object); break;
+    case "file": content = renderFile(object); break;
+    case "user": content = renderUser(object); break;
+    case "text": content = renderText(object); break;
+    case "image": content = renderImage(object); break;
+    case "line": return renderLine(object);
+    case "arrow": return renderArrow(object);
+    case "connector": return renderConnector(object, siblings);
+    case "group": content = renderGroup(object); break;
+  }
+  if (!object.rotation) return content;
+  const cx = object.x + object.width / 2;
+  const cy = object.y + object.height / 2;
+  return `<g transform="rotate(${object.rotation} ${cx} ${cy})">${content}</g>`;
+}
+
 /** グループを SVG の <g> として描画する。 */
 function renderGroup(obj: GroupObject): string {
   const sorted = [...obj.members].sort((a, b) => a.zIndex - b.zIndex);
   const body = sorted
-    .map((member) => {
-      switch (member.type) {
-        case "rectangle":
-          return renderRectangle(member);
-        case "roundedRectangle":
-          return renderRoundedRectangle(member);
-        case "ellipse":
-          return renderEllipse(member);
-        case "file":
-          return renderFile(member);
-        case "user":
-          return renderUser(member);
-        case "text":
-          return renderText(member);
-        case "image":
-          return renderImage(member);
-        case "line":
-          return renderLine(member);
-        case "arrow":
-          return renderArrow(member);
-        case "connector":
-          return renderConnector(member, obj.members);
-        default:
-          return "";
-      }
-    })
+    .map((member) => renderObject(member, obj.members))
     .join("\n");
   return `<g id="${obj.id}">\n${body}\n</g>`;
 }
@@ -256,34 +283,7 @@ export function renderSvg(
   const sorted = [...doc.objects].sort((a, b) => a.zIndex - b.zIndex);
 
   const body = sorted
-    .map((obj) => {
-      switch (obj.type) {
-        case "rectangle":
-          return renderRectangle(obj);
-        case "roundedRectangle":
-          return renderRoundedRectangle(obj);
-        case "ellipse":
-          return renderEllipse(obj);
-        case "file":
-          return renderFile(obj);
-        case "user":
-          return renderUser(obj);
-        case "text":
-          return renderText(obj);
-        case "image":
-          return renderImage(obj);
-        case "line":
-          return renderLine(obj);
-        case "arrow":
-          return renderArrow(obj);
-        case "connector":
-          return renderConnector(obj, doc.objects);
-        case "group":
-          return renderGroup(obj);
-        default:
-          return "";
-      }
-    })
+    .map((object) => renderObject(object, doc.objects))
     .join("\n");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewX} ${viewY} ${width} ${height}">

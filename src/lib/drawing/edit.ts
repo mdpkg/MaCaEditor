@@ -24,6 +24,20 @@ export function updateConnectorEnds(
   };
 }
 
+export function updateObjectRotation(
+  doc: DrawingDocument,
+  id: string,
+  rotation: number,
+): DrawingDocument {
+  if (!Number.isFinite(rotation)) return doc;
+  return {
+    ...doc,
+    objects: doc.objects.map((object) =>
+      object.id === id ? { ...object, rotation } : object,
+    ),
+  };
+}
+
 /** 画像オブジェクトを挿入する。src はサニタイズされる。 */
 export function insertImageObject(
   doc: DrawingDocument,

@@ -74,4 +74,16 @@ describe("connector hit testing", () => {
       to: { x: 300, y: 225 },
     });
   });
+
+  it("connects to the rotated edge of a shape", () => {
+    const rotatedShapes: DrawingObject[] = [
+      { ...shapes[0], rotation: 90 },
+      { ...shapes[1], x: 300, y: 0 },
+    ];
+
+    expect(connectorGeometry(connector(false), rotatedShapes)?.from).toMatchObject({
+      x: 75,
+      y: 25,
+    });
+  });
 });

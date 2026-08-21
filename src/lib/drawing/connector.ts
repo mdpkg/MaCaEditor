@@ -19,27 +19,53 @@ function findObject(objects: DrawingObject[], id: string): DrawingObject | undef
   return undefined;
 }
 
+function rotatePoint(point: Point, pivot: Point, degrees: number): Point {
+  if (!degrees) return point;
+  const radians = degrees * Math.PI / 180;
+  const dx = point.x - pivot.x;
+  const dy = point.y - pivot.y;
+  return {
+    x: pivot.x + dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: pivot.y + dx * Math.sin(radians) + dy * Math.cos(radians),
+  };
+}
+
+function rotateVector(vector: Point, degrees: number): Point {
+  if (!degrees) return vector;
+  const radians = degrees * Math.PI / 180;
+  return {
+    x: vector.x * Math.cos(radians) - vector.y * Math.sin(radians),
+    y: vector.x * Math.sin(radians) + vector.y * Math.cos(radians),
+  };
+}
+
 function connectionSite(object: DrawingObject, toward: Point): ConnectionSite {
   const own = center(object);
-  const dx = toward.x - own.x;
-  const dy = toward.y - own.y;
+  const localToward = rotatePoint(toward, own, -object.rotation);
+  const dx = localToward.x - own.x;
+  const dy = localToward.y - own.y;
   if (dx === 0 && dy === 0) return { point: own, outward: { x: 1, y: 0 } };
   const rx = Math.max(object.width / 2, 0.001);
   const ry = Math.max(object.height / 2, 0.001);
+  let site: ConnectionSite;
   if (object.type === "ellipse") {
     const scale = 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2);
     const length = Math.hypot(dx, dy);
-    return {
+    site = {
       point: { x: own.x + dx * scale, y: own.y + dy * scale },
       outward: { x: dx / length, y: dy / length },
     };
-  }
-  if (Math.abs(dx) >= Math.abs(dy)) {
+  } else if (Math.abs(dx) >= Math.abs(dy)) {
     const direction = Math.sign(dx);
-    return { point: { x: own.x + direction * rx, y: own.y }, outward: { x: direction, y: 0 } };
+    site = { point: { x: own.x + direction * rx, y: own.y }, outward: { x: direction, y: 0 } };
+  } else {
+    const direction = Math.sign(dy);
+    site = { point: { x: own.x, y: own.y + direction * ry }, outward: { x: 0, y: direction } };
   }
-  const direction = Math.sign(dy);
-  return { point: { x: own.x, y: own.y + direction * ry }, outward: { x: 0, y: direction } };
+  return {
+    point: rotatePoint(site.point, own, object.rotation),
+    outward: rotateVector(site.outward, object.rotation),
+  };
 }
 
 export function connectorGeometry(connector: ConnectorObject, objects: DrawingObject[]): ConnectorGeometry | null {

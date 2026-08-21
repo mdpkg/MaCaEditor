@@ -21,6 +21,7 @@ import {
   type AlignKind,
   type History,
   updateConnectorEnds,
+  updateObjectRotation,
   ungroupObjects,
   updateShapeText,
   updateShapeTextAlignment,
@@ -64,6 +65,19 @@ const TEXT_SHAPE_TYPES = ["rectangle", "roundedRectangle", "ellipse", "file", "u
 
 function isTextShapeType(type: string): boolean {
   return TEXT_SHAPE_TYPES.includes(type);
+}
+
+function pointBeforeRotation(object: DrawingObject, x: number, y: number) {
+  if (!object.rotation) return { x, y };
+  const cx = object.x + object.width / 2;
+  const cy = object.y + object.height / 2;
+  const radians = -object.rotation * Math.PI / 180;
+  const dx = x - cx;
+  const dy = y - cy;
+  return {
+    x: cx + dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: cy + dx * Math.sin(radians) + dy * Math.cos(radians),
+  };
 }
 
 export function DrawingEditor({
@@ -200,11 +214,12 @@ export function DrawingEditor({
           if (dist < 8) return obj;
           continue;
         }
+        const local = pointBeforeRotation(obj, x, y);
         if (
-          x >= obj.x &&
-          x <= obj.x + obj.width &&
-          y >= obj.y &&
-          y <= obj.y + obj.height
+          local.x >= obj.x &&
+          local.x <= obj.x + obj.width &&
+          local.y >= obj.y &&
+          local.y <= obj.y + obj.height
         ) {
           return obj;
         }
@@ -597,6 +612,11 @@ export function DrawingEditor({
     ));
   };
 
+  const updateRotation = (rotation: number) => {
+    if (!selected) return;
+    commit(updateObjectRotation(doc, selected.id, rotation));
+  };
+
   const updateFontSize = (fontSize: number) => {
     const next = {
       ...doc,
@@ -843,7 +863,13 @@ export function DrawingEditor({
                 ![...TEXT_SHAPE_TYPES, "text", "image", "group"].includes(obj.type)
               ) return null;
               return (
-                <g key={id} className="selection-box">
+                <g
+                  key={id}
+                  className="selection-box"
+                  transform={obj.rotation
+                    ? `rotate(${obj.rotation} ${obj.x + obj.width / 2} ${obj.y + obj.height / 2})`
+                    : undefined}
+                >
                   <rect
                     x={obj.x - 4}
                     y={obj.y - 4}
@@ -977,6 +1003,18 @@ export function DrawingEditor({
                 onChange={(e) => updateSize("height", Number(e.target.value))}
               />
             </div></>}
+            {([...TEXT_SHAPE_TYPES, "text", "image", "group"] as string[]).includes(selected.type) && (
+              <div className="inspector-row">
+                <label>Rotation</label>
+                <input
+                  aria-label="Rotation"
+                  type="number"
+                  step="1"
+                  value={selected.rotation}
+                  onChange={(e) => updateRotation(Number(e.target.value))}
+                />
+              </div>
+            )}
             {isTextShapeType(selected.type) && (
               <div className="inspector-row">
                 <label>Fill</label>
