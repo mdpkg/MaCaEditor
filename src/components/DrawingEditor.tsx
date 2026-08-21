@@ -187,7 +187,7 @@ export function DrawingEditor({
       for (const obj of sorted) {
         if (obj.type === "connector") {
           const geometry = connectorGeometry(obj, doc.objects);
-          const tolerance = Math.max(8, (obj.style.strokeWidth ?? 1) / 2 + 4);
+          const tolerance = Math.max(12 / zoom, (obj.style.strokeWidth ?? 1) / 2 + 6 / zoom);
           if (geometry && isPointOnConnector(geometry, x, y, tolerance)) return obj;
           continue;
         }
@@ -210,7 +210,7 @@ export function DrawingEditor({
       }
       return null;
     },
-    [doc.objects],
+    [doc.objects, zoom],
   );
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -271,6 +271,7 @@ export function DrawingEditor({
         commit({ ...doc, objects: [...doc.objects, conn] });
         setConnectorStart(null);
         setSelectedIds([conn.id]);
+        setTool("select");
         return;
       }
       setConnectorStart(null);
@@ -288,9 +289,9 @@ export function DrawingEditor({
           );
         }
         if (multi) return;
-        if (hit.type === "connector") return;
         const dragIds = selectedIds.includes(hit.id) ? selectedIds : [hit.id];
         setSelectedIds(dragIds);
+        if (hit.type === "connector") return;
         setDragging({
           type: "move",
           id: hit.id,
@@ -706,8 +707,7 @@ export function DrawingEditor({
           className={SHAPE_TOOLS.some((shape) => shape.id === tool) ? "active" : ""}
           value={SHAPE_TOOLS.some((shape) => shape.id === tool) ? tool : ""}
           onChange={(event) => {
-            if (!event.target.value) return;
-            setTool(event.target.value as Tool);
+            setTool(event.target.value ? event.target.value as Tool : "select");
             setConnectorStart(null);
           }}
         >
@@ -722,8 +722,7 @@ export function DrawingEditor({
           className={CONNECTOR_TOOLS.some((connector) => connector.id === tool) ? "active" : ""}
           value={CONNECTOR_TOOLS.some((connector) => connector.id === tool) ? tool : ""}
           onChange={(event) => {
-            if (!event.target.value) return;
-            setTool(event.target.value as Tool);
+            setTool(event.target.value ? event.target.value as Tool : "select");
             setConnectorStart(null);
           }}
         >
@@ -794,6 +793,40 @@ export function DrawingEditor({
             <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
             {selectedIds.map((id) => {
               const obj = doc.objects.find((o) => o.id === id);
+              if (obj?.type === "connector") {
+                const geometry = connectorGeometry(obj, doc.objects);
+                if (!geometry) return null;
+                const selectionProps = {
+                  className: "connector-selection",
+                  fill: "none",
+                  stroke: "#2d6cdf",
+                  strokeWidth: 3 / zoom,
+                  strokeDasharray: `${6 / zoom} ${3 / zoom}`,
+                  pointerEvents: "none" as const,
+                };
+                if (geometry.points) {
+                  return <polyline
+                    key={id}
+                    points={geometry.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                    {...selectionProps}
+                  />;
+                }
+                if (geometry.c1 && geometry.c2) {
+                  return <path
+                    key={id}
+                    d={`M ${geometry.from.x} ${geometry.from.y} C ${geometry.c1.x} ${geometry.c1.y} ${geometry.c2.x} ${geometry.c2.y} ${geometry.to.x} ${geometry.to.y}`}
+                    {...selectionProps}
+                  />;
+                }
+                return <line
+                  key={id}
+                  x1={geometry.from.x}
+                  y1={geometry.from.y}
+                  x2={geometry.to.x}
+                  y2={geometry.to.y}
+                  {...selectionProps}
+                />;
+              }
               if (
                 !obj ||
                 ![...TEXT_SHAPE_TYPES, "text", "image", "group"].includes(obj.type)

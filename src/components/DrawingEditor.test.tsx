@@ -88,6 +88,20 @@ describe("DrawingEditor", () => {
       to: { objectId: "rect-2" },
       elbow: true,
     });
+    const selectButton = [...container.querySelectorAll(".drawing-toolbar button")]
+      .find((button) => button.textContent === "Select");
+    expect(selectButton?.classList.contains("active")).toBe(true);
+
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 600, 500)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 600, 500)));
+    expect(container.querySelector(".connector-selection")).toBeNull();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 240, 170)));
+    expect(container.querySelector(".connector-selection")).not.toBeNull();
+    const colorInput = container.querySelector('.inspector-row input[type="color"]');
+    expect(colorInput).not.toBeNull();
     act(() => root.unmount());
   });
 
@@ -318,6 +332,33 @@ describe("DrawingEditor", () => {
     expect(buttons).not.toContain("File");
     expect(buttons).not.toContain("User");
 
+    act(() => root.unmount());
+  });
+
+  test.each([
+    ["Shape", "rectangle"],
+    ["Connector", "connector"],
+  ])("returns to Select when the %s menu placeholder is selected", (label, tool) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <DrawingEditor doc={initial} onChange={vi.fn()} onDirty={vi.fn()} />,
+    ));
+    const menu = container.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
+
+    act(() => {
+      menu.value = tool;
+      menu.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    act(() => {
+      menu.value = "";
+      menu.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const selectButton = [...container.querySelectorAll(".drawing-toolbar button")]
+      .find((button) => button.textContent === "Select");
+    expect(selectButton?.classList.contains("active")).toBe(true);
     act(() => root.unmount());
   });
 
