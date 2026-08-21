@@ -58,6 +58,43 @@ body {
   cursor: default;
 }
 
+.toolbar-menu {
+  position: relative;
+}
+
+.toolbar-menu-items {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.toolbar .toolbar-menu-items button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 2px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.toolbar .toolbar-menu-items button:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.toolbar-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 .dirty-indicator {
   margin-left: auto;
   color: #e0a800;

@@ -452,9 +452,6 @@ export default function App() {
       typeof item === "object" && item !== null &&
       ((item as { source?: string }).source === path || (item as { rendered?: string }).rendered === path))
   );
-  const renameable = isRenameablePath(selectedPath);
-  const deletable = doc !== null && isDeletableAsset(doc, selectedPath);
-
   const handleRename = (path: string | null = selectedPath) => {
     if (!doc || !path || !isRenameablePath(path)) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
@@ -598,10 +595,6 @@ export default function App() {
         onInsertPlantUml={handleInsertPlantUml}
         onInsertMermaid={handleInsertMermaid}
         onAddImage={handleAddImage}
-        canRename={renameable}
-        onRename={handleRename}
-        canDelete={deletable}
-        onDelete={handleDelete}
       />
       <div className="main-layout">
         <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
