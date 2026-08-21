@@ -73,3 +73,14 @@ describe("drawing context menu", () => {
     expect(styles).toContain("display: none");
   });
 });
+
+describe("print styles", () => {
+  it("prints only the Markdown preview", () => {
+    const printStyles = styles.slice(styles.indexOf("@media print"));
+    expect(printStyles).toContain(".toolbar,");
+    expect(printStyles).toContain(".sidebar,");
+    expect(printStyles).toContain(".markdown-editor,");
+    expect(printStyles).toContain("display: none !important");
+    expect(printStyles).toContain(".markdown-preview {");
+  });
+});

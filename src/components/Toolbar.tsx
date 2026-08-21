@@ -6,6 +6,7 @@ interface Props {
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  onPrint: () => void;
   onNew: () => void;
   onImport: () => void;
   onExport: () => void;
@@ -16,6 +17,7 @@ interface Props {
   onAddImage: () => void;
   vimMode: boolean;
   onVimModeChange: (enabled: boolean) => void;
+  canPrint: boolean;
 }
 
 type Menu = "file" | "diagram" | null;
@@ -26,6 +28,7 @@ export function Toolbar({
   onOpen,
   onSave,
   onSaveAs,
+  onPrint,
   onNew,
   onImport,
   onExport,
@@ -36,6 +39,7 @@ export function Toolbar({
   onAddImage,
   vimMode,
   onVimModeChange,
+  canPrint,
 }: Props) {
   const [openMenu, setOpenMenu] = useState<Menu>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -70,6 +74,7 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(onOpen)}>Open</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSave)}>Save</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSaveAs)}>Save As</button>
+            <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onExport)}>Export Folder</button>

@@ -13,6 +13,7 @@ describe("Toolbar menus", () => {
   test("groups file and diagram commands and removes rename and delete", () => {
     const onInsertDrawing = vi.fn();
     const onVimModeChange = vi.fn();
+    const onPrint = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -25,6 +26,7 @@ describe("Toolbar menus", () => {
         onOpen={noop}
         onSave={noop}
         onSaveAs={noop}
+        onPrint={onPrint}
         onNew={noop}
         onImport={noop}
         onExport={noop}
@@ -35,6 +37,7 @@ describe("Toolbar menus", () => {
         onAddImage={noop}
         vimMode={false}
         onVimModeChange={onVimModeChange}
+        canPrint={true}
       />,
     ));
 
@@ -46,7 +49,12 @@ describe("Toolbar menus", () => {
       .find((button) => button.textContent === "File") as HTMLButtonElement;
     act(() => fileButton.click());
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
-      .toEqual(["New", "Open", "Save", "Save As", "Import Folder", "Export Folder"]);
+      .toEqual(["New", "Open", "Save", "Save As", "Print", "Import Folder", "Export Folder"]);
+    const printButton = Array.from(container.querySelectorAll(".toolbar-menu-items button"))
+      .find((button) => button.textContent === "Print") as HTMLButtonElement;
+    act(() => printButton.click());
+    expect(onPrint).toHaveBeenCalledOnce();
+    act(() => fileButton.click());
     expect(container.querySelector('[role="separator"]')).not.toBeNull();
     expect(container.querySelector('.toolbar-menu-items input[type="checkbox"]')).toBeNull();
     const vimCheckbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;

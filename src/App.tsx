@@ -176,6 +176,10 @@ export default function App() {
     }
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   const handleNew = async () => {
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
@@ -650,6 +654,7 @@ export default function App() {
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
+        onPrint={handlePrint}
         onNew={handleNew}
         onImport={handleImport}
         onExport={handleExport}
@@ -660,6 +665,7 @@ export default function App() {
         onAddImage={handleAddImage}
         vimMode={vimMode}
         onVimModeChange={setVimMode}
+        canPrint={displayFile?.is_text === true && (mode === "preview" || mode === "split")}
       />
       <div className="main-layout">
         <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>

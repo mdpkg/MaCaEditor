@@ -835,6 +835,54 @@ body {
   opacity: 0.8;
 }
 
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  .toolbar,
+  .sidebar,
+  .status-bar,
+  .edit-btn,
+  .markdown-editor,
+  .error-dialog {
+    display: none !important;
+  }
+
+  .app-shell,
+  .main-layout,
+  .document-area,
+  .preview-only,
+  .split-view {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .markdown-preview {
+    max-width: none;
+    color: #000;
+    background: #fff;
+  }
+
+  .markdown-preview img {
+    max-height: none;
+  }
+}
+
 /* Drawing Editor */
 .drawing-editor {
   display: flex;
