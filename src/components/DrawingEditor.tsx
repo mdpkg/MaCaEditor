@@ -1281,9 +1281,14 @@ export function DrawingEditor({
               </div>
               <div className="inspector-row">
                 <label>Weight</label>
-                <input type="number" min="0.25" step="0.25"
+                <select
+                  aria-label="Line weight"
                   value={style.strokeWidth ?? 1}
-                  onChange={(event) => updateStrokeWidth(Number(event.target.value))} />
+                  onChange={(event) => updateStrokeWidth(Number(event.target.value))}
+                >
+                  {LINE_WEIGHT_OPTIONS.map((weight) =>
+                    <option key={weight} value={weight}>{weight}</option>)}
+                </select>
               </div>
               <div className="inspector-row">
                 <label>Line opacity</label>

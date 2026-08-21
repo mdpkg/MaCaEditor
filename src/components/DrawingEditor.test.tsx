@@ -258,6 +258,12 @@ describe("DrawingEditor", () => {
     const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     expect(menu.querySelector('input[aria-label="Fill opacity"]')).not.toBeNull();
+    const lineWeight = menu.querySelector('select[aria-label="Line weight"]') as HTMLSelectElement;
+    expect(lineWeight).not.toBeNull();
+    const weightPresets = Array.from(lineWeight.querySelectorAll("option"))
+      .map((option) => (option as HTMLOptionElement).value);
+    expect(weightPresets).toHaveLength(9);
+    expect(weightPresets).toEqual(expect.arrayContaining(["3", "6"]));
     expect(menu.querySelector('select[aria-label="H Align"]')).not.toBeNull();
     expect(menu.querySelector('select[aria-label="V Align"]')).not.toBeNull();
     expect(menu.querySelector('button[aria-label="Bring to Front"]')).not.toBeNull();
@@ -266,6 +272,10 @@ describe("DrawingEditor", () => {
     expect(menu.querySelector('button[aria-label="Send to Back"]')).not.toBeNull();
     const red = menu.querySelector('[data-color-kind="fill"][title="Red"]') as HTMLButtonElement;
     act(() => red.click());
+    act(() => {
+      lineWeight.value = "3";
+      lineWeight.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     const horizontal = document.querySelector('select[aria-label="H Align"]') as HTMLSelectElement;
     act(() => {
       horizontal.value = "right";
@@ -279,7 +289,7 @@ describe("DrawingEditor", () => {
     const sendToBack = document.querySelector('button[aria-label="Send to Back"]') as HTMLButtonElement;
     act(() => sendToBack.click());
     const changed = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
-    expect(changed.objects[0].style).toMatchObject({ fill: "#ff0000" });
+    expect(changed.objects[0].style).toMatchObject({ fill: "#ff0000", strokeWidth: 3 });
     expect(changed.objects[0]).toMatchObject({
       zIndex: 0,
       textStyle: { align: "right", verticalAlign: "bottom" },
@@ -288,6 +298,7 @@ describe("DrawingEditor", () => {
   });
 
   test("opens connector properties in a context menu", () => {
+    const onDirty = vi.fn();
     const connectorDoc: DrawingDocument = {
       ...initial,
       objects: [
@@ -304,7 +315,7 @@ describe("DrawingEditor", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
     act(() => root.render(
-      <DrawingEditor doc={connectorDoc} onChange={vi.fn()} onDirty={vi.fn()} />,
+      <DrawingEditor doc={connectorDoc} onChange={vi.fn()} onDirty={onDirty} />,
     ));
     const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
@@ -317,10 +328,18 @@ describe("DrawingEditor", () => {
     })));
 
     const menu = document.querySelector(".drawing-context-menu") as HTMLDivElement;
+    const lineWeight = menu.querySelector('select[aria-label="Line weight"]') as HTMLSelectElement;
+    expect(lineWeight).not.toBeNull();
     expect(menu.textContent).toContain("Line opacity");
     expect(menu.textContent).toContain("Start");
     expect(menu.textContent).toContain("End");
     expect(menu.textContent).not.toContain("Fill opacity");
+    act(() => {
+      lineWeight.value = "4.5";
+      lineWeight.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onDirty.mock.lastCall?.[0].objects.find((object: { id: string }) => object.id === "connector-1").style)
+      .toMatchObject({ strokeWidth: 4.5 });
     act(() => root.unmount());
   });
 
