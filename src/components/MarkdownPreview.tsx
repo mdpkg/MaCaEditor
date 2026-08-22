@@ -114,7 +114,8 @@ export function MarkdownPreview({
           data-drawpath={sourcePath ?? ""}
           role={sourcePath && editDiagram ? "button" : undefined}
           tabIndex={sourcePath && editDiagram ? 0 : undefined}
-          onClick={() => {
+          title={sourcePath && editDiagram ? "ダブルクリックでダイアグラムを編集" : undefined}
+          onDoubleClick={() => {
             if (sourcePath) editDiagram?.(sourcePath);
           }}
           onKeyDown={(event) => {

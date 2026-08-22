@@ -301,7 +301,7 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
-  test("renders a sanitized drawing SVG and opens its editor", () => {
+  test("renders a sanitized drawing SVG and opens its editor on double-click", () => {
     const onEditDrawing = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -326,11 +326,13 @@ describe("MarkdownPreview", () => {
     expect(drawing.querySelector("svg")).not.toBeNull();
     expect(drawing.querySelector("script")).toBeNull();
     act(() => drawing.click());
+    expect(onEditDrawing).not.toHaveBeenCalled();
+    act(() => drawing.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     act(() => root.unmount());
   });
 
-  test("opens the PlantUML editor when its rendered SVG is clicked", () => {
+  test("opens the PlantUML editor when its rendered SVG is double-clicked", () => {
     const onEditPlantUml = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -352,12 +354,14 @@ describe("MarkdownPreview", () => {
 
     const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
     act(() => diagram.click());
+    expect(onEditPlantUml).not.toHaveBeenCalled();
+    act(() => diagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
 
     expect(onEditPlantUml).toHaveBeenCalledWith("diagrams/sequence.puml");
     act(() => root.unmount());
   });
 
-  test("opens the Mermaid editor when its rendered SVG is clicked", () => {
+  test("opens the Mermaid editor when its rendered SVG is double-clicked", () => {
     const onEditMermaid = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -377,7 +381,10 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
+    act(() => diagram.click());
+    expect(onEditMermaid).not.toHaveBeenCalled();
+    act(() => diagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
     expect(onEditMermaid).toHaveBeenCalledWith("diagrams/flow.mmd");
     act(() => root.unmount());
   });
