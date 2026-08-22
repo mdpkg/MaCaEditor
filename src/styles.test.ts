@@ -94,6 +94,7 @@ describe("drawing sidebar layout", () => {
     expect(splitBlock).toContain("grid-template-rows: minmax(0, 1fr)");
     expect(splitBlock).toContain("min-height: 0");
     expect(scrollerBlock).toContain("overflow: auto");
+    expect(scrollerBlock).toContain("cursor: text");
   });
 
   it("styles Rspress containers and expandable details", () => {

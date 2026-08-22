@@ -361,7 +361,7 @@ body {
 .code-editor .cm-scroller {
   min-height: 0;
   overflow: auto;
-  cursor: zoom-in;
+  cursor: text;
 }
 
 .code-editor .cm-content {
