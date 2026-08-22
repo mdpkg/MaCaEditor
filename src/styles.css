@@ -405,6 +405,66 @@ body {
   object-fit: contain;
 }
 
+.markdown-preview img[role="button"],
+.markdown-preview .drawing-image {
+  cursor: zoom-in;
+}
+
+.preview-media-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.preview-media-close {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 2001;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 30px;
+  line-height: 36px;
+  cursor: pointer;
+}
+
+.preview-media-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.preview-media-content {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-media-content > img,
+.preview-media-content > .drawing-image,
+.preview-media-content > .drawing-image > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-media-content > .drawing-image {
+  cursor: default;
+}
+
 /*
  * GitHub Flavored Markdown Stylesheet
  * MIT License — Dan Untenzu (@pixelbrackets)
@@ -993,7 +1053,8 @@ body {
   .status-bar,
   .edit-btn,
   .markdown-editor,
-  .error-dialog {
+  .error-dialog,
+  .preview-media-overlay {
     display: none !important;
   }
 

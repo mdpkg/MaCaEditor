@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import type { Components, UrlTransform } from "react-markdown";
 import type { ComponentProps } from "react";
+import { useEffect, useRef, useState } from "react";
 import remarkGfm from "remark-gfm";
 import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
@@ -25,6 +26,10 @@ interface Props {
   showToc?: boolean;
   rspressMode?: boolean;
 }
+
+type PreviewMedia =
+  | { kind: "image"; src: string; alt: string }
+  | { kind: "diagram"; html: string; alt: string };
 
 function packageUrl(baseDir: string, url: string): string {
   if (/^(?:https?:|mailto:|#)/i.test(url)) return url;
@@ -67,6 +72,35 @@ export function MarkdownPreview({
   showToc = false,
   rspressMode = false,
 }: Props) {
+  const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
+  const diagramClickTimer = useRef<number | null>(null);
+
+  const cancelDiagramClick = () => {
+    if (diagramClickTimer.current !== null) {
+      window.clearTimeout(diagramClickTimer.current);
+      diagramClickTimer.current = null;
+    }
+  };
+
+  const showDiagramAfterDoubleClickDelay = (media: PreviewMedia) => {
+    cancelDiagramClick();
+    diagramClickTimer.current = window.setTimeout(() => {
+      setPreviewMedia(media);
+      diagramClickTimer.current = null;
+    }, 200);
+  };
+
+  useEffect(() => () => cancelDiagramClick(), []);
+
+  useEffect(() => {
+    if (!previewMedia) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewMedia(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [previewMedia]);
+
   const components: Components = {
     table({ node, ...props }) {
       const start = node?.position?.start.offset;
@@ -91,13 +125,25 @@ export function MarkdownPreview({
       const resolved = resolvePackagePath(baseDir, decodePackageUrl(src));
       const file = resolved ? files.find((candidate) => candidate.path === resolved) : undefined;
       if (file?.base64) {
+        const imageSrc = `data:${imageMediaType(file.path)};base64,${file.base64}`;
         return <img
           {...props}
-          src={`data:${imageMediaType(file.path)};base64,${file.base64}`}
+          src={imageSrc}
           alt={alt}
+          role="button"
+          tabIndex={0}
+          title="クリックで拡大表示"
+          onClick={() => setPreviewMedia({ kind: "image", src: imageSrc, alt })}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setPreviewMedia({ kind: "image", src: imageSrc, alt });
+            }
+          }}
         />;
       }
       if (file?.is_text && file.content?.trim().startsWith("<svg")) {
+        const sanitizedSvg = sanitizeHtml(file.content);
         const drawingResource = manifest ? findResourceByRendered(manifest, resolved ?? "") : undefined;
         const plantUmlResource = manifest
           ? findPlantUmlResourceByRendered(manifest, resolved ?? "")
@@ -114,8 +160,14 @@ export function MarkdownPreview({
           data-drawpath={sourcePath ?? ""}
           role={sourcePath && editDiagram ? "button" : undefined}
           tabIndex={sourcePath && editDiagram ? 0 : undefined}
-          title={sourcePath && editDiagram ? "ダブルクリックでダイアグラムを編集" : undefined}
+          title={sourcePath && editDiagram
+            ? "クリックで拡大、ダブルクリックでダイアグラムを編集"
+            : "クリックで拡大表示"}
+          onClick={() => showDiagramAfterDoubleClickDelay({
+            kind: "diagram", html: sanitizedSvg, alt,
+          })}
           onDoubleClick={() => {
+            cancelDiagramClick();
             if (sourcePath) editDiagram?.(sourcePath);
           }}
           onKeyDown={(event) => {
@@ -124,7 +176,7 @@ export function MarkdownPreview({
               editDiagram?.(sourcePath);
             }
           }}
-          dangerouslySetInnerHTML={{ __html: sanitizeHtml(file.content) }}
+          dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
         />;
       }
       return <span className="missing-image">⚠️ 画像が見つかりません: {src}</span>;
@@ -154,5 +206,32 @@ export function MarkdownPreview({
     >
       {previewMarkdown}
     </ReactMarkdown>
+    {previewMedia && (
+      <div
+        className="preview-media-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="拡大表示"
+      >
+        <button
+          type="button"
+          className="preview-media-close"
+          aria-label="拡大表示を閉じる"
+          onClick={() => setPreviewMedia(null)}
+        >×</button>
+        <div className="preview-media-content">
+          {previewMedia.kind === "image" ? (
+            <img src={previewMedia.src} alt={previewMedia.alt} />
+          ) : (
+            <span
+              className="drawing-image"
+              role="img"
+              aria-label={previewMedia.alt || "ダイアグラム"}
+              dangerouslySetInnerHTML={{ __html: previewMedia.html }}
+            />
+          )}
+        </div>
+      </div>
+    )}
   </div>;
 }

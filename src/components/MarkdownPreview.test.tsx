@@ -263,6 +263,50 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test("opens a package image full-screen and closes it with Escape", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![photo](images/photo.png)"
+        baseDir=""
+        files={[{
+          path: "images/photo.png", is_text: false, content: null, base64: "AAAA",
+        }]}
+      />,
+    ));
+
+    act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("closes the full-screen image with its close button", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![photo](images/photo.png)"
+        baseDir=""
+        files={[{
+          path: "images/photo.png", is_text: false, content: null, base64: "AAAA",
+        }]}
+      />,
+    ));
+
+    act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
+    act(() => (container.querySelector(".preview-media-close") as HTMLButtonElement).click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
   test("resolves a URL-encoded Japanese image filename", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -330,6 +374,31 @@ describe("MarkdownPreview", () => {
     act(() => drawing.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     act(() => root.unmount());
+  });
+
+  test("opens a preview diagram full-screen on a single click", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![drawing](diagrams/example.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/example.svg", is_text: true,
+          content: '<svg><rect width="10" height="10"/></svg>', base64: null,
+        }]}
+      />,
+    ));
+
+    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(container.querySelector('[role="dialog"] .drawing-image svg')).not.toBeNull();
+
+    act(() => root.unmount());
+    vi.useRealTimers();
   });
 
   test("opens the PlantUML editor when its rendered SVG is double-clicked", () => {

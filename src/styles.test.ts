@@ -32,6 +32,24 @@ describe("image sizing styles", () => {
   );
 });
 
+describe("Markdown preview media overlay", () => {
+  it("fills the window and contains enlarged media without distortion", () => {
+    const overlayStart = styles.indexOf(".preview-media-overlay {");
+    const overlayBlock = overlayStart >= 0
+      ? styles.slice(overlayStart, styles.indexOf("}", overlayStart))
+      : "";
+    const mediaStart = styles.indexOf(".preview-media-content > img,");
+    const mediaBlock = mediaStart >= 0
+      ? styles.slice(mediaStart, styles.indexOf("}", mediaStart))
+      : "";
+
+    expect(overlayBlock).toContain("position: fixed");
+    expect(overlayBlock).toContain("inset: 0");
+    expect(mediaBlock).toContain("object-fit: contain");
+    expect(styles).toContain(".preview-media-close {");
+  });
+});
+
 describe("drawing sidebar layout", () => {
   it("splits the drawing sidebar between the file tree and properties", () => {
     const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");
