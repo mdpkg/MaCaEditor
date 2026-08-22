@@ -22,6 +22,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - 日本語や空白を含む画像ファイル名への対応
 - GitHub風のプレビュースタイル
 - ファイルツリーのMarkdownファイルをダブルクリックして編集
+- ツールバー左端のボタンでファイルリストを開閉
+- 画像とダイアグラムの全画面拡大、ズーム、パン
 - プレビューの印刷と、OSの印刷機能を利用したPDF保存
 - TOC、Rspress、Vim modeの設定を次回起動時に復元
 
@@ -52,7 +54,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - 吹き出しのしっぽ、円弧矢印の角度と両端をGUIハンドルで調整
 - シェイプ内の複数行テキストと水平・垂直配置
 - SVGへの画像追加
-- Markdownプレビュー上の図をダブルクリックして再編集
+- Markdownプレビュー上の図に表示される **Edit** ボタン、またはダブルクリックで再編集
 
 ### PlantUML・Mermaid
 
@@ -62,6 +64,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - 構文エラーの表示
 - Markdownのカーソル位置または末尾へダイアグラムを挿入
 - Markdownプレビュー上のダイアグラムをダブルクリックして再編集
+- PlantUML・Mermaid編集画面のSVGプレビューをクリックして全画面拡大
 - PlantUMLは`plantuml.js`、Mermaidは`mermaid.js`を使用し、アプリ内で描画
 
 ## 基本的な使い方
@@ -75,6 +78,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 5. **File** メニューの **Save** または `Ctrl+S` で保存します。
 
 ツールバー右側では、目次を表示する **TOC**、Rspressの`:::`構文を有効にする **Rspress**、Vimキーバインドを有効にする **Vim mode** を切り替えられます。これらの設定は次回起動時にも引き継がれます。
+
+ツールバー左端の **☰** を押すと、左側のファイルリストを閉じて編集領域を広げられます。もう一度押すとファイルリストを再表示します。
 
 ### 新しい `.mdpkg` を作成する
 
@@ -96,9 +101,17 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 2. **Insert Diagram** メニューから **SVG** を選択します。
 3. Drawing Editorで図を作成します。
 4. 図のリンクがMarkdownのカーソル位置へ挿入されます。カーソル位置がない場合は末尾へ挿入されます。
-5. Markdownプレビュー上の図をダブルクリックすると、再びDrawing Editorで編集できます。
+5. Markdownプレビュー上の図へマウスを重ねて **Edit** を押すか、図をダブルクリックすると、再びDrawing Editorで編集できます。
 
 PlantUMLまたはMermaidを作成する場合は、**Insert Diagram** メニューから該当する形式を選択します。表示されたテキストエディタへ定義を入力すると、右側のSVGプレビューが自動更新されます。
+
+### 画像・ダイアグラムを拡大表示する
+
+- Markdownの表示画面または分割編集画面で、画像やダイアグラムをクリックすると全画面で拡大表示します。
+- PlantUML・Mermaid編集画面では、右側のSVGプレビューをクリックすると拡大表示します。
+- マウスホイールで拡大・縮小し、左ドラッグで表示位置を移動できます。
+- `Esc`または右上の **×** で元の画面へ戻ります。
+- Markdownから開いたダイアグラムは、拡大表示中にダブルクリックして対応する編集画面へ移動できます。
 
 ### 拡張Markdownをプレビューする
 
