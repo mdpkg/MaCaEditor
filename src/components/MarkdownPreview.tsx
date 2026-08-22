@@ -128,7 +128,6 @@ export function MarkdownPreview({
   }, [previewMedia]);
 
   const zoomPreviewMedia = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!event.ctrlKey) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const centerX = rect.width > 0 ? rect.left + rect.width / 2 : window.innerWidth / 2;

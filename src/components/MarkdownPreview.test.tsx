@@ -373,7 +373,7 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
-  test("does not zoom enlarged media when Ctrl is not pressed", () => {
+  test("zooms enlarged media with the mouse wheel without Ctrl", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -393,7 +393,7 @@ describe("MarkdownPreview", () => {
       bubbles: true, deltaY: -100,
     })));
     expect((document.body.querySelector(".preview-media-transform") as HTMLDivElement).style.transform)
-      .toContain("scale(1)");
+      .toContain("scale(1.1)");
     act(() => root.unmount());
   });
 
