@@ -320,6 +320,7 @@ body {
   flex: 1;
   place-items: center;
   padding: 16px;
+  cursor: zoom-in;
 }
 
 .plantuml-preview svg,

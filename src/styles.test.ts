@@ -62,6 +62,16 @@ describe("Markdown preview diagram actions", () => {
   });
 });
 
+describe("diagram editor preview cursor", () => {
+  it("uses the zoom cursor for clickable diagram previews", () => {
+    const start = styles.indexOf(".plantuml-preview,");
+    const block = start >= 0 ? styles.slice(start, styles.indexOf("}", start)) : "";
+    expect(block).toContain(".mermaid-preview,");
+    expect(block).toContain(".mathjax-preview");
+    expect(block).toContain("cursor: zoom-in");
+  });
+});
+
 describe("drawing sidebar layout", () => {
   it("splits the drawing sidebar between the file tree and properties", () => {
     const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");
