@@ -2,7 +2,7 @@
 
 MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://github.com/mdpkg/mdpkg-spec)に則った `.mdpkg` ファイルを閲覧・編集するためのデスクトップエディタです。
 
-名称の **MaCa** は、**Ma**rkdownと**Ca**nvasに由来します。Markdown文書の編集とSVGベースの作図を1つのアプリケーションで行い、文章、画像、図をまとめて管理できます。
+名称の **MaCa** は、**Ma**rkdownと**Ca**nvasに由来します。Markdown文書の編集とSVGベースの作図を1つのアプリケーションで行い、文章、画像、図、添付ファイルをまとめて管理できます。
 
 <img width="1204" height="1062" alt="MaCaEditor" src="https://github.com/user-attachments/assets/5ed57a0f-9519-4cfa-95a9-49b8930aaa46" />
 
@@ -34,12 +34,13 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - フォルダからのインポートとフォルダへのエクスポート
 - パッケージ内のファイルをツリー表示
 - PNG、JPEG、GIF、WebP、BMP画像の追加
-- 任意形式の添付ファイルの追加
+- 任意形式の添付ファイルを1つまたは複数まとめて追加
 - `images` フォルダへの画像のドラッグ＆ドロップ
 - 画像、添付ファイル、ダイアグラムのリネーム、削除
 - ファイルツリーの右クリックメニューからリネーム、削除
 - 画像やダイアグラムのリンクを、Markdownのカーソル位置または末尾へ挿入
-- 添付ファイルのリンクをMarkdownへ挿入し、プレビューからダウンロード
+- 添付ファイルのリンクをMarkdownへ挿入し、プレビューから保存先を指定してダウンロード
+- 添付ファイルのダウンロード開始、完了、失敗を画面右上のバナーで通知
 
 ### Drawing Editor
 
@@ -103,10 +104,10 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 ### 添付ファイルを追加する
 
 1. Markdownの挿入位置へカーソルを置きます。
-2. **Add Attachment** を押して、添付するファイルを選択します。
-3. ファイルへのリンクがカーソル位置へ挿入されます。カーソル位置がない場合はMarkdownの末尾へ挿入されます。
+2. **Add Attachment** を押して、添付するファイルを選択します。複数のファイルを一度に選択することもできます。
+3. 選択したファイルはファイルツリーの `attachments` に追加され、それぞれのリンクがカーソル位置へ挿入されます。カーソル位置がない場合はMarkdownの末尾へ挿入されます。
 4. Markdownプレビュー上のリンクをクリックし、保存先を選ぶと添付ファイルをダウンロードできます。
-5. ダウンロードの開始と完了は、画面右上のバナーで通知されます。
+5. ダウンロードの開始、完了、失敗は、画面右上のバナーで通知されます。
 
 ### 図を追加する
 
