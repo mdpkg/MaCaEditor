@@ -116,6 +116,7 @@ fn is_text(name: &str) -> bool {
         || lower.ends_with(".yml")
         || lower.ends_with(".puml")
         || lower.ends_with(".mmd")
+        || lower.ends_with(".tex")
         || lower.ends_with(".dot")
         || lower.ends_with(".svg")
         || lower.ends_with(".txt")
@@ -241,5 +242,33 @@ mod tests {
         let svg_file = loaded.files.iter().find(|f| f.path == "diagrams/architecture.svg").unwrap();
         assert!(svg_file.is_text());
         assert!(svg_file.text_content().unwrap().contains("<svg"));
+    }
+
+    #[test]
+    fn loads_mathjax_tex_source_as_text() {
+        let manifest = br#"{
+            "format": "mdpkg",
+            "version": "1.0",
+            "entrypoint": "README.md",
+            "title": "T",
+            "resources": [
+                { "source": "diagrams/math-1.tex", "rendered": "diagrams/math-1.svg", "type": "mathjax" }
+            ]
+        }"#;
+        let tex = br#"\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}"#;
+        let zip = build_zip(&[
+            ("manifest.json", manifest),
+            ("README.md", b"# Hello"),
+            ("diagrams/math-1.tex", tex),
+            ("diagrams/math-1.svg", b"<svg></svg>"),
+        ]);
+
+        let loaded = load_package(&zip).unwrap();
+        let tex_file = loaded.files.iter()
+            .find(|file| file.path == "diagrams/math-1.tex")
+            .unwrap();
+
+        assert!(tex_file.is_text());
+        assert_eq!(tex_file.text_content(), Some(r"\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}"));
     }
 }
