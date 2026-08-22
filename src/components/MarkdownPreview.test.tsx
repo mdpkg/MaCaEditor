@@ -278,13 +278,37 @@ describe("MarkdownPreview", () => {
     ));
 
     act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
     expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
 
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("opens media outside the split editor preview so it fills the window", () => {
+    const splitView = document.createElement("div");
+    splitView.className = "split-view";
+    const container = document.createElement("div");
+    splitView.appendChild(container);
+    document.body.appendChild(splitView);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![photo](images/photo.png)"
+        baseDir=""
+        files={[{
+          path: "images/photo.png", is_text: false, content: null, base64: "AAAA",
+        }]}
+      />,
+    ));
+
+    act(() => (container.querySelector("img") as HTMLImageElement).click());
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(splitView.contains(dialog)).toBe(false);
     act(() => root.unmount());
   });
 
@@ -303,8 +327,8 @@ describe("MarkdownPreview", () => {
     ));
 
     act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
-    act(() => (container.querySelector(".preview-media-close") as HTMLButtonElement).click());
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    act(() => (document.body.querySelector(".preview-media-close") as HTMLButtonElement).click());
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     act(() => root.unmount());
   });
 
@@ -323,8 +347,8 @@ describe("MarkdownPreview", () => {
     ));
 
     act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
-    const viewport = container.querySelector(".preview-media-content") as HTMLDivElement;
-    const transform = container.querySelector(".preview-media-transform") as HTMLDivElement;
+    const viewport = document.body.querySelector(".preview-media-content") as HTMLDivElement;
+    const transform = document.body.querySelector(".preview-media-transform") as HTMLDivElement;
 
     act(() => viewport.dispatchEvent(new WheelEvent("wheel", {
       bubbles: true,
@@ -364,11 +388,11 @@ describe("MarkdownPreview", () => {
     ));
 
     act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
-    const viewport = container.querySelector(".preview-media-content") as HTMLDivElement;
+    const viewport = document.body.querySelector(".preview-media-content") as HTMLDivElement;
     act(() => viewport.dispatchEvent(new WheelEvent("wheel", {
       bubbles: true, deltaY: -100,
     })));
-    expect((container.querySelector(".preview-media-transform") as HTMLDivElement).style.transform)
+    expect((document.body.querySelector(".preview-media-transform") as HTMLDivElement).style.transform)
       .toContain("scale(1)");
     act(() => root.unmount());
   });
@@ -466,7 +490,7 @@ describe("MarkdownPreview", () => {
     expect(editButton.textContent).toBe("Edit");
     act(() => editButton.click());
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     act(() => root.unmount());
   });
 
@@ -487,10 +511,10 @@ describe("MarkdownPreview", () => {
     ));
 
     act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
-    expect(container.querySelector('[role="dialog"] .drawing-image svg')).not.toBeNull();
+    expect(document.body.querySelector('[role="dialog"] .drawing-image svg')).not.toBeNull();
 
     act(() => root.unmount());
     vi.useRealTimers();

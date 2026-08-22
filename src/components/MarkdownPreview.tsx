@@ -6,6 +6,7 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from "react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
 import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
@@ -286,15 +287,17 @@ export function MarkdownPreview({
     [remarkToc, { heading: "目次" }],
   ];
 
-  return <div className="markdown-preview">
-    <ReactMarkdown
-      components={components}
-      remarkPlugins={remarkPlugins}
-      urlTransform={urlTransform}
-    >
-      {previewMarkdown}
-    </ReactMarkdown>
-    {previewMedia && (
+  return <>
+    <div className="markdown-preview">
+      <ReactMarkdown
+        components={components}
+        remarkPlugins={remarkPlugins}
+        urlTransform={urlTransform}
+      >
+        {previewMarkdown}
+      </ReactMarkdown>
+    </div>
+    {previewMedia && createPortal(
       <div
         className="preview-media-overlay"
         role="dialog"
@@ -333,7 +336,8 @@ export function MarkdownPreview({
             )}
           </div>
         </div>
-      </div>
+      </div>,
+      document.body,
     )}
-  </div>;
+  </>;
 }
