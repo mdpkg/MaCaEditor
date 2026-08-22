@@ -61,6 +61,23 @@ export function insertMarkdownImages(
   };
 }
 
+export function insertMarkdownLinks(
+  content: string,
+  cursor: number | null,
+  markdownPath: string,
+  filePaths: string[],
+  labels?: string[],
+): { content: string; cursor: number } {
+  const links = filePaths.map((path, index) => {
+    const fileName = path.slice(path.lastIndexOf("/") + 1);
+    const relativePath = relativePackagePath(markdownPath, path);
+    const destination = /[\s()]/.test(relativePath) ? `<${relativePath}>` : relativePath;
+    const label = (labels?.[index] ?? fileName).replace(/[\[\]]/g, "\\$&");
+    return `[${label}](${destination})`;
+  }).join("\n");
+  return insertMarkdownBlock(content, cursor, links);
+}
+
 export function insertMarkdownBlock(
   content: string,
   cursor: number | null,

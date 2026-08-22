@@ -18,6 +18,7 @@ interface Props {
   onInsertMathJax: () => void;
   onInsertTable: () => void;
   onAddImage: () => void;
+  onAddAttachment: () => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
   rspressMode: boolean;
@@ -47,6 +48,7 @@ export function Toolbar({
   onInsertMathJax,
   onInsertTable,
   onAddImage,
+  onAddAttachment,
   showToc,
   onShowTocChange,
   rspressMode,
@@ -125,6 +127,7 @@ export function Toolbar({
 
       <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
       <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
+      <button type="button" onClick={onAddAttachment} disabled={!hasDocument}>Add Attachment</button>
       <label className="toolbar-vim-mode toolbar-toc">
         <input
           type="checkbox"

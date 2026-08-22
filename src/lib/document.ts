@@ -38,6 +38,23 @@ export function addImage(
   fileName: string,
   base64: string,
 ): { state: DocumentState; path: string } {
+  return addBinaryAsset(state, "images", fileName, base64);
+}
+
+export function addAttachment(
+  state: DocumentState,
+  fileName: string,
+  base64: string,
+): { state: DocumentState; path: string } {
+  return addBinaryAsset(state, "attachments", fileName, base64);
+}
+
+function addBinaryAsset(
+  state: DocumentState,
+  directory: "images" | "attachments",
+  fileName: string,
+  base64: string,
+): { state: DocumentState; path: string } {
   const safeName = fileName
     .normalize("NFC")
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
@@ -45,10 +62,10 @@ export function addImage(
   const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
   const extension = dot > 0 ? safeName.slice(dot) : "";
   const used = new Set(state.files.map((file) => file.path.toLowerCase()));
-  let path = `images/${safeName}`;
+  let path = `${directory}/${safeName}`;
   let suffix = 2;
   while (used.has(path.toLowerCase())) {
-    path = `images/${stem}-${suffix}${extension}`;
+    path = `${directory}/${stem}-${suffix}${extension}`;
     suffix += 1;
   }
 
@@ -88,12 +105,25 @@ function safeAssetName(name: string): string {
   return safe;
 }
 
+function markdownDestination(target: string): string {
+  const trimmed = target.trim();
+  return trimmed.startsWith("<") && trimmed.endsWith(">")
+    ? trimmed.slice(1, -1)
+    : trimmed;
+}
+
+function formattedMarkdownDestination(path: string): string {
+  return /[\s()]/.test(path) ? `<${path}>` : path;
+}
+
 function replaceMarkdownPaths(content: string, markdownPath: string, replacements: Map<string, string>): string {
-  return content.replace(/(!?\[[^\]]*\]\()([^)]+)(\))/g, (match, start, target, end) => {
+  return content.replace(/(!?\[[^\]]*\]\()(<[^>]*>|[^)]+)(\))/g, (match, start, target, end) => {
     const baseDir = markdownPath.includes("/") ? markdownPath.slice(0, markdownPath.lastIndexOf("/")) : "";
-    const resolved = resolvePackagePath(baseDir, target);
+    const resolved = resolvePackagePath(baseDir, markdownDestination(target));
     const replacement = resolved ? replacements.get(resolved) : undefined;
-    return replacement ? `${start}${relativePackagePath(markdownPath, replacement)}${end}` : match;
+    return replacement
+      ? `${start}${formattedMarkdownDestination(relativePackagePath(markdownPath, replacement))}${end}`
+      : match;
   });
 }
 
@@ -111,19 +141,20 @@ function diagramResourceForPath(state: DocumentState, path: string) {
 export function isDeletableAsset(state: DocumentState, path: string | null): boolean {
   if (!path) return false;
   return diagramResourceForPath(state, path) !== undefined ||
-    /^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path);
+    /^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path) ||
+    /^attachments\/[^/]+$/i.test(path);
 }
 
-function removeMarkdownImageReferences(
+function removeMarkdownAssetReferences(
   content: string,
   markdownPath: string,
   deletedPaths: Set<string>,
 ): string {
-  return content.replace(/!\[[^\]]*\]\(([^)]+)\)/g, (match, target: string) => {
+  return content.replace(/!?\[[^\]]*\]\((<[^>]*>|[^)]+)\)/g, (match, target: string) => {
     const baseDir = markdownPath.includes("/")
       ? markdownPath.slice(0, markdownPath.lastIndexOf("/"))
       : "";
-    const resolved = resolvePackagePath(baseDir, target);
+    const resolved = resolvePackagePath(baseDir, markdownDestination(target));
     return resolved && deletedPaths.has(resolved) ? "" : match;
   });
 }
@@ -134,7 +165,10 @@ export function deleteAsset(state: DocumentState, path: string): DocumentState {
   if (drawing) {
     deletedPaths.add(drawing.source);
     deletedPaths.add(drawing.rendered);
-  } else if (/^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path)) {
+  } else if (
+    /^images\/[^/]+\.(png|jpe?g|gif|webp|bmp)$/i.test(path) ||
+    /^attachments\/[^/]+$/i.test(path)
+  ) {
     deletedPaths.add(path);
   } else {
     throw new Error(`Asset cannot be deleted: ${path}`);
@@ -157,7 +191,7 @@ export function deleteAsset(state: DocumentState, path: string): DocumentState {
       .map((file) => ({
         ...file,
         content: file.is_text && file.content !== null && /\.(md|markdown)$/i.test(file.path)
-          ? removeMarkdownImageReferences(file.content, file.path, deletedPaths)
+          ? removeMarkdownAssetReferences(file.content, file.path, deletedPaths)
           : file.content,
       })),
   };

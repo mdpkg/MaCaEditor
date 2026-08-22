@@ -51,6 +51,21 @@ pub fn read_image(path: String) -> Result<ImportedImage, String> {
     if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp") {
         return Err(format!("unsupported image type: .{extension}"));
     }
+    read_imported_file(&source)
+}
+
+#[tauri::command]
+pub fn read_attachment(path: String) -> Result<ImportedImage, String> {
+    read_imported_file(&PathBuf::from(path))
+}
+
+#[tauri::command]
+pub fn save_attachment(path: String, base64: String) -> Result<(), String> {
+    let data = decode_base64(&base64)?;
+    atomic_save(&PathBuf::from(path), &data).map_err(|error| error.to_string())
+}
+
+fn read_imported_file(source: &PathBuf) -> Result<ImportedImage, String> {
     let file_name = source
         .file_name()
         .and_then(|value| value.to_str())
@@ -243,4 +258,43 @@ pub fn export_folder(package_path: String, dest: String) -> Result<(), String> {
 /// アプリの状態を管理するためのセットアップ。
 pub fn setup(app: &mut tauri::App) {
     let _ = app;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_attachment, save_attachment};
+    use std::path::PathBuf;
+
+    fn temporary_attachment_path() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "maca-attachment-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn reads_an_arbitrary_attachment_as_base64() {
+        let path = temporary_attachment_path();
+        std::fs::write(&path, [1_u8, 2, 3]).unwrap();
+
+        let imported = read_attachment(path.to_string_lossy().into_owned()).unwrap();
+
+        assert_eq!(imported.file_name, path.file_name().unwrap().to_string_lossy());
+        assert_eq!(imported.base64, "AQID");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn saves_a_base64_attachment_to_the_selected_path() {
+        let path = temporary_attachment_path();
+
+        save_attachment(path.to_string_lossy().into_owned(), "AQID".to_string()).unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), [1_u8, 2, 3]);
+        std::fs::remove_file(path).unwrap();
+    }
 }

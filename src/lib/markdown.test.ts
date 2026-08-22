@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   insertMarkdownBlock,
   insertMarkdownImages,
+  insertMarkdownLinks,
   isMarkdownPath,
   relativePackagePath,
   resolvePackagePath,
@@ -79,6 +80,43 @@ describe("Markdown image insertion", () => {
     );
     expect(result.content).toBe(
       "![スクリーンショット 2022](<images/スクリーンショット 2022.png>)",
+    );
+  });
+});
+
+describe("Markdown attachment insertion", () => {
+  test("inserts attachment links at the cursor", () => {
+    const result = insertMarkdownLinks(
+      "beforeafter",
+      6,
+      "README.md",
+      ["attachments/仕様書.pdf"],
+    );
+
+    expect(result.content).toBe("before\n[仕様書.pdf](attachments/仕様書.pdf)\nafter");
+  });
+
+  test("wraps attachment paths containing spaces as CommonMark destinations", () => {
+    const result = insertMarkdownLinks(
+      "",
+      null,
+      "docs/guide.md",
+      ["attachments/release notes.zip"],
+    );
+
+    expect(result.content).toBe("[release notes.zip](<../attachments/release notes.zip>)");
+  });
+
+  test("escapes brackets in labels and wraps parentheses in destinations", () => {
+    const result = insertMarkdownLinks(
+      "",
+      null,
+      "README.md",
+      ["attachments/report [final](1).pdf"],
+    );
+
+    expect(result.content).toBe(
+      "[report \\[final\\](1).pdf](<attachments/report [final](1).pdf>)",
     );
   });
 });

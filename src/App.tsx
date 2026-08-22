@@ -3,9 +3,15 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { FileTree } from "./components/FileTree";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import {
+  NotificationBanners,
+  type BannerNotice,
+  type NotificationTone,
+} from "./components/NotificationBanners";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
+  addAttachment,
   addImage,
   deleteAsset,
   imageMediaType,
@@ -20,7 +26,9 @@ import {
   importFolder,
   openPackage,
   savePackage,
+  readAttachment,
   readImage,
+  saveAttachment,
 } from "./lib/tauri";
 import type { DrawingDocument } from "./lib/drawing/model";
 import {
@@ -29,15 +37,23 @@ import {
   parseDrawingFile,
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
-import type { FileInfo } from "./types";
-import { insertMarkdownBlock, insertMarkdownImages, isMarkdownPath } from "./lib/markdown";
+import type { FileInfo, ImportedFile, ImportedImage } from "./types";
+import {
+  insertMarkdownBlock,
+  insertMarkdownImages,
+  insertMarkdownLinks,
+  isMarkdownPath,
+} from "./lib/markdown";
 import { isSaveShortcut } from "./lib/shortcuts";
 import {
   droppedFileToImage,
   importedImageDataUrl,
   isSupportedImageName,
 } from "./lib/imageImport";
-import type { ImportedImage } from "./types";
+import {
+  downloadAttachment,
+  type AttachmentDownloadEvent,
+} from "./lib/attachmentDownload";
 import {
   DEFAULT_PLANTUML_SOURCE,
   addPlantUmlToDocument,
@@ -115,8 +131,11 @@ export default function App() {
   const [rspressMode, setRspressMode] = useState(false);
   const [fileListOpen, setFileListOpen] = useState(true);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [notifications, setNotifications] = useState<BannerNotice[]>([]);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
+  const notificationSequenceRef = useRef(0);
+  const notificationTimersRef = useRef<number[]>([]);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
@@ -147,6 +166,21 @@ export default function App() {
     });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => () => {
+    notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
+  const showNotification = (message: string, tone: NotificationTone) => {
+    notificationSequenceRef.current += 1;
+    const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone };
+    setNotifications((current) => [...current, notice]);
+    const timer = window.setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== notice.id));
+      notificationTimersRef.current = notificationTimersRef.current.filter((item) => item !== timer);
+    }, 3500);
+    notificationTimersRef.current.push(timer);
+  };
 
   useEffect(() => {
     if (preferencesLoaded) void saveVimMode(vimMode);
@@ -556,6 +590,70 @@ export default function App() {
     }
   };
 
+  const addImportedAttachments = (attachments: ImportedFile[]) => {
+    if (!doc || attachments.length === 0) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    let next = doc;
+    const addedPaths: string[] = [];
+    for (const attachment of attachments) {
+      const added = addAttachment(next, attachment.file_name, attachment.base64);
+      next = added.state;
+      addedPaths.push(added.path);
+    }
+    if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
+      const inserted = insertMarkdownLinks(markdownFile.content, cursor, markdownFile.path, addedPaths);
+      next = updateFileContent(next, markdownFile.path, inserted.content);
+      editorCursorRef.current = inserted.cursor;
+    }
+    setDoc(next);
+    setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
+    setStatus(`Added ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} to attachments/`);
+    setError(null);
+  };
+
+  const handleAddAttachment = async () => {
+    if (!doc) return;
+    const result = await openDialog({ multiple: true });
+    const paths = Array.isArray(result) ? result : typeof result === "string" ? [result] : [];
+    if (paths.length === 0) return;
+    try {
+      addImportedAttachments(await Promise.all(paths.map(readAttachment)));
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
+  const handleDownloadAttachment = async (file: FileInfo) => {
+    const notify = (event: AttachmentDownloadEvent, fileName: string) => {
+      if (event === "started") {
+        showNotification(`ダウンロードを開始しました: ${fileName}`, "info");
+      } else if (event === "completed") {
+        showNotification(`ダウンロードが完了しました: ${fileName}`, "success");
+      } else {
+        showNotification(`ダウンロードに失敗しました: ${fileName}`, "error");
+      }
+    };
+    try {
+      const saved = await downloadAttachment(
+        file,
+        async (fileName) => {
+          const result = await saveDialog({ defaultPath: fileName });
+          return typeof result === "string" ? result : null;
+        },
+        saveAttachment,
+        notify,
+      );
+      if (saved) setStatus(`Downloaded ${file.path}`);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
   const handleInsertTable = () => {
     if (!doc) return;
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
@@ -590,6 +688,7 @@ export default function App() {
 
   const isRenameablePath = (path: string | null) => path !== null && (
     /\.(png|jpe?g|gif|webp|bmp)$/i.test(path) ||
+    /^attachments\/[^/]+$/i.test(path) ||
     doc?.manifest.resources instanceof Array && doc.manifest.resources.some((item) =>
       typeof item === "object" && item !== null &&
       ((item as { source?: string }).source === path || (item as { rendered?: string }).rendered === path))
@@ -770,6 +869,7 @@ export default function App() {
         onInsertMathJax={handleInsertMathJax}
         onInsertTable={handleInsertTable}
         onAddImage={handleAddImage}
+        onAddAttachment={handleAddAttachment}
         showToc={showToc}
         onShowTocChange={setShowToc}
         rspressMode={rspressMode}
@@ -903,6 +1003,7 @@ export default function App() {
                     onEditMermaid={handleEditMermaidFromPreview}
                     onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
+                    onDownloadAttachment={handleDownloadAttachment}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -930,6 +1031,7 @@ export default function App() {
                     onEditMermaid={handleEditMermaidFromPreview}
                     onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
+                    onDownloadAttachment={handleDownloadAttachment}
                   />
                 </div>
               )}
@@ -961,6 +1063,7 @@ export default function App() {
         </div>
       )}
       <StatusBar message={status} />
+      <NotificationBanners notices={notifications} />
     </div>
   );
 }

@@ -98,7 +98,7 @@ export function FileTree({
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
-  const tree = buildFileTree(paths, ["images"]);
+  const tree = buildFileTree(paths, ["images", "attachments"]);
 
   useEffect(() => {
     if (!contextMenu) return;

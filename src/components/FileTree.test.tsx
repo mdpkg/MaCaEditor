@@ -10,6 +10,28 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("shows the attachments directory even before a file is added", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <FileTree
+        files={[]}
+        selectedPath={null}
+        onSelect={vi.fn()}
+        onDropImages={vi.fn()}
+        canRename={() => false}
+        onRename={vi.fn()}
+        canDelete={() => false}
+        onDelete={vi.fn()}
+      />,
+    ));
+
+    expect([...container.querySelectorAll(".tree-dir")].map((item) => item.textContent?.trim()))
+      .toContain("▾ attachments");
+    act(() => root.unmount());
+  });
+
   test("opens a Markdown file for editing on double-click", () => {
     const onSelect = vi.fn();
     const onEditMarkdown = vi.fn();

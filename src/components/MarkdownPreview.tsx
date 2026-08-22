@@ -30,6 +30,7 @@ interface Props {
   onEditMermaid?: (sourcePath: string) => void;
   onEditMathJax?: (sourcePath: string) => void;
   onEditTable?: (start: number, end: number) => void;
+  onDownloadAttachment?: (file: FileInfo) => void;
   showToc?: boolean;
   rspressMode?: boolean;
 }
@@ -65,6 +66,13 @@ function decodePackageUrl(url: string): string {
   }
 }
 
+function attachmentDataUrl(file: FileInfo): string {
+  if (file.base64 !== null) {
+    return `data:application/octet-stream;base64,${file.base64}`;
+  }
+  return `data:text/plain;charset=utf-8,${encodeURIComponent(file.content ?? "")}`;
+}
+
 function normalizeLegacyImageDestinations(
   markdown: string,
   baseDir: string,
@@ -91,6 +99,7 @@ export function MarkdownPreview({
   onEditMermaid,
   onEditMathJax,
   onEditTable,
+  onDownloadAttachment,
   showToc = false,
   rspressMode = false,
 }: Props) {
@@ -293,6 +302,23 @@ export function MarkdownPreview({
       return <span className="missing-image">⚠️ 画像が見つかりません: {src}</span>;
     },
     a({ href = "", ...props }) {
+      const packagePath = decodePackageUrl(href);
+      const attachment = files.find((file) =>
+        file.path === packagePath && file.path.startsWith("attachments/"));
+      if (attachment) {
+        const fileName = attachment.path.slice(attachment.path.lastIndexOf("/") + 1);
+        return <a
+          {...props}
+          href={attachmentDataUrl(attachment)}
+          download={fileName}
+          title="クリックしてダウンロード"
+          onClick={(event) => {
+            if (!onDownloadAttachment) return;
+            event.preventDefault();
+            onDownloadAttachment(attachment);
+          }}
+        />;
+      }
       return <a {...props} href={packageUrl(baseDir, href)} />;
     },
   };

@@ -53,6 +53,20 @@ describe("Markdown preview media overlay", () => {
   });
 });
 
+describe("download notification banners", () => {
+  it("slides notifications in from the top right", () => {
+    const regionStart = styles.indexOf(".notification-banners {");
+    const regionBlock = regionStart >= 0
+      ? styles.slice(regionStart, styles.indexOf("}", regionStart))
+      : "";
+    expect(regionBlock).toContain("position: fixed");
+    expect(regionBlock).toContain("top: 16px");
+    expect(regionBlock).toContain("right: 16px");
+    expect(styles).toContain("animation: notification-slide-in");
+    expect(styles).toContain("transform: translateX(calc(100% + 24px))");
+  });
+});
+
 describe("Markdown preview diagram actions", () => {
   it("reveals the diagram Edit button on hover and keyboard focus", () => {
     expect(styles).toContain(".preview-diagram-edit {");

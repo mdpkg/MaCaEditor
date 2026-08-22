@@ -10,6 +10,63 @@ afterEach(() => {
 });
 
 describe("MarkdownPreview", () => {
+  test("renders package attachments as download links", () => {
+    const onDownloadAttachment = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="[仕様書](attachments/仕様書.pdf)"
+        baseDir=""
+        files={[{
+          path: "attachments/仕様書.pdf",
+          is_text: false,
+          content: null,
+          base64: "AQID",
+        }]}
+        onDownloadAttachment={onDownloadAttachment}
+      />,
+    ));
+
+    const link = container.querySelector("a") as HTMLAnchorElement;
+    expect(link.download).toBe("仕様書.pdf");
+    expect(link.href).toBe("data:application/octet-stream;base64,AQID");
+    act(() => link.click());
+    expect(onDownloadAttachment).toHaveBeenCalledWith({
+      path: "attachments/仕様書.pdf",
+      is_text: false,
+      content: null,
+      base64: "AQID",
+    });
+    act(() => root.unmount());
+  });
+
+  test("downloads a text attachment linked from nested Markdown", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="[notes](../attachments/notes.txt)"
+        baseDir="docs"
+        files={[{
+          path: "attachments/notes.txt",
+          is_text: true,
+          content: "日本語のメモ",
+          base64: null,
+        }]}
+      />,
+    ));
+
+    const link = container.querySelector("a") as HTMLAnchorElement;
+    expect(link.download).toBe("notes.txt");
+    expect(link.href).toContain("data:text/plain;charset=utf-8,");
+    expect(decodeURIComponent(link.href)).toContain("日本語のメモ");
+    act(() => root.unmount());
+  });
+
+
   test("shows a generated table of contents when enabled", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

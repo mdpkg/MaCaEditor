@@ -74,7 +74,9 @@ pub fn run() {
             commands::create_new_package,
             commands::import_folder,
             commands::export_folder,
+            commands::read_attachment,
             commands::read_image,
+            commands::save_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

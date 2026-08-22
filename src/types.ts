@@ -24,7 +24,9 @@ export interface SaveRequest {
   files: FileContent[];
 }
 
-export interface ImportedImage {
+export interface ImportedFile {
   file_name: string;
   base64: string;
 }
+
+export type ImportedImage = ImportedFile;

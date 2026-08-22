@@ -17,6 +17,7 @@ describe("Toolbar menus", () => {
     const onRspressModeChange = vi.fn();
     const onPrint = vi.fn();
     const onToggleFileList = vi.fn();
+    const onAddAttachment = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -41,6 +42,7 @@ describe("Toolbar menus", () => {
         onInsertMathJax={noop}
         onInsertTable={noop}
         onAddImage={noop}
+        onAddAttachment={onAddAttachment}
         showToc={false}
         onShowTocChange={onShowTocChange}
         rspressMode={false}
@@ -53,7 +55,13 @@ describe("Toolbar menus", () => {
 
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
-    expect(topLevel).toEqual(["☰", "File", "Insert Diagram", "Insert Table", "Add Image"]);
+    expect(topLevel).toEqual([
+      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment",
+    ]);
+    const addAttachmentButton = [...container.querySelectorAll(".toolbar > button")]
+      .find((button) => button.textContent === "Add Attachment") as HTMLButtonElement;
+    act(() => addAttachmentButton.click());
+    expect(onAddAttachment).toHaveBeenCalledOnce();
 
     const fileListButton = container.querySelector(".toolbar-file-list-toggle") as HTMLButtonElement;
     expect(fileListButton.getAttribute("aria-pressed")).toBe("true");
