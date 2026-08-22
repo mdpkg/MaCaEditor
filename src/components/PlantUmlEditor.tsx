@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { renderPlantUml } from "../lib/plantuml/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
 import { CodeEditor } from "./CodeEditor";
+import { SvgPreviewOverlay } from "./SvgPreviewOverlay";
 
 interface Props {
   source: string;
@@ -25,6 +26,8 @@ export function PlantUmlEditor({
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const sanitizedSvg = sanitizeHtml(svg);
 
   useEffect(() => {
     let active = true;
@@ -69,10 +72,23 @@ export function PlantUmlEditor({
         {!error && svg && (
           <div
             className="plantuml-preview"
-            dangerouslySetInnerHTML={{ __html: sanitizeHtml(svg) }}
+            role="button"
+            tabIndex={0}
+            title="クリックで拡大表示"
+            onClick={() => setPreviewOpen(true)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setPreviewOpen(true);
+              }
+            }}
+            dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
           />
         )}
       </div>
+      {previewOpen && (
+        <SvgPreviewOverlay svg={sanitizedSvg} label="PlantUMLダイアグラム" onClose={() => setPreviewOpen(false)} />
+      )}
     </div>
   );
 }

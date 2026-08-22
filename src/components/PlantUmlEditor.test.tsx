@@ -77,6 +77,11 @@ describe("PlantUmlEditor", () => {
     );
     expect(container.querySelector(".plantuml-preview text")?.textContent).toBe("rendered");
     expect(container.querySelector(".plantuml-preview script")).toBeNull();
+    act(() => (container.querySelector(".plantuml-preview") as HTMLDivElement).click());
+    expect(document.body.querySelector('[role="dialog"] .drawing-image text')?.textContent)
+      .toBe("rendered");
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     act(() => root.unmount());
   });
 });

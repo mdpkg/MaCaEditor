@@ -58,6 +58,11 @@ describe("MermaidEditor", () => {
     );
     expect(container.querySelector(".mermaid-preview text")?.textContent).toBe("rendered");
     expect(container.querySelector(".mermaid-preview script")).toBeNull();
+    act(() => (container.querySelector(".mermaid-preview") as HTMLDivElement).click());
+    expect(document.body.querySelector('[role="dialog"] .drawing-image text')?.textContent)
+      .toBe("rendered");
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     act(() => root.unmount());
   });
 });
