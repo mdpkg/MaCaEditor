@@ -405,6 +405,39 @@ body {
   object-fit: contain;
 }
 
+.preview-diagram {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.preview-diagram-content {
+  display: block;
+}
+
+.preview-diagram-edit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  opacity: 0;
+  background: rgba(32, 33, 36, 0.82);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.preview-diagram:hover .preview-diagram-edit,
+.preview-diagram:focus-within .preview-diagram-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .markdown-preview img[role="button"],
 .markdown-preview .drawing-image {
   cursor: zoom-in;

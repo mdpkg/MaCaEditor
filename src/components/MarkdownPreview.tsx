@@ -228,7 +228,7 @@ export function MarkdownPreview({
           ? onEditDrawing
           : plantUmlResource ? onEditPlantUml : onEditMermaid;
         return <span
-          className="drawing-image"
+          className="drawing-image preview-diagram"
           data-drawpath={sourcePath ?? ""}
           role={sourcePath && editDiagram ? "button" : undefined}
           tabIndex={sourcePath && editDiagram ? 0 : undefined}
@@ -248,8 +248,24 @@ export function MarkdownPreview({
               editDiagram?.(sourcePath);
             }
           }}
-          dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
-        />;
+        >
+          <span
+            className="preview-diagram-content"
+            dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
+          />
+          {sourcePath && editDiagram && (
+            <button
+              type="button"
+              className="preview-diagram-edit"
+              onClick={(event) => {
+                event.stopPropagation();
+                cancelDiagramClick();
+                editDiagram(sourcePath);
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >Edit</button>
+          )}
+        </span>;
       }
       return <span className="missing-image">⚠️ 画像が見つかりません: {src}</span>;
     },

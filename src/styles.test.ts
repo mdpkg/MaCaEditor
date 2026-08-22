@@ -53,6 +53,15 @@ describe("Markdown preview media overlay", () => {
   });
 });
 
+describe("Markdown preview diagram actions", () => {
+  it("reveals the diagram Edit button on hover and keyboard focus", () => {
+    expect(styles).toContain(".preview-diagram-edit {");
+    expect(styles).toContain(".preview-diagram:hover .preview-diagram-edit,");
+    expect(styles).toContain(".preview-diagram:focus-within .preview-diagram-edit {");
+    expect(styles).toContain("pointer-events: none");
+  });
+});
+
 describe("drawing sidebar layout", () => {
   it("splits the drawing sidebar between the file tree and properties", () => {
     const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");

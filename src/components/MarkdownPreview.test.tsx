@@ -280,6 +280,7 @@ describe("MarkdownPreview", () => {
     act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
+    expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
 
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
@@ -441,6 +442,34 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test("shows an Edit button on an editable diagram and opens its editor", () => {
+    const onEditDrawing = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![drawing](diagrams/example.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/example.svg", is_text: true,
+          content: '<svg><rect width="10" height="10"/></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{
+          type: "drawing", source: "diagrams/example.draw.json", rendered: "diagrams/example.svg",
+        }] }}
+        onEditDrawing={onEditDrawing}
+      />,
+    ));
+
+    const editButton = container.querySelector(".preview-diagram-edit") as HTMLButtonElement;
+    expect(editButton.textContent).toBe("Edit");
+    act(() => editButton.click());
+    expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
   test("opens a preview diagram full-screen on a single click", async () => {
     vi.useFakeTimers();
     const container = document.createElement("div");
@@ -459,6 +488,7 @@ describe("MarkdownPreview", () => {
 
     act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     expect(container.querySelector('[role="dialog"] .drawing-image svg')).not.toBeNull();
 
