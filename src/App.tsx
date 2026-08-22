@@ -59,7 +59,14 @@ import {
 } from "./lib/mermaid/docIntegration";
 import { renderMermaid } from "./lib/mermaid/renderer";
 import { EMPTY_2X2_MARKDOWN_TABLE } from "./lib/markdownTable";
-import { loadVimMode, saveVimMode } from "./lib/editorPreferences";
+import {
+  loadRspressMode,
+  loadShowToc,
+  loadVimMode,
+  saveRspressMode,
+  saveShowToc,
+  saveVimMode,
+} from "./lib/editorPreferences";
 
 type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "table";
 
@@ -103,9 +110,15 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void loadVimMode().then((enabled) => {
+    void Promise.all([loadVimMode(), loadShowToc(), loadRspressMode()]).then(([
+      storedVimMode,
+      storedShowToc,
+      storedRspressMode,
+    ]) => {
       if (!active) return;
-      setVimMode(enabled);
+      setVimMode(storedVimMode);
+      setShowToc(storedShowToc);
+      setRspressMode(storedRspressMode);
       setPreferencesLoaded(true);
     });
     return () => { active = false; };
@@ -114,6 +127,14 @@ export default function App() {
   useEffect(() => {
     if (preferencesLoaded) void saveVimMode(vimMode);
   }, [preferencesLoaded, vimMode]);
+
+  useEffect(() => {
+    if (preferencesLoaded) void saveShowToc(showToc);
+  }, [preferencesLoaded, showToc]);
+
+  useEffect(() => {
+    if (preferencesLoaded) void saveRspressMode(rspressMode);
+  }, [preferencesLoaded, rspressMode]);
 
   useEffect(() => {
     if (doc && !selectedPath) {
