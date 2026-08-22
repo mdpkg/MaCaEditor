@@ -11,12 +11,19 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 ### Markdownの編集とプレビュー
 
 - Markdownファイルの編集とリアルタイムプレビュー
+- CodeMirrorによるMarkdown編集
+- 標準モードとVim modeの切り替え（Vim modeでは`:w`で保存）
 - GitHub Flavored Markdown（GFM）対応
 - テーブル、タスクリスト、取り消し線、URL自動リンク
+- GitHub Flavored Markdown Alerts（`> [!NOTE]`など）の表示
+- Rspressモードでの`:::`コンテナ表示
+- チェックボックスで切り替えられる目次（TOC）表示
 - プレビュー上のテーブルをクリックしてGUIで編集
 - 日本語や空白を含む画像ファイル名への対応
 - GitHub風のプレビュースタイル
 - ファイルツリーのMarkdownファイルをダブルクリックして編集
+- プレビューの印刷と、OSの印刷機能を利用したPDF保存
+- TOC、Rspress、Vim modeの設定を次回起動時に復元
 
 ### ファイルと画像の管理
 
@@ -31,7 +38,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 ### Drawing Editor
 
-- 矩形、角丸矩形、楕円、ファイル、ユーザー、テキスト、画像
+- 矩形、角丸矩形、楕円、円柱、キューブ、吹き出し、ファイル、ユーザー、テキスト、画像
+- フローチャート記号、各方向の矢印、円弧矢印、左右の波括弧
 - 直線、矢印、直線コネクタ、曲線コネクタ、カギコネクタ
 - オブジェクトの選択、複数選択、移動、リサイズ、回転
 - グリッド表示、スナップ、ズーム、描画エリアのサイズ変更
@@ -41,9 +49,10 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - ダブルクリックによるグループ内要素の個別選択
 - 塗りつぶし、線色、透明度、太さ、線スタイル
 - コネクタ両端の矢印・鳥足設定
+- 吹き出しのしっぽ、円弧矢印の角度と両端をGUIハンドルで調整
 - シェイプ内の複数行テキストと水平・垂直配置
 - SVGへの画像追加
-- Markdownプレビュー上の図をクリックして再編集
+- Markdownプレビュー上の図をダブルクリックして再編集
 
 ### PlantUML・Mermaid
 
@@ -52,7 +61,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - 入力内容に合わせたプレビューの自動更新
 - 構文エラーの表示
 - Markdownのカーソル位置または末尾へダイアグラムを挿入
-- Markdownプレビュー上のダイアグラムをクリックして再編集
+- Markdownプレビュー上のダイアグラムをダブルクリックして再編集
 - PlantUMLは`plantuml.js`、Mermaidは`mermaid.js`を使用し、アプリ内で描画
 
 ## 基本的な使い方
@@ -64,6 +73,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 3. Markdownファイルをダブルクリックするか、プレビュー画面の **Edit** を押します。
 4. Markdownを編集し、プレビューで表示を確認します。
 5. **File** メニューの **Save** または `Ctrl+S` で保存します。
+
+ツールバー右側では、目次を表示する **TOC**、Rspressの`:::`構文を有効にする **Rspress**、Vimキーバインドを有効にする **Vim mode** を切り替えられます。これらの設定は次回起動時にも引き継がれます。
 
 ### 新しい `.mdpkg` を作成する
 
@@ -85,9 +96,34 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 2. **Insert Diagram** メニューから **SVG** を選択します。
 3. Drawing Editorで図を作成します。
 4. 図のリンクがMarkdownのカーソル位置へ挿入されます。カーソル位置がない場合は末尾へ挿入されます。
-5. Markdownプレビュー上の図をクリックすると、再びDrawing Editorで編集できます。
+5. Markdownプレビュー上の図をダブルクリックすると、再びDrawing Editorで編集できます。
 
 PlantUMLまたはMermaidを作成する場合は、**Insert Diagram** メニューから該当する形式を選択します。表示されたテキストエディタへ定義を入力すると、右側のSVGプレビューが自動更新されます。
+
+### 拡張Markdownをプレビューする
+
+GitHub Flavored Markdown Alertsは常に表示できます。
+
+```markdown
+> [!WARNING]
+> この操作は取り消せません。
+```
+
+Rspress形式のコンテナを表示するには、ツールバーの **Rspress** をONにします。`note`、`tip`、`important`、`info`、`warning`、`danger`、`caution`、`details`を利用でき、タイトルも指定できます。
+
+```markdown
+:::tip ヒント
+ここに説明を書きます。
+:::
+```
+
+### 目次を表示する
+
+ツールバーの **TOC** をONにすると、Markdownの見出しから目次を生成してプレビューの先頭に表示します。
+
+### プレビューを印刷・PDF保存する
+
+**File** → **Print** でMarkdownプレビューを印刷できます。PDFへ保存する場合は、表示されたOSの印刷ダイアログでPDFプリンターを選択します。
 
 ### 表を追加・編集する
 
@@ -156,7 +192,7 @@ PlantUMLまたはMermaidを作成する場合は、**Insert Diagram** メニュ�
 
 - Graphvizなど、SVG・PlantUML・Mermaid以外の図形式
 - draw.io、Excalidraw、PowerPointとのインポート／エクスポート
-- HTMLやPDFへのエクスポート
+- 専用のHTMLエクスポート、および印刷ダイアログを介さない直接PDFエクスポート
 - リアルタイム共同編集やクラウド同期
 
 ## ライセンス
