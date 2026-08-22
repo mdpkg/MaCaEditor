@@ -1,15 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { FileTree } from "./components/FileTree";
-import { MarkdownEditor } from "./components/MarkdownEditor";
-import { MarkdownPreview } from "./components/MarkdownPreview";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
-import { DrawingEditor } from "./components/DrawingEditor";
-import { PlantUmlEditor } from "./components/PlantUmlEditor";
-import { MermaidEditor } from "./components/MermaidEditor";
-import { MathJaxEditor } from "./components/MathJaxEditor";
-import { MarkdownTableEditor } from "./components/MarkdownTableEditor";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
@@ -74,6 +67,28 @@ import {
   saveShowToc,
   saveVimMode,
 } from "./lib/editorPreferences";
+
+const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
+  default: module.MarkdownEditor,
+})));
+const MarkdownPreview = lazy(() => import("./components/MarkdownPreview").then((module) => ({
+  default: module.MarkdownPreview,
+})));
+const DrawingEditor = lazy(() => import("./components/DrawingEditor").then((module) => ({
+  default: module.DrawingEditor,
+})));
+const PlantUmlEditor = lazy(() => import("./components/PlantUmlEditor").then((module) => ({
+  default: module.PlantUmlEditor,
+})));
+const MermaidEditor = lazy(() => import("./components/MermaidEditor").then((module) => ({
+  default: module.MermaidEditor,
+})));
+const MathJaxEditor = lazy(() => import("./components/MathJaxEditor").then((module) => ({
+  default: module.MathJaxEditor,
+})));
+const MarkdownTableEditor = lazy(() => import("./components/MarkdownTableEditor").then((module) => ({
+  default: module.MarkdownTableEditor,
+})));
 
 type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "mathjax" | "table";
 
@@ -787,6 +802,7 @@ export default function App() {
           </aside>
         )}
         <main className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}>
+          <Suspense fallback={<div className="empty-state">Loading…</div>}>
           {!doc && (
             <div className="empty-state">
               <h2>MaCa Editor</h2>
@@ -927,6 +943,7 @@ export default function App() {
               <p className="file-info">{displayFile.path}</p>
             </div>
           )}
+          </Suspense>
         </main>
       </div>
       {error && (

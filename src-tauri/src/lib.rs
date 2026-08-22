@@ -33,7 +33,6 @@ pub fn run() {
 
                 if let Some(window) = app.get_webview_window("main") {
                     window.restore_state(window_state_flags())?;
-                    window.show()?;
                 }
             }
             Ok(())
