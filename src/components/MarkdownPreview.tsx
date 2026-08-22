@@ -16,6 +16,7 @@ import { findResourceByRendered } from "../lib/drawing/docIntegration";
 import { imageMediaType } from "../lib/document";
 import { findPlantUmlResourceByRendered } from "../lib/plantuml/docIntegration";
 import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
+import { findMathJaxResourceByRendered } from "../lib/mathjax/docIntegration";
 import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
 import { remarkRspressContainers } from "../lib/remarkRspressContainers";
 
@@ -27,6 +28,7 @@ interface Props {
   onEditDrawing?: (drawPath: string) => void;
   onEditPlantUml?: (sourcePath: string) => void;
   onEditMermaid?: (sourcePath: string) => void;
+  onEditMathJax?: (sourcePath: string) => void;
   onEditTable?: (start: number, end: number) => void;
   showToc?: boolean;
   rspressMode?: boolean;
@@ -81,6 +83,7 @@ export function MarkdownPreview({
   onEditDrawing,
   onEditPlantUml,
   onEditMermaid,
+  onEditMathJax,
   onEditTable,
   showToc = false,
   rspressMode = false,
@@ -228,10 +231,13 @@ export function MarkdownPreview({
         const mermaidResource = manifest
           ? findMermaidResourceByRendered(manifest, resolved ?? "")
           : undefined;
-        const sourcePath = drawingResource?.source ?? plantUmlResource?.source ?? mermaidResource?.source;
+        const mathJaxResource = manifest
+          ? findMathJaxResourceByRendered(manifest, resolved ?? "")
+          : undefined;
+        const sourcePath = drawingResource?.source ?? plantUmlResource?.source ?? mermaidResource?.source ?? mathJaxResource?.source;
         const editDiagram = drawingResource
           ? onEditDrawing
-          : plantUmlResource ? onEditPlantUml : onEditMermaid;
+          : plantUmlResource ? onEditPlantUml : mermaidResource ? onEditMermaid : onEditMathJax;
         return <span
           className="drawing-image preview-diagram"
           data-drawpath={sourcePath ?? ""}

@@ -189,6 +189,19 @@ describe("asset deletion", () => {
     },
   );
 
+  it.each(["diagrams/math-1.tex", "diagrams/math-1.svg"])(
+    "deletes MathJax source, rendered file, and resource from %s",
+    (selected) => {
+      const current = state(["diagrams/math-1.tex", "diagrams/math-1.svg"]);
+      current.manifest = {
+        resources: [{ source: "diagrams/math-1.tex", rendered: "diagrams/math-1.svg", type: "mathjax" }],
+      };
+      const deleted = deleteAsset(current, selected);
+      expect(deleted.files).toEqual([]);
+      expect(deleted.manifest.resources).toEqual([]);
+    },
+  );
+
   it("only enables deletion for image and drawing assets", () => {
     const current = state(["README.md", "images/a.png", "diagrams/a.draw.json", "diagrams/a.svg"]);
     current.manifest = {

@@ -56,16 +56,16 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - SVGへの画像追加
 - Markdownプレビュー上の図に表示される **Edit** ボタン、またはダブルクリックで再編集
 
-### PlantUML・Mermaid
+### PlantUML・Mermaid・MathJax
 
-- PlantUMLとMermaidのダイアグラムを新規作成
+- PlantUMLとMermaidのダイアグラム、およびMathJaxの数式を新規作成
 - テキスト形式の定義とSVGプレビューを左右に並べて表示
 - 入力内容に合わせたプレビューの自動更新
 - 構文エラーの表示
 - Markdownのカーソル位置または末尾へダイアグラムを挿入
 - Markdownプレビュー上のダイアグラムをダブルクリックして再編集
-- PlantUML・Mermaid編集画面のSVGプレビューをクリックして全画面拡大
-- PlantUMLは`plantuml.js`、Mermaidは`mermaid.js`を使用し、アプリ内で描画
+- PlantUML・Mermaid・MathJax編集画面のSVGプレビューをクリックして全画面拡大
+- PlantUMLは`plantuml.js`、Mermaidは`mermaid.js`、数式はMathJaxを使用し、アプリ内でSVG描画
 
 ## 基本的な使い方
 
@@ -103,12 +103,12 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 4. 図のリンクがMarkdownのカーソル位置へ挿入されます。カーソル位置がない場合は末尾へ挿入されます。
 5. Markdownプレビュー上の図へマウスを重ねて **Edit** を押すか、図をダブルクリックすると、再びDrawing Editorで編集できます。
 
-PlantUMLまたはMermaidを作成する場合は、**Insert Diagram** メニューから該当する形式を選択します。表示されたテキストエディタへ定義を入力すると、右側のSVGプレビューが自動更新されます。
+PlantUML、MermaidまたはMathJaxの数式を作成する場合は、**Insert Diagram** メニューから該当する形式を選択します。表示されたテキストエディタへ定義またはTeX形式の数式を入力すると、右側のSVGプレビューが自動更新されます。
 
 ### 画像・ダイアグラムを拡大表示する
 
 - Markdownの表示画面または分割編集画面で、画像やダイアグラムをクリックすると全画面で拡大表示します。
-- PlantUML・Mermaid編集画面では、右側のSVGプレビューをクリックすると拡大表示します。
+- PlantUML・Mermaid・MathJax編集画面では、右側のSVGプレビューをクリックすると拡大表示します。
 - マウスホイールで拡大・縮小し、左ドラッグで表示位置を移動できます。
 - `Esc`または右上の **×** で元の画面へ戻ります。
 - Markdownから開いたダイアグラムは、拡大表示中にダブルクリックして対応する編集画面へ移動できます。
@@ -203,7 +203,7 @@ Rspress形式のコンテナを表示するには、ツールバーの **Rspress
 
 ## 現在対応していない機能
 
-- Graphvizなど、SVG・PlantUML・Mermaid以外の図形式
+- Graphvizなど、SVG・PlantUML・Mermaid・MathJax以外の図形式
 - draw.io、Excalidraw、PowerPointとのインポート／エクスポート
 - 専用のHTMLエクスポート、および印刷ダイアログを介さない直接PDFエクスポート
 - リアルタイム共同編集やクラウド同期

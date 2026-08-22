@@ -8,6 +8,7 @@ import { Toolbar } from "./components/Toolbar";
 import { DrawingEditor } from "./components/DrawingEditor";
 import { PlantUmlEditor } from "./components/PlantUmlEditor";
 import { MermaidEditor } from "./components/MermaidEditor";
+import { MathJaxEditor } from "./components/MathJaxEditor";
 import { MarkdownTableEditor } from "./components/MarkdownTableEditor";
 import type { DocumentState } from "./lib/document";
 import {
@@ -58,6 +59,12 @@ import {
   saveMermaidToDocument,
 } from "./lib/mermaid/docIntegration";
 import { renderMermaid } from "./lib/mermaid/renderer";
+import {
+  DEFAULT_MATHJAX_SOURCE,
+  addMathJaxToDocument,
+  findMathJaxResourceBySource,
+  saveMathJaxToDocument,
+} from "./lib/mathjax/docIntegration";
 import { EMPTY_2X2_MARKDOWN_TABLE } from "./lib/markdownTable";
 import {
   loadRspressMode,
@@ -68,7 +75,7 @@ import {
   saveVimMode,
 } from "./lib/editorPreferences";
 
-type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "table";
+type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "mathjax" | "table";
 
 interface TableEditContext {
   path: string;
@@ -86,6 +93,7 @@ export default function App() {
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
   const [mermaidPath, setMermaidPath] = useState<string | null>(null);
+  const [mathJaxPath, setMathJaxPath] = useState<string | null>(null);
   const [tableEdit, setTableEdit] = useState<TableEditContext | null>(null);
   const [vimMode, setVimMode] = useState(false);
   const [showToc, setShowToc] = useState(false);
@@ -320,8 +328,18 @@ export default function App() {
       setMode("mermaid");
       return;
     }
+    if (path.endsWith(".tex") && findMathJaxResourceBySource(doc?.manifest ?? {}, path)) {
+      setMathJaxPath(path);
+      setMermaidPath(null);
+      setPlantUmlPath(null);
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setMode("mathjax");
+      return;
+    }
     setPlantUmlPath(null);
     setMermaidPath(null);
+    setMathJaxPath(null);
     setMode("preview");
   };
 
@@ -444,6 +462,43 @@ export default function App() {
     setStatus("Mermaid preview updated");
   }, [mermaidPath]);
 
+  const handleInsertMathJax = () => {
+    if (!doc) return;
+    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
+      ? selectedFile
+      : entrypointFile;
+    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const placeholderSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"></svg>';
+    const added = addMathJaxToDocument(doc, DEFAULT_MATHJAX_SOURCE, placeholderSvg, "MathJax", {
+      markdownPath: markdownFile?.path,
+      cursor,
+    });
+    editorCursorRef.current = added.cursor;
+    setDoc(added.state);
+    setSelectedPath(added.sourcePath);
+    setMathJaxPath(added.sourcePath);
+    setMermaidPath(null);
+    setPlantUmlPath(null);
+    setDrawingDoc(null);
+    setDrawingPath(null);
+    setMode("mathjax");
+    setStatus("Inserted MathJax");
+    setError(null);
+  };
+
+  const handleMathJaxSourceChange = useCallback((source: string) => {
+    setDoc((current) => current && mathJaxPath
+      ? updateFileContent(current, mathJaxPath, source)
+      : current);
+  }, [mathJaxPath]);
+
+  const handleMathJaxRendered = useCallback((source: string, svg: string) => {
+    setDoc((current) => current && mathJaxPath
+      ? saveMathJaxToDocument(current, mathJaxPath, source, svg)
+      : current);
+    setStatus("MathJax preview updated");
+  }, [mathJaxPath]);
+
   const addImportedImages = (images: ImportedImage[]) => {
     if (!doc || images.length === 0) return;
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
@@ -537,6 +592,7 @@ export default function App() {
       if (drawingPath === path) setDrawingPath(renamed.path);
       if (plantUmlPath === path) setPlantUmlPath(renamed.path);
       if (mermaidPath === path) setMermaidPath(renamed.path);
+      if (mathJaxPath === path) setMathJaxPath(renamed.path);
       setStatus(`Renamed to ${renamed.path}`);
       setError(null);
     } catch (e) {
@@ -564,6 +620,10 @@ export default function App() {
       }
       if (mermaidPath && !next.files.some((file) => file.path === mermaidPath)) {
         setMermaidPath(null);
+        setMode("preview");
+      }
+      if (mathJaxPath && !next.files.some((file) => file.path === mathJaxPath)) {
+        setMathJaxPath(null);
         setMode("preview");
       }
       setStatus(`Deleted ${fileName}`);
@@ -623,6 +683,10 @@ export default function App() {
   };
 
   const handleEditMermaidFromPreview = (sourcePath: string) => {
+    handleSelect(sourcePath);
+  };
+
+  const handleEditMathJaxFromPreview = (sourcePath: string) => {
     handleSelect(sourcePath);
   };
 
@@ -687,6 +751,7 @@ export default function App() {
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
         onInsertMermaid={handleInsertMermaid}
+        onInsertMathJax={handleInsertMathJax}
         onInsertTable={handleInsertTable}
         onAddImage={handleAddImage}
         showToc={showToc}
@@ -772,6 +837,24 @@ export default function App() {
               />
             ) : null;
           })()}
+          {doc && mode === "mathjax" && mathJaxPath && (() => {
+            const sourceFile = doc.files.find((file) => file.path === mathJaxPath);
+            const resource = findMathJaxResourceBySource(doc.manifest, mathJaxPath);
+            const svgFile = resource
+              ? doc.files.find((file) => file.path === resource.rendered)
+              : undefined;
+            return sourceFile?.content !== null && sourceFile?.content !== undefined ? (
+              <MathJaxEditor
+                key={mathJaxPath}
+                source={sourceFile.content}
+                initialSvg={svgFile?.content ?? ""}
+                onSourceChange={handleMathJaxSourceChange}
+                onRendered={handleMathJaxRendered}
+                vimMode={vimMode}
+                onSave={handleSave}
+              />
+            ) : null;
+          })()}
           {doc && mode === "table" && tableEdit && (() => {
             const file = doc.files.find((candidate) => candidate.path === tableEdit.path);
             const source = file?.content?.slice(tableEdit.start, tableEdit.end);
@@ -787,7 +870,7 @@ export default function App() {
               />
             ) : null;
           })()}
-          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "table" && displayFile && displayFile.is_text && (
+          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "mathjax" && mode !== "table" && displayFile && displayFile.is_text && (
             <>
               {mode === "preview" && (
                 <div className="preview-only">
@@ -801,6 +884,7 @@ export default function App() {
                     onEditDrawing={handleEditDrawingFromPreview}
                     onEditPlantUml={handleEditPlantUmlFromPreview}
                     onEditMermaid={handleEditMermaidFromPreview}
+                    onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
@@ -827,13 +911,14 @@ export default function App() {
                     onEditDrawing={handleEditDrawingFromPreview}
                     onEditPlantUml={handleEditPlantUmlFromPreview}
                     onEditMermaid={handleEditMermaidFromPreview}
+                    onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                   />
                 </div>
               )}
             </>
           )}
-          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "table" && displayFile && !displayFile.is_text && (
+          {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "mathjax" && mode !== "table" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
               {displayFile.base64 && (
                 <img src={`data:${imageMediaType(displayFile.path)};base64,${displayFile.base64}`} alt="" />

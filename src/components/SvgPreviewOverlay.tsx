@@ -6,6 +6,7 @@ interface Props {
   svg: string;
   label: string;
   onClose: () => void;
+  whiteBackground?: boolean;
 }
 
 interface Transform {
@@ -14,7 +15,7 @@ interface Transform {
   y: number;
 }
 
-export function SvgPreviewOverlay({ svg, label, onClose }: Props) {
+export function SvgPreviewOverlay({ svg, label, onClose, whiteBackground = false }: Props) {
   const [transform, setTransform] = useState<Transform>({ scale: 1, x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{
@@ -98,7 +99,7 @@ export function SvgPreviewOverlay({ svg, label, onClose }: Props) {
           style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` }}
         >
           <span
-            className="drawing-image"
+            className={`drawing-image${whiteBackground ? " preview-media-white-background" : ""}`}
             role="img"
             aria-label={label}
             dangerouslySetInnerHTML={{ __html: svg }}

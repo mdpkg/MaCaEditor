@@ -15,6 +15,7 @@ interface Props {
   onInsertDrawing: () => void;
   onInsertPlantUml: () => void;
   onInsertMermaid: () => void;
+  onInsertMathJax: () => void;
   onInsertTable: () => void;
   onAddImage: () => void;
   showToc: boolean;
@@ -43,6 +44,7 @@ export function Toolbar({
   onInsertDrawing,
   onInsertPlantUml,
   onInsertMermaid,
+  onInsertMathJax,
   onInsertTable,
   onAddImage,
   showToc,
@@ -116,6 +118,7 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(onInsertDrawing)}>SVG</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertPlantUml)}>PlantUML</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertMermaid)}>Mermaid</button>
+            <button type="button" role="menuitem" onClick={() => run(onInsertMathJax)}>MathJax</button>
           </div>
         )}
       </div>

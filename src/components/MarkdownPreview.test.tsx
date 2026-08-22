@@ -617,4 +617,29 @@ describe("MarkdownPreview", () => {
     expect(onEditMermaid).toHaveBeenCalledWith("diagrams/flow.mmd");
     act(() => root.unmount());
   });
+
+  test("opens the MathJax editor when its rendered SVG is double-clicked", () => {
+    const onEditMathJax = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![formula](diagrams/math-1.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/math-1.svg", is_text: true,
+          content: '<svg><text>x²</text></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{
+          type: "mathjax", source: "diagrams/math-1.tex", rendered: "diagrams/math-1.svg",
+        }] }}
+        onEditMathJax={onEditMathJax}
+      />,
+    ));
+    const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
+    act(() => diagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(onEditMathJax).toHaveBeenCalledWith("diagrams/math-1.tex");
+    act(() => root.unmount());
+  });
 });

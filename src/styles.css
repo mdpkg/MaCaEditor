@@ -267,7 +267,8 @@ body {
 }
 
 .plantuml-editor,
-.mermaid-editor {
+.mermaid-editor,
+.mathjax-editor {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
   gap: 16px;
@@ -278,7 +279,9 @@ body {
 .plantuml-source-pane,
 .plantuml-preview-pane,
 .mermaid-source-pane,
-.mermaid-preview-pane {
+.mermaid-preview-pane,
+.mathjax-source-pane,
+.mathjax-preview-pane {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -297,19 +300,22 @@ body {
 }
 
 .plantuml-source,
-.mermaid-source {
+.mermaid-source,
+.mathjax-source {
   flex: 1;
   min-height: 0;
   border: 0;
 }
 
 .plantuml-preview-pane,
-.mermaid-preview-pane {
+.mermaid-preview-pane,
+.mathjax-preview-pane {
   overflow: auto;
 }
 
 .plantuml-preview,
-.mermaid-preview {
+.mermaid-preview,
+.mathjax-preview {
   display: grid;
   flex: 1;
   place-items: center;
@@ -317,7 +323,8 @@ body {
 }
 
 .plantuml-preview svg,
-.mermaid-preview svg {
+.mermaid-preview svg,
+.mathjax-preview svg {
   display: block;
   max-width: 100%;
   width: auto;
@@ -515,6 +522,10 @@ body {
 
 .preview-media-transform > .drawing-image {
   cursor: default;
+}
+
+.preview-media-transform > .preview-media-white-background {
+  background: #fff;
 }
 
 /*

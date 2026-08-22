@@ -38,6 +38,7 @@ describe("Toolbar menus", () => {
         onInsertDrawing={onInsertDrawing}
         onInsertPlantUml={noop}
         onInsertMermaid={noop}
+        onInsertMathJax={noop}
         onInsertTable={noop}
         onAddImage={noop}
         showToc={false}
@@ -90,7 +91,7 @@ describe("Toolbar menus", () => {
       .find((button) => button.textContent === "Insert Diagram") as HTMLButtonElement;
     act(() => diagramButton.click());
     const diagramItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
-    expect(diagramItems.map((button) => button.textContent)).toEqual(["SVG", "PlantUML", "Mermaid"]);
+    expect(diagramItems.map((button) => button.textContent)).toEqual(["SVG", "PlantUML", "Mermaid", "MathJax"]);
     act(() => (diagramItems[0] as HTMLButtonElement).click());
     expect(onInsertDrawing).toHaveBeenCalledOnce();
 
