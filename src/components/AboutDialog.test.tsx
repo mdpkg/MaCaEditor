@@ -25,6 +25,8 @@ describe("AboutDialog", () => {
     expect(details[0].querySelector("dt")?.textContent).toBe("Version");
     expect(details[0].querySelector("dd")?.textContent).toBe("0.0.1");
     expect(dialog?.textContent).toContain("mikoto2000 <mikoto2000@gmail.com>");
+    expect(details[2].querySelector("dt")?.textContent).toBe("License");
+    expect(details[2].querySelector("dd")?.textContent).toBe("MIT License");
 
     act(() => (container.querySelector("button") as HTMLButtonElement).click());
     expect(onClose).toHaveBeenCalledOnce();

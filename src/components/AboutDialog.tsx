@@ -36,6 +36,10 @@ export function AboutDialog({ version, onClose }: Props) {
             <dt>Author</dt>
             <dd>mikoto2000 &lt;mikoto2000@gmail.com&gt;</dd>
           </div>
+          <div>
+            <dt>License</dt>
+            <dd>MIT License</dd>
+          </div>
         </dl>
         <div className="about-dialog-actions">
           <button ref={closeButtonRef} type="button" onClick={onClose}>OK</button>
