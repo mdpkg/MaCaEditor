@@ -543,10 +543,17 @@ describe("MarkdownPreview", () => {
 
     act(() => (container.querySelector(".preview-diagram") as HTMLSpanElement).click());
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
-    const enlargedDiagram = document.body.querySelector(
-      '[role="dialog"] .drawing-image',
-    ) as HTMLSpanElement;
-    act(() => enlargedDiagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    const viewport = document.body.querySelector(".preview-media-content") as HTMLDivElement;
+    const pointerDown = new MouseEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      detail: 1,
+    });
+    act(() => viewport.dispatchEvent(pointerDown));
+    act(() => viewport.dispatchEvent(new MouseEvent("pointerup", { bubbles: true })));
+    expect(pointerDown.defaultPrevented).toBe(false);
+    act(() => viewport.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
 
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();

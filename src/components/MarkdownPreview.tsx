@@ -148,7 +148,6 @@ export function MarkdownPreview({
 
   const startMediaDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    event.preventDefault();
     mediaDrag.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -172,6 +171,12 @@ export function MarkdownPreview({
   const stopMediaDrag = () => {
     mediaDrag.current = null;
     setDraggingMedia(false);
+  };
+
+  const editEnlargedDiagram = () => {
+    if (previewMedia?.kind !== "diagram" || !previewMedia.onEdit) return;
+    setPreviewMedia(null);
+    previewMedia.onEdit();
   };
 
   const components: Components = {
@@ -322,6 +327,7 @@ export function MarkdownPreview({
           onPointerMove={moveMediaDrag}
           onPointerUp={stopMediaDrag}
           onPointerCancel={stopMediaDrag}
+          onDoubleClick={editEnlargedDiagram}
         >
           <div
             className="preview-media-transform"
@@ -337,11 +343,6 @@ export function MarkdownPreview({
                 role="img"
                 aria-label={previewMedia.alt || "ダイアグラム"}
                 title={previewMedia.onEdit ? "ダブルクリックでダイアグラムを編集" : undefined}
-                onDoubleClick={() => {
-                  if (!previewMedia.onEdit) return;
-                  setPreviewMedia(null);
-                  previewMedia.onEdit();
-                }}
                 dangerouslySetInnerHTML={{ __html: previewMedia.html }}
               />
             )}
