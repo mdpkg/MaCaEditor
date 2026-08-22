@@ -3,6 +3,8 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { FileTree } from "./components/FileTree";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import { AboutDialog } from "./components/AboutDialog";
+import packageInfo from "../package.json";
 import {
   NotificationBanners,
   type BannerNotice,
@@ -132,6 +134,7 @@ export default function App() {
   const [fileListOpen, setFileListOpen] = useState(true);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [notifications, setNotifications] = useState<BannerNotice[]>([]);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
   const notificationSequenceRef = useRef(0);
@@ -870,6 +873,7 @@ export default function App() {
         onInsertTable={handleInsertTable}
         onAddImage={handleAddImage}
         onAddAttachment={handleAddAttachment}
+        onAbout={() => setAboutOpen(true)}
         showToc={showToc}
         onShowTocChange={setShowToc}
         rspressMode={rspressMode}
@@ -1061,6 +1065,9 @@ export default function App() {
             <button onClick={() => setError(null)}>OK</button>
           )}
         </div>
+      )}
+      {aboutOpen && (
+        <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
       )}
       <StatusBar message={status} />
       <NotificationBanners notices={notifications} />

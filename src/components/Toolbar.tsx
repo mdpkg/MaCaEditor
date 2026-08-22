@@ -19,6 +19,7 @@ interface Props {
   onInsertTable: () => void;
   onAddImage: () => void;
   onAddAttachment: () => void;
+  onAbout: () => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
   rspressMode: boolean;
@@ -28,7 +29,7 @@ interface Props {
   canPrint: boolean;
 }
 
-type Menu = "file" | "diagram" | null;
+type Menu = "file" | "diagram" | "help" | null;
 
 export function Toolbar({
   dirty,
@@ -49,6 +50,7 @@ export function Toolbar({
   onInsertTable,
   onAddImage,
   onAddAttachment,
+  onAbout,
   showToc,
   onShowTocChange,
   rspressMode,
@@ -128,6 +130,20 @@ export function Toolbar({
       <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
       <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
       <button type="button" onClick={onAddAttachment} disabled={!hasDocument}>Add Attachment</button>
+      <div className="toolbar-menu">
+        <button
+          type="button"
+          className="toolbar-menu-trigger"
+          aria-haspopup="menu"
+          aria-expanded={openMenu === "help"}
+          onClick={() => setOpenMenu((current) => current === "help" ? null : "help")}
+        >Help</button>
+        {openMenu === "help" && (
+          <div className="toolbar-menu-items" role="menu">
+            <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
+          </div>
+        )}
+      </div>
       <label className="toolbar-vim-mode toolbar-toc">
         <input
           type="checkbox"

@@ -18,6 +18,7 @@ describe("Toolbar menus", () => {
     const onPrint = vi.fn();
     const onToggleFileList = vi.fn();
     const onAddAttachment = vi.fn();
+    const onAbout = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -43,6 +44,7 @@ describe("Toolbar menus", () => {
         onInsertTable={noop}
         onAddImage={noop}
         onAddAttachment={onAddAttachment}
+        onAbout={onAbout}
         showToc={false}
         onShowTocChange={onShowTocChange}
         rspressMode={false}
@@ -56,7 +58,7 @@ describe("Toolbar menus", () => {
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
     expect(topLevel).toEqual([
-      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment",
+      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "Help",
     ]);
     const addAttachmentButton = [...container.querySelectorAll(".toolbar > button")]
       .find((button) => button.textContent === "Add Attachment") as HTMLButtonElement;
@@ -102,6 +104,14 @@ describe("Toolbar menus", () => {
     expect(diagramItems.map((button) => button.textContent)).toEqual(["SVG", "PlantUML", "Mermaid", "MathJax"]);
     act(() => (diagramItems[0] as HTMLButtonElement).click());
     expect(onInsertDrawing).toHaveBeenCalledOnce();
+
+    const helpButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Help") as HTMLButtonElement;
+    act(() => helpButton.click());
+    const aboutButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
+      .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
+    act(() => aboutButton.click());
+    expect(onAbout).toHaveBeenCalledOnce();
 
     expect(container.textContent).not.toContain("Rename");
     expect(container.textContent).not.toContain("Delete");

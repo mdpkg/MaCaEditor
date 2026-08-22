@@ -1117,6 +1117,65 @@ body {
   z-index: 100;
 }
 
+.about-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.about-dialog {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.about-dialog h2 {
+  margin: 0 0 20px;
+}
+
+.about-dialog dl {
+  margin: 0;
+}
+
+.about-dialog dl > div {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.about-dialog dt {
+  font-weight: 600;
+}
+
+.about-dialog dd {
+  margin: 0;
+}
+
+.about-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.about-dialog button {
+  min-width: 72px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
 .error-actions {
   display: flex;
   gap: 8px;
@@ -1171,6 +1230,7 @@ body {
   .edit-btn,
   .markdown-editor,
   .error-dialog,
+  .about-dialog-backdrop,
   .preview-media-overlay {
     display: none !important;
   }
