@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import type { Components, UrlTransform } from "react-markdown";
+import type { ComponentProps } from "react";
 import remarkGfm from "remark-gfm";
 import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
@@ -10,6 +11,7 @@ import { imageMediaType } from "../lib/document";
 import { findPlantUmlResourceByRendered } from "../lib/plantuml/docIntegration";
 import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
 import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
+import { remarkRspressContainers } from "../lib/remarkRspressContainers";
 
 interface Props {
   markdown: string;
@@ -21,6 +23,7 @@ interface Props {
   onEditMermaid?: (sourcePath: string) => void;
   onEditTable?: (start: number, end: number) => void;
   showToc?: boolean;
+  rspressMode?: boolean;
 }
 
 function packageUrl(baseDir: string, url: string): string {
@@ -62,6 +65,7 @@ export function MarkdownPreview({
   onEditMermaid,
   onEditTable,
   showToc = false,
+  rspressMode = false,
 }: Props) {
   const components: Components = {
     table({ node, ...props }) {
@@ -134,11 +138,17 @@ export function MarkdownPreview({
   const previewMarkdown = showToc
     ? `## 目次\n\n${compatibleMarkdown}`
     : compatibleMarkdown;
+  const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
+    remarkGfm,
+    ...(rspressMode ? [remarkRspressContainers] : []),
+    remarkGitHubAlerts,
+    [remarkToc, { heading: "目次" }],
+  ];
 
   return <div className="markdown-preview">
     <ReactMarkdown
       components={components}
-      remarkPlugins={[remarkGfm, remarkGitHubAlerts, [remarkToc, { heading: "目次" }]]}
+      remarkPlugins={remarkPlugins}
       urlTransform={urlTransform}
     >
       {previewMarkdown}

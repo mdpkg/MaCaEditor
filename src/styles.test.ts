@@ -47,7 +47,7 @@ describe("drawing sidebar layout", () => {
   });
 });
 
-describe("Markdown editor layout", () => {
+  describe("Markdown editor layout", () => {
   it("keeps the editor within the window and scrolls inside CodeMirror", () => {
     const documentStart = styles.indexOf(".document-area-editor {");
     const documentBlock = documentStart >= 0
@@ -64,6 +64,12 @@ describe("Markdown editor layout", () => {
     expect(splitBlock).toContain("grid-template-rows: minmax(0, 1fr)");
     expect(splitBlock).toContain("min-height: 0");
     expect(scrollerBlock).toContain("overflow: auto");
+  });
+
+  it("styles Rspress containers and expandable details", () => {
+    expect(styles).toContain(".markdown-preview .rspress-container {");
+    expect(styles).toContain(".markdown-preview .rspress-container-tip {");
+    expect(styles).toContain(".markdown-preview .rspress-container-details > summary {");
   });
 });
 

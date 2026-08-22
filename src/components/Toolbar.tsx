@@ -17,6 +17,8 @@ interface Props {
   onAddImage: () => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
+  rspressMode: boolean;
+  onRspressModeChange: (enabled: boolean) => void;
   vimMode: boolean;
   onVimModeChange: (enabled: boolean) => void;
   canPrint: boolean;
@@ -41,6 +43,8 @@ export function Toolbar({
   onAddImage,
   showToc,
   onShowTocChange,
+  rspressMode,
+  onRspressModeChange,
   vimMode,
   onVimModeChange,
   canPrint,
@@ -113,6 +117,14 @@ export function Toolbar({
           onChange={(event) => onShowTocChange(event.target.checked)}
         />
         TOC
+      </label>
+      <label className="toolbar-vim-mode">
+        <input
+          type="checkbox"
+          checked={rspressMode}
+          onChange={(event) => onRspressModeChange(event.target.checked)}
+        />
+        Rspress
       </label>
       <label className="toolbar-vim-mode">
         <input

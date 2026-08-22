@@ -14,6 +14,7 @@ describe("Toolbar menus", () => {
     const onInsertDrawing = vi.fn();
     const onVimModeChange = vi.fn();
     const onShowTocChange = vi.fn();
+    const onRspressModeChange = vi.fn();
     const onPrint = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -38,6 +39,8 @@ describe("Toolbar menus", () => {
         onAddImage={noop}
         showToc={false}
         onShowTocChange={onShowTocChange}
+        rspressMode={false}
+        onRspressModeChange={onRspressModeChange}
         vimMode={false}
         onVimModeChange={onVimModeChange}
         canPrint={true}
@@ -62,12 +65,16 @@ describe("Toolbar menus", () => {
     expect(container.querySelector('.toolbar-menu-items input[type="checkbox"]')).toBeNull();
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
     const tocCheckbox = checkboxes[0] as HTMLInputElement;
-    const vimCheckbox = checkboxes[1] as HTMLInputElement;
+    const rspressCheckbox = checkboxes[1] as HTMLInputElement;
+    const vimCheckbox = checkboxes[2] as HTMLInputElement;
     expect(tocCheckbox.closest("label")?.textContent).toContain("TOC");
-    expect(tocCheckbox.closest("label")?.nextElementSibling?.textContent).toContain("Vim mode");
+    expect(tocCheckbox.closest("label")?.nextElementSibling?.textContent).toContain("Rspress");
+    expect(rspressCheckbox.closest("label")?.nextElementSibling?.textContent).toContain("Vim mode");
     act(() => tocCheckbox.click());
     expect(onShowTocChange).toHaveBeenCalledWith(true);
     expect(vimCheckbox.checked).toBe(false);
+    act(() => rspressCheckbox.click());
+    expect(onRspressModeChange).toHaveBeenCalledWith(true);
     act(() => vimCheckbox.click());
     expect(onVimModeChange).toHaveBeenCalledWith(true);
 

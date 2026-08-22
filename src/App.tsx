@@ -82,6 +82,7 @@ export default function App() {
   const [tableEdit, setTableEdit] = useState<TableEditContext | null>(null);
   const [vimMode, setVimMode] = useState(false);
   const [showToc, setShowToc] = useState(false);
+  const [rspressMode, setRspressMode] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
@@ -666,6 +667,8 @@ export default function App() {
         onAddImage={handleAddImage}
         showToc={showToc}
         onShowTocChange={setShowToc}
+        rspressMode={rspressMode}
+        onRspressModeChange={setRspressMode}
         vimMode={vimMode}
         onVimModeChange={setVimMode}
         canPrint={displayFile?.is_text === true && (mode === "preview" || mode === "split")}
@@ -763,6 +766,7 @@ export default function App() {
                   <MarkdownPreview
                     markdown={displayContent}
                     showToc={showToc}
+                    rspressMode={rspressMode}
                     baseDir={displayBaseDir}
                     files={doc.files}
                     manifest={doc.manifest}
@@ -788,6 +792,7 @@ export default function App() {
                   <MarkdownPreview
                     markdown={displayContent}
                     showToc={showToc}
+                    rspressMode={rspressMode}
                     baseDir={displayBaseDir}
                     files={doc.files}
                     manifest={doc.manifest}

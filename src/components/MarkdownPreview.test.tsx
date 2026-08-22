@@ -119,6 +119,108 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test.each([
+    ["note", "Note"],
+    ["tip", "Tip"],
+    ["important", "Important"],
+    ["info", "Info"],
+    ["warning", "Warning"],
+    ["danger", "Danger"],
+    ["caution", "Caution"],
+  ])("renders an Rspress %s container when Rspress mode is enabled", (kind, title) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={`:::${kind}\nContainer **body**\n:::`}
+        baseDir=""
+        files={[]}
+        rspressMode
+      />,
+    ));
+
+    const callout = container.querySelector(`.rspress-container-${kind}`);
+    expect(callout?.querySelector(".rspress-container-title")?.textContent).toBe(title);
+    expect(callout?.querySelector("strong")?.textContent).toBe("body");
+    expect(callout?.textContent).not.toContain(":::");
+    act(() => root.unmount());
+  });
+
+  test.each([
+    [":::tip Custom title", "Custom title"],
+    [':::tip{title="Attribute title"}', "Attribute title"],
+  ])("renders an Rspress custom container title from %s", (opening, title) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={`${opening}\nBody\n:::`}
+        baseDir=""
+        files={[]}
+        rspressMode
+      />,
+    ));
+
+    expect(container.querySelector(".rspress-container-title")?.textContent).toBe(title);
+    act(() => root.unmount());
+  });
+
+  test("renders an Rspress details container as expandable details", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={":::details More information\nHidden body\n:::"}
+        baseDir=""
+        files={[]}
+        rspressMode
+      />,
+    ));
+
+    expect(container.querySelector("details.rspress-container-details > summary")?.textContent)
+      .toBe("More information");
+    expect(container.querySelector("details")?.textContent).toContain("Hidden body");
+    act(() => root.unmount());
+  });
+
+  test("leaves Rspress container syntax as text when Rspress mode is disabled", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={":::tip\nBody\n:::"}
+        baseDir=""
+        files={[]}
+      />,
+    ));
+
+    expect(container.querySelector(".rspress-container")).toBeNull();
+    expect(container.textContent).toContain(":::tip");
+    act(() => root.unmount());
+  });
+
+  test("leaves an unclosed Rspress container unchanged", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={":::tip\nBody without a closing marker"}
+        baseDir=""
+        files={[]}
+        rspressMode
+      />,
+    ));
+
+    expect(container.querySelector(".rspress-container")).toBeNull();
+    expect(container.textContent).toContain(":::tip");
+    act(() => root.unmount());
+  });
+
   test("reports the Markdown source range when a table is clicked", () => {
     const onEditTable = vi.fn();
     const markdown = "Before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter";
