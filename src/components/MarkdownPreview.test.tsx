@@ -520,6 +520,40 @@ describe("MarkdownPreview", () => {
     vi.useRealTimers();
   });
 
+  test("opens the diagram editor by double-clicking the full-screen diagram", async () => {
+    vi.useFakeTimers();
+    const onEditDrawing = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![drawing](diagrams/example.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/example.svg", is_text: true,
+          content: '<svg><rect width="10" height="10"/></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{
+          type: "drawing", source: "diagrams/example.draw.json", rendered: "diagrams/example.svg",
+        }] }}
+        onEditDrawing={onEditDrawing}
+      />,
+    ));
+
+    act(() => (container.querySelector(".preview-diagram") as HTMLSpanElement).click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    const enlargedDiagram = document.body.querySelector(
+      '[role="dialog"] .drawing-image',
+    ) as HTMLSpanElement;
+    act(() => enlargedDiagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+
+    expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    act(() => root.unmount());
+    vi.useRealTimers();
+  });
+
   test("opens the PlantUML editor when its rendered SVG is double-clicked", () => {
     const onEditPlantUml = vi.fn();
     const container = document.createElement("div");

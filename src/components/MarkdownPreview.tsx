@@ -34,7 +34,7 @@ interface Props {
 
 type PreviewMedia =
   | { kind: "image"; src: string; alt: string }
-  | { kind: "diagram"; html: string; alt: string };
+  | { kind: "diagram"; html: string; alt: string; onEdit?: () => void };
 
 interface MediaTransform {
   scale: number;
@@ -237,7 +237,12 @@ export function MarkdownPreview({
             ? "クリックで拡大、ダブルクリックでダイアグラムを編集"
             : "クリックで拡大表示"}
           onClick={() => showDiagramAfterDoubleClickDelay({
-            kind: "diagram", html: sanitizedSvg, alt,
+            kind: "diagram",
+            html: sanitizedSvg,
+            alt,
+            onEdit: sourcePath && editDiagram
+              ? () => editDiagram(sourcePath)
+              : undefined,
           })}
           onDoubleClick={() => {
             cancelDiagramClick();
@@ -331,6 +336,12 @@ export function MarkdownPreview({
                 className="drawing-image"
                 role="img"
                 aria-label={previewMedia.alt || "ダイアグラム"}
+                title={previewMedia.onEdit ? "ダブルクリックでダイアグラムを編集" : undefined}
+                onDoubleClick={() => {
+                  if (!previewMedia.onEdit) return;
+                  setPreviewMedia(null);
+                  previewMedia.onEdit();
+                }}
                 dangerouslySetInnerHTML={{ __html: previewMedia.html }}
               />
             )}
