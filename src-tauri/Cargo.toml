@@ -1,6 +1,6 @@
 [package]
 name = "maca-editor"
-version = "0.0.1"
+version = "1.0.0"
 description = "MaCa Editor - Markdown Package editor"
 authors = ["MaCa Editor"]
 edition = "2021"
