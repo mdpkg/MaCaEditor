@@ -1,3 +1,7 @@
+export function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown)$/i.test(path);
+}
+
 /**
  * Markdown の相対パスをパッケージ内パスとして解決する。
  * パッケージ外へ出る参照は拒否する。

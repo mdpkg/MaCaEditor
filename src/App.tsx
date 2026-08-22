@@ -37,7 +37,7 @@ import {
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
 import type { FileInfo } from "./types";
-import { insertMarkdownBlock, insertMarkdownImages } from "./lib/markdown";
+import { insertMarkdownBlock, insertMarkdownImages, isMarkdownPath } from "./lib/markdown";
 import { isSaveShortcut } from "./lib/shortcuts";
 import {
   droppedFileToImage,
@@ -728,6 +728,7 @@ export default function App() {
 
   const displayFile = selectedFile ?? entrypointFile;
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
+  const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
   const displayBaseDir = selectedFile
     ? selectedFile.path.includes("/")
       ? selectedFile.path.slice(0, selectedFile.path.lastIndexOf("/"))
@@ -876,7 +877,7 @@ export default function App() {
                 <div className="preview-only">
                   <MarkdownPreview
                     markdown={displayContent}
-                    showToc={showToc}
+                    showToc={showToc && displayIsMarkdown}
                     rspressMode={rspressMode}
                     baseDir={displayBaseDir}
                     files={doc.files}
@@ -903,7 +904,7 @@ export default function App() {
                   />
                   <MarkdownPreview
                     markdown={displayContent}
-                    showToc={showToc}
+                    showToc={showToc && displayIsMarkdown}
                     rspressMode={rspressMode}
                     baseDir={displayBaseDir}
                     files={doc.files}

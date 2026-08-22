@@ -1,5 +1,23 @@
 import { describe, expect, test } from "vitest";
-import { insertMarkdownBlock, insertMarkdownImages, relativePackagePath, resolvePackagePath } from "./markdown";
+import {
+  insertMarkdownBlock,
+  insertMarkdownImages,
+  isMarkdownPath,
+  relativePackagePath,
+  resolvePackagePath,
+} from "./markdown";
+
+describe("isMarkdownPath", () => {
+  test.each(["README.md", "docs/guide.markdown", "NOTES.MD"])(
+    "accepts Markdown file %s",
+    (path) => expect(isMarkdownPath(path)).toBe(true),
+  );
+
+  test.each(["diagrams/math.tex", "diagrams/figure.svg", "notes.txt"])(
+    "rejects non-Markdown file %s",
+    (path) => expect(isMarkdownPath(path)).toBe(false),
+  );
+});
 
 describe("resolvePackagePath", () => {
   test("resolves relative image path", () => {
