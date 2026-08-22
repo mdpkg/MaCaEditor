@@ -10,7 +10,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 // Keep the native window hidden until React has committed and the browser has
 // had an opportunity to paint the initial shell.
 requestAnimationFrame(() => requestAnimationFrame(() => {
-  void getCurrentWindow().show().catch(() => {
-    // The browser-only development server has no Tauri window to show.
+  void getCurrentWindow().show().catch((error) => {
+    // The browser-only development server has no Tauri window to show. In a
+    // packaged app, keep failures visible for startup diagnostics.
+    if ("__TAURI_INTERNALS__" in window) console.error("Unable to show main window", error);
   });
 }));

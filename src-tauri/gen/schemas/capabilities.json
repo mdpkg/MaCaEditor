@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"default capability for main window","local":true,"windows":["main"],"permissions":["core:default","dialog:default","fs:default","store:default"]}}
+{"default":{"identifier":"default","description":"default capability for main window","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-show","dialog:default","fs:default","store:default"]}}
