@@ -16,6 +16,7 @@ describe("Toolbar menus", () => {
     const onShowTocChange = vi.fn();
     const onRspressModeChange = vi.fn();
     const onPrint = vi.fn();
+    const onToggleFileList = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -24,6 +25,8 @@ describe("Toolbar menus", () => {
     act(() => root.render(
       <Toolbar
         dirty={false}
+        fileListOpen={true}
+        onToggleFileList={onToggleFileList}
         hasDocument={true}
         onOpen={noop}
         onSave={noop}
@@ -49,7 +52,12 @@ describe("Toolbar menus", () => {
 
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
-    expect(topLevel).toEqual(["File", "Insert Diagram", "Insert Table", "Add Image"]);
+    expect(topLevel).toEqual(["☰", "File", "Insert Diagram", "Insert Table", "Add Image"]);
+
+    const fileListButton = container.querySelector(".toolbar-file-list-toggle") as HTMLButtonElement;
+    expect(fileListButton.getAttribute("aria-pressed")).toBe("true");
+    act(() => fileListButton.click());
+    expect(onToggleFileList).toHaveBeenCalledOnce();
 
     const fileButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "File") as HTMLButtonElement;

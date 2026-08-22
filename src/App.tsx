@@ -90,6 +90,7 @@ export default function App() {
   const [vimMode, setVimMode] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [rspressMode, setRspressMode] = useState(false);
+  const [fileListOpen, setFileListOpen] = useState(true);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
@@ -673,6 +674,8 @@ export default function App() {
     <div className="app-shell">
       <Toolbar
         dirty={doc?.dirty ?? false}
+        fileListOpen={fileListOpen}
+        onToggleFileList={() => setFileListOpen((open) => !open)}
         hasDocument={doc !== null}
         onOpen={handleOpen}
         onSave={handleSave}
@@ -695,24 +698,28 @@ export default function App() {
         canPrint={displayFile?.is_text === true && (mode === "preview" || mode === "split")}
       />
       <div className="main-layout">
-        <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
-          <div className="sidebar-tree">
-            <FileTree
-              files={doc?.files ?? []}
-              selectedPath={selectedPath}
-              onSelect={handleSelect}
-              onEditMarkdown={handleEditMarkdown}
-              onDropImages={handleDropImages}
-              canRename={isRenameablePath}
-              onRename={handleRename}
-              canDelete={(path) => doc !== null && isDeletableAsset(doc, path)}
-              onDelete={handleDelete}
-            />
-          </div>
-          {mode === "drawing" && (
-            <div id="drawing-properties-panel" className="sidebar-properties" />
-          )}
-        </aside>
+        {(fileListOpen || mode === "drawing") && (
+          <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
+            {fileListOpen && (
+              <div className="sidebar-tree">
+                <FileTree
+                  files={doc?.files ?? []}
+                  selectedPath={selectedPath}
+                  onSelect={handleSelect}
+                  onEditMarkdown={handleEditMarkdown}
+                  onDropImages={handleDropImages}
+                  canRename={isRenameablePath}
+                  onRename={handleRename}
+                  canDelete={(path) => doc !== null && isDeletableAsset(doc, path)}
+                  onDelete={handleDelete}
+                />
+              </div>
+            )}
+            {mode === "drawing" && (
+              <div id="drawing-properties-panel" className="sidebar-properties" />
+            )}
+          </aside>
+        )}
         <main className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}>
           {!doc && (
             <div className="empty-state">

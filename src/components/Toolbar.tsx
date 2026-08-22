@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 interface Props {
   dirty: boolean;
+  fileListOpen: boolean;
+  onToggleFileList: () => void;
   hasDocument: boolean;
   onOpen: () => void;
   onSave: () => void;
@@ -28,6 +30,8 @@ type Menu = "file" | "diagram" | null;
 
 export function Toolbar({
   dirty,
+  fileListOpen,
+  onToggleFileList,
   hasDocument,
   onOpen,
   onSave,
@@ -68,6 +72,14 @@ export function Toolbar({
 
   return (
     <div className="toolbar" ref={toolbarRef}>
+      <button
+        type="button"
+        className="toolbar-file-list-toggle"
+        aria-label="ファイルリストを開閉"
+        aria-pressed={fileListOpen}
+        title={fileListOpen ? "ファイルリストを閉じる" : "ファイルリストを開く"}
+        onClick={onToggleFileList}
+      >☰</button>
       <div className="toolbar-menu">
         <button
           type="button"
