@@ -26,6 +26,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - 画像とダイアグラムの全画面拡大、ズーム、パン
 - プレビューの印刷と、OSの印刷機能を利用したPDF保存
 - TOC、Rspress、Vim modeの設定を次回起動時に復元
+- 前回終了時のウィンドウ位置・サイズを次回起動時に復元
 
 ### ファイルと画像の管理
 
@@ -78,6 +79,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 5. **File** メニューの **Save** または `Ctrl+S` で保存します。
 
 ツールバー右側では、目次を表示する **TOC**、Rspressの`:::`構文を有効にする **Rspress**、Vimキーバインドを有効にする **Vim mode** を切り替えられます。これらの設定は次回起動時にも引き継がれます。
+
+アプリ終了時のウィンドウ位置とサイズも保存され、次回起動時に復元されます。
 
 ツールバー左端の **☰** を押すと、左側のファイルリストを閉じて編集領域を広げられます。もう一度押すとファイルリストを再表示します。
 
