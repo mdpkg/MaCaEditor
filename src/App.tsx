@@ -4,7 +4,9 @@ import { FileTree } from "./components/FileTree";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { AboutDialog } from "./components/AboutDialog";
+import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import packageInfo from "../package.json";
+import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
 import {
   NotificationBanners,
   type BannerNotice,
@@ -135,6 +137,7 @@ export default function App() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [notifications, setNotifications] = useState<BannerNotice[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
   const notificationSequenceRef = useRef(0);
@@ -874,6 +877,7 @@ export default function App() {
         onAddImage={handleAddImage}
         onAddAttachment={handleAddAttachment}
         onAbout={() => setAboutOpen(true)}
+        onThirdPartyLicenses={() => setThirdPartyLicensesOpen(true)}
         showToc={showToc}
         onShowTocChange={setShowToc}
         rspressMode={rspressMode}
@@ -1068,6 +1072,12 @@ export default function App() {
       )}
       {aboutOpen && (
         <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
+      )}
+      {thirdPartyLicensesOpen && (
+        <ThirdPartyLicensesDialog
+          text={thirdPartyLicenses}
+          onClose={() => setThirdPartyLicensesOpen(false)}
+        />
       )}
       <StatusBar message={status} />
       <NotificationBanners notices={notifications} />

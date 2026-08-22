@@ -19,6 +19,7 @@ describe("Toolbar menus", () => {
     const onToggleFileList = vi.fn();
     const onAddAttachment = vi.fn();
     const onAbout = vi.fn();
+    const onThirdPartyLicenses = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -45,6 +46,7 @@ describe("Toolbar menus", () => {
         onAddImage={noop}
         onAddAttachment={onAddAttachment}
         onAbout={onAbout}
+        onThirdPartyLicenses={onThirdPartyLicenses}
         showToc={false}
         onShowTocChange={onShowTocChange}
         rspressMode={false}
@@ -107,6 +109,12 @@ describe("Toolbar menus", () => {
 
     const helpButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "Help") as HTMLButtonElement;
+    act(() => helpButton.click());
+    const licensesButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
+      .find((button) => button.textContent === "Third party licenses") as HTMLButtonElement;
+    expect(licensesButton).toBeInstanceOf(HTMLButtonElement);
+    act(() => licensesButton.click());
+    expect(onThirdPartyLicenses).toHaveBeenCalledOnce();
     act(() => helpButton.click());
     const aboutButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
       .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
