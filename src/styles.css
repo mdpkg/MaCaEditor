@@ -448,11 +448,29 @@ body {
   height: 100%;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.preview-media-content > img,
-.preview-media-content > .drawing-image,
-.preview-media-content > .drawing-image > svg {
+.preview-media-content.dragging {
+  cursor: grabbing;
+}
+
+.preview-media-transform {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.preview-media-transform > img,
+.preview-media-transform > .drawing-image,
+.preview-media-transform > .drawing-image > svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -461,7 +479,7 @@ body {
   object-fit: contain;
 }
 
-.preview-media-content > .drawing-image {
+.preview-media-transform > .drawing-image {
   cursor: default;
 }
 

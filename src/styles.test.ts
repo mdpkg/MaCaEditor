@@ -38,7 +38,7 @@ describe("Markdown preview media overlay", () => {
     const overlayBlock = overlayStart >= 0
       ? styles.slice(overlayStart, styles.indexOf("}", overlayStart))
       : "";
-    const mediaStart = styles.indexOf(".preview-media-content > img,");
+    const mediaStart = styles.indexOf(".preview-media-transform > img,");
     const mediaBlock = mediaStart >= 0
       ? styles.slice(mediaStart, styles.indexOf("}", mediaStart))
       : "";
@@ -47,6 +47,9 @@ describe("Markdown preview media overlay", () => {
     expect(overlayBlock).toContain("inset: 0");
     expect(mediaBlock).toContain("object-fit: contain");
     expect(styles).toContain(".preview-media-close {");
+    expect(styles).toContain(".preview-media-content.dragging {");
+    expect(styles).toContain("touch-action: none");
+    expect(styles).toContain("will-change: transform");
   });
 });
 

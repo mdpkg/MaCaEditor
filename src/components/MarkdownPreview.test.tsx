@@ -307,6 +307,71 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test("zooms with Ctrl+wheel and pans enlarged media by dragging", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![photo](images/photo.png)"
+        baseDir=""
+        files={[{
+          path: "images/photo.png", is_text: false, content: null, base64: "AAAA",
+        }]}
+      />,
+    ));
+
+    act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
+    const viewport = container.querySelector(".preview-media-content") as HTMLDivElement;
+    const transform = container.querySelector(".preview-media-transform") as HTMLDivElement;
+
+    act(() => viewport.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 400,
+      clientY: 300,
+    })));
+    expect(transform.style.transform).toContain("scale(1.1)");
+    const transformAfterZoom = transform.style.transform;
+
+    act(() => viewport.dispatchEvent(new MouseEvent("pointerdown", {
+      bubbles: true, button: 0, clientX: 100, clientY: 100,
+    })));
+    act(() => viewport.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true, clientX: 130, clientY: 145,
+    })));
+    act(() => viewport.dispatchEvent(new MouseEvent("pointerup", { bubbles: true })));
+    expect(transform.style.transform).not.toBe(transformAfterZoom);
+    expect(transform.style.transform).toContain("scale(1.1)");
+    act(() => root.unmount());
+  });
+
+  test("does not zoom enlarged media when Ctrl is not pressed", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![photo](images/photo.png)"
+        baseDir=""
+        files={[{
+          path: "images/photo.png", is_text: false, content: null, base64: "AAAA",
+        }]}
+      />,
+    ));
+
+    act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
+    const viewport = container.querySelector(".preview-media-content") as HTMLDivElement;
+    act(() => viewport.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true, deltaY: -100,
+    })));
+    expect((container.querySelector(".preview-media-transform") as HTMLDivElement).style.transform)
+      .toContain("scale(1)");
+    act(() => root.unmount());
+  });
+
   test("resolves a URL-encoded Japanese image filename", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
