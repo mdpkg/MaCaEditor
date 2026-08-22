@@ -689,7 +689,7 @@ export default function App() {
             <div id="drawing-properties-panel" className="sidebar-properties" />
           )}
         </aside>
-        <main className="document-area">
+        <main className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}>
           {!doc && (
             <div className="empty-state">
               <h2>MaCa Editor</h2>

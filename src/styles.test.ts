@@ -47,6 +47,26 @@ describe("drawing sidebar layout", () => {
   });
 });
 
+describe("Markdown editor layout", () => {
+  it("keeps the editor within the window and scrolls inside CodeMirror", () => {
+    const documentStart = styles.indexOf(".document-area-editor {");
+    const documentBlock = documentStart >= 0
+      ? styles.slice(documentStart, styles.indexOf("}", documentStart))
+      : "";
+    const splitStart = styles.indexOf(".split-view {");
+    const splitBlock = splitStart >= 0 ? styles.slice(splitStart, styles.indexOf("}", splitStart)) : "";
+    const scrollerStart = styles.indexOf(".code-editor .cm-scroller {");
+    const scrollerBlock = scrollerStart >= 0
+      ? styles.slice(scrollerStart, styles.indexOf("}", scrollerStart))
+      : "";
+
+    expect(documentBlock).toContain("overflow: hidden");
+    expect(splitBlock).toContain("grid-template-rows: minmax(0, 1fr)");
+    expect(splitBlock).toContain("min-height: 0");
+    expect(scrollerBlock).toContain("overflow: auto");
+  });
+});
+
 describe("drawing canvas interaction", () => {
   it("disables native text selection inside the SVG canvas", () => {
     const start = styles.indexOf(".drawing-canvas {");
