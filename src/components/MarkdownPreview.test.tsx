@@ -642,4 +642,31 @@ describe("MarkdownPreview", () => {
     expect(onEditMathJax).toHaveBeenCalledWith("diagrams/math-1.tex");
     act(() => root.unmount());
   });
+
+  test("uses a white image background when a MathJax preview is enlarged", () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="![formula](diagrams/math-1.svg)"
+        baseDir=""
+        files={[{
+          path: "diagrams/math-1.svg", is_text: true,
+          content: '<svg><text>x²</text></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{
+          type: "mathjax", source: "diagrams/math-1.tex", rendered: "diagrams/math-1.svg",
+        }] }}
+      />,
+    ));
+
+    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(document.body.querySelector("[role='dialog'] .preview-media-white-background")).not.toBeNull();
+    act(() => root.unmount());
+    vi.useRealTimers();
+  });
 });

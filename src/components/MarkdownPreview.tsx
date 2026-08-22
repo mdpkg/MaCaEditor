@@ -36,7 +36,13 @@ interface Props {
 
 type PreviewMedia =
   | { kind: "image"; src: string; alt: string }
-  | { kind: "diagram"; html: string; alt: string; onEdit?: () => void };
+  | {
+      kind: "diagram";
+      html: string;
+      alt: string;
+      onEdit?: () => void;
+      whiteBackground?: boolean;
+    };
 
 interface MediaTransform {
   scale: number;
@@ -253,6 +259,7 @@ export function MarkdownPreview({
             onEdit: sourcePath && editDiagram
               ? () => editDiagram(sourcePath)
               : undefined,
+            whiteBackground: mathJaxResource !== undefined,
           })}
           onDoubleClick={() => {
             cancelDiagramClick();
@@ -344,7 +351,9 @@ export function MarkdownPreview({
               <img src={previewMedia.src} alt={previewMedia.alt} draggable={false} />
             ) : (
               <span
-                className="drawing-image"
+                className={`drawing-image${previewMedia.whiteBackground
+                  ? " preview-media-white-background"
+                  : ""}`}
                 role="img"
                 aria-label={previewMedia.alt || "ダイアグラム"}
                 title={previewMedia.onEdit ? "ダブルクリックでダイアグラムを編集" : undefined}
