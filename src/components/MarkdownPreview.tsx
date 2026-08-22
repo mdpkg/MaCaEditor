@@ -9,6 +9,7 @@ import { findResourceByRendered } from "../lib/drawing/docIntegration";
 import { imageMediaType } from "../lib/document";
 import { findPlantUmlResourceByRendered } from "../lib/plantuml/docIntegration";
 import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
+import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
 
 interface Props {
   markdown: string;
@@ -137,7 +138,7 @@ export function MarkdownPreview({
   return <div className="markdown-preview">
     <ReactMarkdown
       components={components}
-      remarkPlugins={[remarkGfm, [remarkToc, { heading: "目次" }]]}
+      remarkPlugins={[remarkGfm, remarkGitHubAlerts, [remarkToc, { heading: "目次" }]]}
       urlTransform={urlTransform}
     >
       {previewMarkdown}

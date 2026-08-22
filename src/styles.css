@@ -527,6 +527,40 @@ body {
   margin-bottom: 0;
 }
 
+.markdown-preview .markdown-alert {
+  --alert-color: #0969da;
+  border-left: 0.25em solid var(--alert-color);
+  color: inherit;
+  margin-bottom: 16px;
+  padding: 8px 16px;
+}
+
+.markdown-preview .markdown-alert-title {
+  color: var(--alert-color);
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+.markdown-preview .markdown-alert-note {
+  --alert-color: #0969da;
+}
+
+.markdown-preview .markdown-alert-tip {
+  --alert-color: #1a7f37;
+}
+
+.markdown-preview .markdown-alert-important {
+  --alert-color: #8250df;
+}
+
+.markdown-preview .markdown-alert-warning {
+  --alert-color: #9a6700;
+}
+
+.markdown-preview .markdown-alert-caution {
+  --alert-color: #cf222e;
+}
+
 .markdown-preview ol,
 .markdown-preview ul {
   padding-left: 2em;

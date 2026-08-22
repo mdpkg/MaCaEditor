@@ -80,6 +80,45 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test.each([
+    ["NOTE", "Note"],
+    ["TIP", "Tip"],
+    ["IMPORTANT", "Important"],
+    ["WARNING", "Warning"],
+    ["CAUTION", "Caution"],
+  ])("renders the GitHub Flavored Markdown %s alert", (kind, title) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={`> [!${kind}]\n> Alert body`}
+        baseDir=""
+        files={[]}
+      />,
+    ));
+
+    const alert = container.querySelector(`.markdown-alert-${kind.toLowerCase()}`);
+    expect(alert).not.toBeNull();
+    expect(alert?.querySelector(".markdown-alert-title")?.textContent).toBe(title);
+    expect(alert?.textContent).toContain("Alert body");
+    expect(alert?.textContent).not.toContain(`[!${kind}]`);
+    act(() => root.unmount());
+  });
+
+  test("keeps an ordinary blockquote unchanged", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview markdown="> Ordinary quote" baseDir="" files={[]} />,
+    ));
+
+    expect(container.querySelector("blockquote")?.textContent).toContain("Ordinary quote");
+    expect(container.querySelector(".markdown-alert")).toBeNull();
+    act(() => root.unmount());
+  });
+
   test("reports the Markdown source range when a table is clicked", () => {
     const onEditTable = vi.fn();
     const markdown = "Before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter";
