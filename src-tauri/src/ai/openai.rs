@@ -404,4 +404,49 @@ mod tests {
         let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
         assert!(matches!(mapped, AiError::AuthenticationFailed(_)));
     }
+
+    #[test]
+    fn maps_429_to_rate_limited() {
+        let api_error = async_openai::error::ApiErrorResponse {
+            status_code: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            api_error: async_openai::error::ApiError {
+                message: "slow down".to_string(),
+                r#type: None,
+                param: None,
+                code: None,
+            },
+        };
+        let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
+        assert!(matches!(mapped, AiError::RateLimited(_)));
+    }
+
+    #[test]
+    fn maps_500_to_server_error() {
+        let api_error = async_openai::error::ApiErrorResponse {
+            status_code: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            api_error: async_openai::error::ApiError {
+                message: "boom".to_string(),
+                r#type: None,
+                param: None,
+                code: None,
+            },
+        };
+        let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
+        assert!(matches!(mapped, AiError::ServerError(_)));
+    }
+
+    #[test]
+    fn maps_404_to_model_not_found() {
+        let api_error = async_openai::error::ApiErrorResponse {
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            api_error: async_openai::error::ApiError {
+                message: "missing".to_string(),
+                r#type: None,
+                param: None,
+                code: None,
+            },
+        };
+        let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
+        assert!(matches!(mapped, AiError::ModelNotFound(_)));
+    }
 }
