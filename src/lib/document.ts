@@ -1,22 +1,36 @@
-import type { FileContent, FileInfo, PackageInfo } from "../types";
+import type { FileContent, FileInfo, FolderSaveRequest, PackageInfo } from "../types";
+
+export type DocumentOrigin =
+  | { kind: "package"; path: string }
+  | { kind: "folder"; path: string }
+  | { kind: "untitled" };
 import { relativePackagePath, resolvePackagePath } from "./markdown";
 
 export interface DocumentState {
   path: string | null;
+  origin: DocumentOrigin;
+  originalPaths: string[];
   entrypoint: string;
   files: FileInfo[];
   manifest: Record<string, unknown>;
   dirty: boolean;
 }
 
-export function createDocumentState(info: PackageInfo, path: string): DocumentState {
+export function createDocumentState(info: PackageInfo, origin: DocumentOrigin | string): DocumentState {
+  const resolvedOrigin = typeof origin === "string" ? { kind: "package" as const, path: origin } : origin;
   return {
-    path,
+    path: resolvedOrigin.kind === "untitled" ? null : resolvedOrigin.path,
+    origin: resolvedOrigin,
+    originalPaths: info.files.map((file) => file.path),
     entrypoint: info.entrypoint,
     files: info.files,
     manifest: info.manifest,
     dirty: false,
   };
+}
+
+export function createFolderDocumentState(info: PackageInfo, path: string): DocumentState {
+  return createDocumentState(info, { kind: "folder", path });
 }
 
 export function updateFileContent(
@@ -292,4 +306,13 @@ export function toSaveRequest(state: DocumentState): {
       base64: f.base64,
     })),
   };
+}
+
+export function toFolderSaveRequest(state: DocumentState): FolderSaveRequest {
+  if (state.origin.kind !== "folder") throw new Error("Document is not in Folder mode");
+  return { ...toSaveRequest(state), path: state.origin.path, original_paths: state.originalPaths };
+}
+
+export function markSaved(state: DocumentState): DocumentState {
+  return { ...state, dirty: false, originalPaths: state.files.map((file) => file.path) };
 }

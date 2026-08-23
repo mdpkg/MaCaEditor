@@ -15,6 +15,7 @@ import {
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
+  createFolderDocumentState,
   addAttachment,
   addImage,
   deleteAsset,
@@ -29,6 +30,7 @@ import {
   exportFolder,
   importFolder,
   openPackage,
+  openFolder,
   savePackage,
   readAttachment,
   readImage,
@@ -87,6 +89,7 @@ import {
   saveShowToc,
   saveVimMode,
 } from "./lib/editorPreferences";
+import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -177,6 +180,19 @@ export default function App() {
     notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!doc?.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [doc?.dirty]);
+
+  const confirmReplaceDirtyDocument = () =>
+    !doc?.dirty || window.confirm("Discard unsaved changes?");
+
   const showNotification = (message: string, tone: NotificationTone) => {
     notificationSequenceRef.current += 1;
     const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone };
@@ -207,6 +223,7 @@ export default function App() {
   }, [doc, selectedPath]);
 
   const handleOpen = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
     const result = await openDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
     });
@@ -229,16 +246,37 @@ export default function App() {
     }
   };
 
+  const handleOpenFolder = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
+    const result = await openDialog({ directory: true });
+    if (typeof result !== "string") return;
+    try {
+      const info = await openFolder(result);
+      setDoc(createFolderDocumentState(info, result));
+      setSelectedPath(info.entrypoint);
+      setMode("preview");
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setPlantUmlPath(null);
+      setMermaidPath(null);
+      setMathJaxPath(null);
+      setError(null);
+      setStatus(`Opened folder ${result}`);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
   const handleSave = async () => {
     if (!doc) return;
-    if (!doc.path) {
+    if (doc.origin.kind === "untitled") {
       await handleSaveAs();
       return;
     }
     try {
-      await savePackage(toSaveRequest(doc));
-      setDoc({ ...doc, dirty: false });
-      setStatus(`Saved ${doc.path}`);
+      setDoc(await saveDocument(doc));
+      setStatus(`Saved ${doc.origin.path}`);
     } catch (e) {
       setError(String(e));
       setStatus("Error");
@@ -254,7 +292,7 @@ export default function App() {
     if (typeof result === "string") {
       try {
         await savePackage({ ...toSaveRequest(doc), path: result });
-        setDoc({ ...doc, path: result, dirty: false });
+        setDoc({ ...doc, path: result, origin: { kind: "package", path: result }, dirty: false, originalPaths: doc.files.map((file) => file.path) });
         setStatus(`Saved ${result}`);
       } catch (e) {
         setError(String(e));
@@ -268,6 +306,7 @@ export default function App() {
   };
 
   const handleNew = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
       defaultPath: "untitled.mdpkg",
@@ -293,6 +332,7 @@ export default function App() {
   };
 
   const handleImport = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
     const folder = await openDialog({ directory: true });
     if (typeof folder === "string") {
       const dest = await saveDialog({
@@ -321,16 +361,34 @@ export default function App() {
   };
 
   const handleExport = async () => {
-    if (!doc?.path) return;
+    if (!doc || doc.origin.kind !== "package") return;
     const folder = await openDialog({ directory: true });
     if (typeof folder === "string") {
       try {
-        await exportFolder(doc.path, folder);
+        await exportFolder(doc.origin.path, folder);
         setStatus(`Exported to ${folder}`);
       } catch (e) {
         setError(String(e));
         setStatus("Error");
       }
+    }
+  };
+
+  const handleExportPackage = async () => {
+    if (!doc || doc.origin.kind !== "folder") return;
+    const result = await saveDialog({
+      filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
+      defaultPath: "document.mdpkg",
+    });
+    if (typeof result !== "string") return;
+    try {
+      const path = result.toLowerCase().endsWith(".mdpkg") ? result : `${result}.mdpkg`;
+      await exportFolderDocumentPackage(doc, path);
+      setStatus(`Exported package ${path}`);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
     }
   };
 
@@ -863,12 +921,15 @@ export default function App() {
         onToggleFileList={() => setFileListOpen((open) => !open)}
         hasDocument={doc !== null}
         onOpen={handleOpen}
+        onOpenFolder={handleOpenFolder}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onPrint={handlePrint}
         onNew={handleNew}
         onImport={handleImport}
         onExport={handleExport}
+        onExportPackage={handleExportPackage}
+        documentKind={doc?.origin.kind ?? null}
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
         onInsertMermaid={handleInsertMermaid}
@@ -1079,7 +1140,11 @@ export default function App() {
           onClose={() => setThirdPartyLicensesOpen(false)}
         />
       )}
-      <StatusBar message={status} />
+      <StatusBar
+        message={status}
+        mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
+        location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
+      />
       <NotificationBanners notices={notifications} />
     </div>
   );

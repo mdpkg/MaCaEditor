@@ -1215,6 +1215,9 @@ body {
 }
 
 .status-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
   flex: 0 0 auto;
   padding: 4px 12px;
   border-top: 1px solid var(--border);
@@ -1222,6 +1225,13 @@ body {
   background: var(--panel);
   color: var(--text);
   opacity: 0.8;
+}
+
+.document-origin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
 }
 
 @media print {

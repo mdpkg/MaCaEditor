@@ -31,8 +31,8 @@ pub struct LoadedPackage {
 
 /// ZIP から Markdown Package を読み込む。
 pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))
-        .map_err(LoadError::NotZip)?;
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(LoadError::NotZip)?;
 
     // まずエントリ名をすべて検証してから読み込む
     let mut names: Vec<String> = Vec::new();
@@ -63,8 +63,11 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
             .map_err(|e| LoadError::ReadFailed("manifest.json".to_string(), e.to_string()))?;
     }
 
-    let manifest_json = String::from_utf8(manifest_bytes)
-        .map_err(|e| LoadError::InvalidManifest(ManifestError::InvalidJson(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))))?;
+    let manifest_json = String::from_utf8(manifest_bytes).map_err(|e| {
+        LoadError::InvalidManifest(ManifestError::InvalidJson(serde_json::Error::io(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        )))
+    })?;
     let manifest = Manifest::parse(&manifest_json)?;
 
     validate_manifest(&manifest)?;
@@ -84,7 +87,7 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
             .read_to_end(&mut content)
             .map_err(|e| LoadError::ReadFailed(name.clone(), e.to_string()))?;
 
-        let file = if is_text(name) {
+        let file = if is_text_path(name) {
             match String::from_utf8(content.clone()) {
                 Ok(text) => PackageFile::new_text(name.clone(), text),
                 Err(_) => PackageFile::new_binary(name.clone(), content),
@@ -103,13 +106,10 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
 }
 
 /// 拡張子からテキストファイルかどうかを判定する。
-fn is_text(name: &str) -> bool {
+pub(crate) fn is_text_path(name: &str) -> bool {
     let lower = name.to_lowercase();
-    matches!(
-        lower.as_str(),
-        "readme.md"
-            | "manifest.json"
-    ) || lower.ends_with(".md")
+    matches!(lower.as_str(), "readme.md" | "manifest.json")
+        || lower.ends_with(".md")
         || lower.ends_with(".markdown")
         || lower.ends_with(".json")
         || lower.ends_with(".yaml")
@@ -143,7 +143,8 @@ mod tests {
 
     #[test]
     fn loads_manifest_from_zip() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
         let readme = b"# Hello";
         let zip = build_zip(&[("manifest.json", manifest), ("README.md", readme)]);
         let loaded = load_package(&zip).unwrap();
@@ -153,15 +154,12 @@ mod tests {
 
     #[test]
     fn loads_entrypoint_content() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
         let readme = b"# Hello";
         let zip = build_zip(&[("manifest.json", manifest), ("README.md", readme)]);
         let loaded = load_package(&zip).unwrap();
-        let readme_file = loaded
-            .files
-            .iter()
-            .find(|f| f.path == "README.md")
-            .unwrap();
+        let readme_file = loaded.files.iter().find(|f| f.path == "README.md").unwrap();
         assert_eq!(readme_file.text_content(), Some("# Hello"));
     }
 
@@ -180,29 +178,31 @@ mod tests {
 
     #[test]
     fn rejects_path_traversal_entry() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
-        let zip = build_zip(&[
-            ("manifest.json", manifest),
-            ("../evil.txt", b"evil"),
-        ]);
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let zip = build_zip(&[("manifest.json", manifest), ("../evil.txt", b"evil")]);
         let result = load_package(&zip);
         assert!(matches!(result, Err(LoadError::UnsafePath(_))));
     }
 
     #[test]
     fn rejects_missing_entrypoint() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "missing.md", "title": "T" }"#;
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "missing.md", "title": "T" }"#;
         let zip = build_zip(&[("manifest.json", manifest)]);
         let result = load_package(&zip);
         assert!(matches!(
             result,
-            Err(LoadError::InvalidPackage(ValidationError::EntrypointNotFound(_)))
+            Err(LoadError::InvalidPackage(
+                ValidationError::EntrypointNotFound(_)
+            ))
         ));
     }
 
     #[test]
     fn manifest_is_not_included_in_files_list() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
         let readme = b"# Hello";
         let zip = build_zip(&[("manifest.json", manifest), ("README.md", readme)]);
         let loaded = load_package(&zip).unwrap();
@@ -218,20 +218,26 @@ mod tests {
 
     #[test]
     fn loads_binary_file() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
         let zip = build_zip(&[
             ("manifest.json", manifest),
             ("README.md", b"# Hello"),
             ("images/a.png", &[0x89, 0x50, 0x4e, 0x47]),
         ]);
         let loaded = load_package(&zip).unwrap();
-        let png = loaded.files.iter().find(|f| f.path == "images/a.png").unwrap();
+        let png = loaded
+            .files
+            .iter()
+            .find(|f| f.path == "images/a.png")
+            .unwrap();
         assert!(!png.is_text());
     }
 
     #[test]
     fn loads_svg_as_text() {
-        let manifest = br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
+        let manifest =
+            br#"{ "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T" }"#;
         let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="#eee"/></svg>"##;
         let zip = build_zip(&[
             ("manifest.json", manifest),
@@ -239,7 +245,11 @@ mod tests {
             ("diagrams/architecture.svg", svg),
         ]);
         let loaded = load_package(&zip).unwrap();
-        let svg_file = loaded.files.iter().find(|f| f.path == "diagrams/architecture.svg").unwrap();
+        let svg_file = loaded
+            .files
+            .iter()
+            .find(|f| f.path == "diagrams/architecture.svg")
+            .unwrap();
         assert!(svg_file.is_text());
         assert!(svg_file.text_content().unwrap().contains("<svg"));
     }
@@ -264,11 +274,16 @@ mod tests {
         ]);
 
         let loaded = load_package(&zip).unwrap();
-        let tex_file = loaded.files.iter()
+        let tex_file = loaded
+            .files
+            .iter()
             .find(|file| file.path == "diagrams/math-1.tex")
             .unwrap();
 
         assert!(tex_file.is_text());
-        assert_eq!(tex_file.text_content(), Some(r"\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}"));
+        assert_eq!(
+            tex_file.text_content(),
+            Some(r"\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}")
+        );
     }
 }

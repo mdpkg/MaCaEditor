@@ -10,6 +10,8 @@ import {
 function state(): DocumentState {
   return {
     path: "test.mdpkg",
+    origin: { kind: "package", path: "test.mdpkg" },
+    originalPaths: [],
     entrypoint: "README.md",
     files: [{ path: "README.md", is_text: true, content: "# Guide", base64: null }],
     manifest: { resources: [] },

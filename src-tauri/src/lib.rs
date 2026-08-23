@@ -1,5 +1,6 @@
 pub mod atomic_save;
 pub mod commands;
+pub mod folder_document;
 pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
@@ -70,7 +71,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             commands::open_package,
+            commands::open_folder,
             commands::save_package,
+            commands::save_folder,
+            commands::export_package,
             commands::create_new_package,
             commands::import_folder,
             commands::export_folder,

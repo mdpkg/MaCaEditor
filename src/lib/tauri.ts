@@ -1,12 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ImportedFile, ImportedImage, PackageInfo, SaveRequest } from "../types";
+import type { FolderSaveRequest, ImportedFile, ImportedImage, PackageInfo, SaveRequest } from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
   return invoke("open_package", { path });
 }
 
+export function openFolder(path: string): Promise<PackageInfo> {
+  return invoke("open_folder", { path });
+}
+
 export function savePackage(request: SaveRequest): Promise<void> {
   return invoke("save_package", { request });
+}
+
+export function saveFolder(request: FolderSaveRequest): Promise<void> {
+  return invoke("save_folder", { request });
+}
+
+export function exportPackage(request: SaveRequest): Promise<void> {
+  return invoke("export_package", { request });
 }
 
 export function createNewPackage(path: string): Promise<void> {
