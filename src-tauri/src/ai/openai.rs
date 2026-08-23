@@ -91,6 +91,38 @@ fn from_openai_response(
     Ok(AiResponse::new(content))
 }
 
+impl OpenAiCompatibleProvider {
+    /// Model 一覧を取得する。
+    /// Models API が未実装・非互換でも致命的エラーにしない。
+    pub async fn list_models(&self) -> Result<Vec<String>, AiError> {
+        let models = self
+            .client
+            .models()
+            .list()
+            .await
+            .map_err(map_openai_error)?;
+        let mut names = models
+            .data
+            .into_iter()
+            .map(|m| m.id)
+            .collect::<Vec<_>>();
+        names.sort();
+        Ok(names)
+    }
+
+    /// 最小の Chat Completion を送信して接続を確認する。
+    pub async fn test_connection(&self, model: &str) -> Result<(), AiError> {
+        let request = AiRequest::new(vec![AiMessage::new(AiRole::User, "ping")]);
+        let openai_request = self.to_openai_request(model, &request)?;
+        self.client
+            .chat()
+            .create(openai_request)
+            .await
+            .map_err(map_openai_error)?;
+        Ok(())
+    }
+}
+
 impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
     async fn complete(
         &self,
