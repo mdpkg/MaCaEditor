@@ -176,4 +176,25 @@ mod tests {
         c.request_timeout_seconds = Some(u64::MAX);
         assert_eq!(validate_config(&c), Err(ConfigError::TimeoutTooLarge));
     }
+
+    #[test]
+    fn rejects_timeout_above_max() {
+        let mut c = valid_config();
+        c.connect_timeout_seconds = Some(MAX_TIMEOUT_SECONDS + 1);
+        assert_eq!(validate_config(&c), Err(ConfigError::TimeoutTooLarge));
+    }
+
+    #[test]
+    fn accepts_timeout_at_max() {
+        let mut c = valid_config();
+        c.request_timeout_seconds = Some(MAX_TIMEOUT_SECONDS);
+        assert!(validate_config(&c).is_ok());
+    }
+
+    #[test]
+    fn rejects_zero_request_timeout() {
+        let mut c = valid_config();
+        c.request_timeout_seconds = Some(0);
+        assert_eq!(validate_config(&c), Err(ConfigError::InvalidTimeout));
+    }
 }
