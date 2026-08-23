@@ -28,6 +28,66 @@ pub struct FolderDocument {
     pub files: Vec<PackageFile>,
 }
 
+pub fn create_empty_folder(path: &Path) -> Result<FolderDocument, FolderError> {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| FolderError::Invalid("folder name is invalid".into()))?;
+    validate_folder_name(name)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| FolderError::Invalid("folder must have a parent".into()))?;
+    reject_link(parent)?;
+    let parent = fs::canonicalize(parent)?;
+    if !parent.is_dir() {
+        return Err(FolderError::Invalid(
+            "selected parent is not a folder".into(),
+        ));
+    }
+    let root = parent.join(name);
+    if root.exists() {
+        return Err(FolderError::Invalid(format!(
+            "folder already exists: {name}"
+        )));
+    }
+    fs::create_dir(&root)?;
+    let result = (|| {
+        let manifest = Manifest::parse(
+            r#"{"format":"mdpkg","version":"1.0","entrypoint":"README.md","title":"Untitled"}"#,
+        )
+        .map_err(|e| FolderError::Invalid(e.to_string()))?;
+        let manifest_json = serde_json::to_vec_pretty(&manifest)
+            .map_err(|e| FolderError::Invalid(e.to_string()))?;
+        atomic_save(&root.join("manifest.json"), &manifest_json)
+            .map_err(|e| FolderError::Invalid(e.to_string()))?;
+        atomic_save(&root.join("README.md"), b"# Untitled\n")
+            .map_err(|e| FolderError::Invalid(e.to_string()))?;
+        load_folder(&root)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(root.join("manifest.json"));
+        let _ = fs::remove_file(root.join("README.md"));
+        let _ = fs::remove_dir(&root);
+    }
+    result
+}
+
+fn validate_folder_name(name: &str) -> Result<(), FolderError> {
+    if name.trim() != name
+        || name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+    {
+        return Err(FolderError::Invalid("folder name is invalid".into()));
+    }
+    Ok(())
+}
+
 pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     reject_link(path)?;
     let root = fs::canonicalize(path)?;
@@ -275,6 +335,32 @@ mod tests {
         .unwrap();
         assert!(load_folder(&dir).is_err());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn creates_a_new_valid_folder_document() {
+        let parent = temp("create-empty");
+        let created = create_empty_folder(&parent.join("my-document")).unwrap();
+        assert_eq!(
+            created.root,
+            fs::canonicalize(parent.join("my-document")).unwrap()
+        );
+        assert_eq!(created.manifest.entrypoint, "README.md");
+        assert_eq!(
+            fs::read_to_string(created.root.join("README.md")).unwrap(),
+            "# Untitled\n"
+        );
+        assert!(created.root.join("manifest.json").is_file());
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn empty_folder_creation_rejects_unsafe_or_existing_names() {
+        let parent = temp("create-invalid");
+        fs::create_dir(parent.join("existing-empty")).unwrap();
+        assert!(create_empty_folder(&parent.join("existing-empty")).is_err());
+        assert!(create_empty_folder(&parent.join("bad:name")).is_err());
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]

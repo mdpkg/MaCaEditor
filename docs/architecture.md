@@ -104,4 +104,6 @@ Drawing Domain Model
 
 ## Document originと保存
 
-`DocumentOrigin`は`package`、`folder`、`untitled`のdiscriminated unionであり、拡張子や文字列からモードを推測しません。Packageモードは従来のZIP writerを使い、Folderモードはオープン時パス一覧と現在のDocument Modelとの差分から削除・renameを反映します。FolderからのPackage exportは同じpackage validation/writerを通しますが、originを変更しません。将来のファイル監視はFolder originを監視ルートとして追加でき、Document Modelと編集UIには影響しない構成です。
+`DocumentOrigin`は`package`、`folder`、`untitled`のdiscriminated unionであり、拡張子や文字列からモードを推測しません。Packageモードは従来のZIP writerを使い、Folderモードはオープン時パス一覧と現在のDocument Modelとの差分から削除・renameを反映します。FolderからのPackage exportは同じpackage validation/writerを通しますが、originを変更しません。
+
+FolderモードはRust側の`notify` watcherでrecursiveなfilesystem eventを受け、Tauriイベントとしてフロントへ通知します。短時間の連続イベントをdebounceした後、フォルダ内容のcanonical fingerprintを比較します。clean状態の外部変更はDocument Modelを再読込し、dirty状態ではローカル編集を保持したまま競合としてSaveを停止します。監視通知と競合判断は分離され、`folderSync.ts`はOS固有イベントへ依存しません。

@@ -5,6 +5,7 @@ export type DocumentOrigin =
   | { kind: "folder"; path: string }
   | { kind: "untitled" };
 import { relativePackagePath, resolvePackagePath } from "./markdown";
+import { folderDocumentFingerprint, folderInfoFingerprint } from "./folderSync";
 
 export interface DocumentState {
   path: string | null;
@@ -14,6 +15,7 @@ export interface DocumentState {
   files: FileInfo[];
   manifest: Record<string, unknown>;
   dirty: boolean;
+  folderSnapshot?: string;
 }
 
 export function createDocumentState(info: PackageInfo, origin: DocumentOrigin | string): DocumentState {
@@ -30,7 +32,7 @@ export function createDocumentState(info: PackageInfo, origin: DocumentOrigin | 
 }
 
 export function createFolderDocumentState(info: PackageInfo, path: string): DocumentState {
-  return createDocumentState(info, { kind: "folder", path });
+  return { ...createDocumentState(info, { kind: "folder", path }), folderSnapshot: folderInfoFingerprint(info) };
 }
 
 export function updateFileContent(
@@ -314,5 +316,10 @@ export function toFolderSaveRequest(state: DocumentState): FolderSaveRequest {
 }
 
 export function markSaved(state: DocumentState): DocumentState {
-  return { ...state, dirty: false, originalPaths: state.files.map((file) => file.path) };
+  return {
+    ...state,
+    dirty: false,
+    originalPaths: state.files.map((file) => file.path),
+    folderSnapshot: state.origin.kind === "folder" ? folderDocumentFingerprint(state) : state.folderSnapshot,
+  };
 }

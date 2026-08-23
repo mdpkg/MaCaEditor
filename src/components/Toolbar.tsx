@@ -7,6 +7,7 @@ interface Props {
   hasDocument: boolean;
   onOpen: () => void;
   onOpenFolder?: () => void;
+  onStartWithEmptyFolder?: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onPrint: () => void;
@@ -42,6 +43,7 @@ export function Toolbar({
   hasDocument,
   onOpen,
   onOpenFolder,
+  onStartWithEmptyFolder,
   onSave,
   onSaveAs,
   onPrint,
@@ -107,6 +109,7 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(onNew)}>New</button>
             <button type="button" role="menuitem" onClick={() => run(onOpen)}>Open</button>
             <button type="button" role="menuitem" onClick={() => run(onOpenFolder ?? (() => {}))}>Open Folder...</button>
+            <button type="button" role="menuitem" onClick={() => run(onStartWithEmptyFolder ?? (() => {}))}>Start with New Empty Folder</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSave)}>Save</button>
             <button type="button" role="menuitem" disabled={!hasDocument || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
             <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>

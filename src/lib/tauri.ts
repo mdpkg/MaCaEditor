@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { FolderSaveRequest, ImportedFile, ImportedImage, PackageInfo, SaveRequest } from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
@@ -7,6 +8,10 @@ export function openPackage(path: string): Promise<PackageInfo> {
 
 export function openFolder(path: string): Promise<PackageInfo> {
   return invoke("open_folder", { path });
+}
+
+export function createEmptyFolder(path: string): Promise<PackageInfo> {
+  return invoke("create_empty_folder", { path });
 }
 
 export function savePackage(request: SaveRequest): Promise<void> {
@@ -43,4 +48,16 @@ export function readAttachment(path: string): Promise<ImportedFile> {
 
 export function saveAttachment(path: string, base64: string): Promise<void> {
   return invoke("save_attachment", { path, base64 });
+}
+
+export function watchFolder(path: string): Promise<void> {
+  return invoke("watch_folder", { path });
+}
+
+export function stopWatchingFolder(): Promise<void> {
+  return invoke("stop_watching_folder");
+}
+
+export function onFolderChanged(handler: (path: string) => void): Promise<UnlistenFn> {
+  return listen<{ path: string }>("folder-changed", (event) => handler(event.payload.path));
 }

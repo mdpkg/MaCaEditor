@@ -132,6 +132,19 @@ pub fn open_package(path: String) -> Result<PackageInfo, String> {
 pub fn open_folder(path: String) -> Result<PackageInfo, String> {
     let loaded =
         crate::folder_document::load_folder(&PathBuf::from(path)).map_err(|e| e.to_string())?;
+    folder_package_info(loaded)
+}
+
+#[tauri::command]
+pub fn create_empty_folder(path: String) -> Result<PackageInfo, String> {
+    let loaded = crate::folder_document::create_empty_folder(&PathBuf::from(path))
+        .map_err(|e| e.to_string())?;
+    folder_package_info(loaded)
+}
+
+fn folder_package_info(
+    loaded: crate::folder_document::FolderDocument,
+) -> Result<PackageInfo, String> {
     let files = loaded.files.iter().map(to_file_info).collect();
     let manifest = serde_json::to_value(&loaded.manifest).map_err(|e| e.to_string())?;
     Ok(PackageInfo {
@@ -302,6 +315,8 @@ pub fn export_folder(package_path: String, dest: String) -> Result<(), String> {
     let loaded = load_package(&data).map_err(|e| e.to_string())?;
     let dest = PathBuf::from(&dest);
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    let manifest = serde_json::to_vec_pretty(&loaded.manifest).map_err(|e| e.to_string())?;
+    atomic_save(&dest.join("manifest.json"), &manifest).map_err(|e| e.to_string())?;
     for file in &loaded.files {
         let target = dest.join(file.path.replace('\\', "/"));
         if let Some(parent) = target.parent() {
@@ -319,7 +334,9 @@ pub fn setup(app: &mut tauri::App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{export_package, read_attachment, save_attachment, FileContent, SaveRequest};
+    use super::{
+        export_folder, export_package, read_attachment, save_attachment, FileContent, SaveRequest,
+    };
     use std::path::PathBuf;
 
     fn temporary_attachment_path() -> PathBuf {
@@ -378,5 +395,42 @@ mod tests {
         let loaded = crate::package_loader::load_package(&bytes).unwrap();
         assert_eq!(loaded.manifest.entrypoint, "README.md");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn export_folder_includes_manifest_json() {
+        let package_path = temporary_attachment_path().with_extension("mdpkg");
+        let dest = temporary_attachment_path().with_extension("folder");
+        export_package(SaveRequest {
+            path: package_path.to_string_lossy().into_owned(),
+            manifest: serde_json::json!({
+                "format": "mdpkg", "version": "1.0", "entrypoint": "README.md",
+                "title": "Exported", "custom": 42
+            }),
+            files: vec![FileContent {
+                path: "README.md".into(),
+                is_text: true,
+                content: Some("# Exported".into()),
+                base64: None,
+            }],
+        })
+        .unwrap();
+
+        export_folder(
+            package_path.to_string_lossy().into_owned(),
+            dest.to_string_lossy().into_owned(),
+        )
+        .unwrap();
+
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dest.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["format"], "mdpkg");
+        assert_eq!(manifest["custom"], 42);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("README.md")).unwrap(),
+            "# Exported"
+        );
+        std::fs::remove_file(package_path).unwrap();
+        std::fs::remove_dir_all(dest).unwrap();
     }
 }

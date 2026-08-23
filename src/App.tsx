@@ -27,6 +27,7 @@ import {
 } from "./lib/document";
 import {
   createNewPackage,
+  createEmptyFolder,
   exportFolder,
   importFolder,
   openPackage,
@@ -35,6 +36,9 @@ import {
   readAttachment,
   readImage,
   saveAttachment,
+  watchFolder,
+  stopWatchingFolder,
+  onFolderChanged,
 } from "./lib/tauri";
 import type { DrawingDocument } from "./lib/drawing/model";
 import {
@@ -90,6 +94,7 @@ import {
   saveVimMode,
 } from "./lib/editorPreferences";
 import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
+import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -145,6 +150,9 @@ export default function App() {
   const editorCursorRef = useRef<number | null>(null);
   const notificationSequenceRef = useRef(0);
   const notificationTimersRef = useRef<number[]>([]);
+  const documentRef = useRef<DocumentState | null>(null);
+  const externalConflictRef = useRef(false);
+  const externalNoticeRef = useRef<string | null>(null);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
@@ -203,6 +211,94 @@ export default function App() {
     }, 3500);
     notificationTimersRef.current.push(timer);
   };
+
+  useEffect(() => {
+    documentRef.current = doc;
+  }, [doc]);
+
+  useEffect(() => {
+    if (doc?.origin.kind !== "folder") {
+      externalConflictRef.current = false;
+      externalNoticeRef.current = null;
+      void stopWatchingFolder();
+      return;
+    }
+    const folderPath = doc.origin.path;
+    let active = true;
+    let checking = false;
+    let debounceTimer: number | null = null;
+    let unlisten: (() => void) | null = null;
+    externalConflictRef.current = false;
+    externalNoticeRef.current = null;
+
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const current = documentRef.current;
+        if (!active || current?.origin.kind !== "folder" || current.origin.path !== folderPath) return;
+        const info = await openFolder(folderPath);
+        if (!active) return;
+        const action = externalFolderAction(current, info);
+        if (action === "unchanged") {
+          externalConflictRef.current = false;
+          externalNoticeRef.current = null;
+        } else if (action === "reload") {
+          externalConflictRef.current = false;
+          externalNoticeRef.current = null;
+          const reloaded = createFolderDocumentState(info, folderPath);
+          setDoc(reloaded);
+          setSelectedPath((selected) =>
+            selected && reloaded.files.some((file) => file.path === selected)
+              ? selected
+              : reloaded.entrypoint,
+          );
+          setStatus(`Reloaded external changes from ${folderPath}`);
+          showNotification("外部エディタによる変更を反映しました", "info");
+        } else {
+          externalConflictRef.current = true;
+          const fingerprint = folderInfoFingerprint(info);
+          if (externalNoticeRef.current !== fingerprint) {
+            externalNoticeRef.current = fingerprint;
+            setStatus("External changes conflict with unsaved edits");
+            showNotification("外部変更を検知しました。未保存の編集があるため自動反映していません", "error");
+          }
+        }
+      } catch (e) {
+        if (active && externalNoticeRef.current !== String(e)) {
+          externalNoticeRef.current = String(e);
+          showNotification(`フォルダの再読込に失敗しました: ${String(e)}`, "error");
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    void onFolderChanged((changedPath) => {
+      if (!active || changedPath !== folderPath) return;
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => { void check(); }, 300);
+    }).then((dispose) => {
+      if (!active) {
+        dispose();
+        return undefined;
+      }
+      unlisten = dispose;
+      return watchFolder(folderPath);
+    }).catch((e) => {
+      if (active) showNotification(`フォルダ監視を開始できませんでした: ${String(e)}`, "error");
+    });
+
+    return () => {
+      active = false;
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      unlisten?.();
+    };
+  }, [
+    doc?.origin.kind,
+    doc?.origin.kind === "folder" ? doc.origin.path : null,
+    doc?.folderSnapshot,
+  ]);
 
   useEffect(() => {
     if (preferencesLoaded) void saveVimMode(vimMode);
@@ -268,8 +364,40 @@ export default function App() {
     }
   };
 
+  const handleStartWithEmptyFolder = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
+    const parent = await openDialog({ directory: true });
+    if (typeof parent !== "string") return;
+    const requestedName = window.prompt("New folder name", "untitled");
+    if (requestedName === null) return;
+    const name = requestedName.trim();
+    if (!name) return;
+    const path = `${parent.replace(/[\\/]+$/, "")}/${name}`;
+    try {
+      const info = await createEmptyFolder(path);
+      setDoc(createFolderDocumentState(info, path));
+      setSelectedPath(info.entrypoint);
+      setMode("split");
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setPlantUmlPath(null);
+      setMermaidPath(null);
+      setMathJaxPath(null);
+      setError(null);
+      setStatus(`Created folder ${path}`);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
   const handleSave = async () => {
     if (!doc) return;
+    if (doc.origin.kind === "folder" && externalConflictRef.current) {
+      setError("External changes conflict with unsaved edits. Reopen the folder before saving.");
+      setStatus("Save blocked by external changes");
+      return;
+    }
     if (doc.origin.kind === "untitled") {
       await handleSaveAs();
       return;
@@ -922,6 +1050,7 @@ export default function App() {
         hasDocument={doc !== null}
         onOpen={handleOpen}
         onOpenFolder={handleOpenFolder}
+        onStartWithEmptyFolder={handleStartWithEmptyFolder}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onPrint={handlePrint}
