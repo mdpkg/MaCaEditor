@@ -76,3 +76,18 @@ export function saveAiConfig(config: AiConfig): Promise<void> {
 export function loadAiConfig(): Promise<AiConfig> {
   return invoke("load_ai_config");
 }
+
+export function listAiModels(
+  baseUrl: string,
+  apiKey: string | null,
+): Promise<string[]> {
+  return invoke("list_ai_models", { baseUrl, apiKey });
+}
+
+export function testAiConnection(
+  baseUrl: string,
+  apiKey: string | null,
+  model: string,
+): Promise<void> {
+  return invoke("test_ai_connection", { baseUrl, apiKey, model });
+}

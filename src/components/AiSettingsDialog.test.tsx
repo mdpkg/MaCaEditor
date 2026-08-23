@@ -36,7 +36,7 @@ describe("AiSettingsDialog", () => {
     expect(dialog?.textContent).toContain("Model");
 
     await act(async () => {
-      (container.querySelectorAll("button")[1] as HTMLButtonElement).click();
+      (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
     });
     expect(save).toHaveBeenCalledOnce();
     expect(dialog?.textContent).toContain("Saved.");
@@ -56,7 +56,7 @@ describe("AiSettingsDialog", () => {
     });
 
     await act(async () => {
-      (container.querySelectorAll("button")[1] as HTMLButtonElement).click();
+      (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
     });
     expect(container.textContent).toContain("Failed to save.");
     act(() => root.unmount());
