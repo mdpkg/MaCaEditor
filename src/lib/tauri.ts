@@ -1,7 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AiConfig,
+  AiRequest,
+  AiStreamEvent,
   FolderSaveRequest,
   ImportedFile,
   ImportedImage,
@@ -90,4 +92,31 @@ export function testAiConnection(
   model: string,
 ): Promise<void> {
   return invoke("test_ai_connection", { baseUrl, apiKey, model });
+}
+
+export function startAiStream(
+  options: {
+    baseUrl: string;
+    apiKey: string | null;
+    model: string;
+    request: AiRequest;
+    connectTimeoutSeconds?: number | null;
+    requestTimeoutSeconds?: number | null;
+  },
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<string> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_stream", {
+    channel,
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    model: options.model,
+    request: options.request,
+    connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
+    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null,
+  });
+}
+
+export function cancelAiRequest(requestId: string): Promise<boolean> {
+  return invoke("cancel_ai_request", { requestId });
 }

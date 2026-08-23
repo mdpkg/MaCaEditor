@@ -44,4 +44,39 @@ export interface AiConfig {
   model: string;
   temperature: number | null;
   max_output_tokens: number | null;
+  connect_timeout_seconds: number | null;
+  request_timeout_seconds: number | null;
 }
+
+export type AiRole = "System" | "User" | "Assistant";
+
+export interface AiMessage {
+  role: AiRole;
+  content: string;
+}
+
+export interface AiRequest {
+  messages: AiMessage[];
+  temperature?: number | null;
+  max_output_tokens?: number | null;
+}
+
+export type AiStreamEvent =
+  | { type: "started"; request_id: string }
+  | { type: "delta"; request_id: string; content: string }
+  | { type: "completed"; request_id: string }
+  | { type: "cancelled"; request_id: string }
+  | { type: "error"; request_id: string; error: AiError };
+
+export type AiError =
+  | { kind: "InvalidConfiguration"; message: string }
+  | { kind: "ConnectionFailed"; message: string }
+  | { kind: "AuthenticationFailed"; message: string }
+  | { kind: "PermissionDenied"; message: string }
+  | { kind: "ModelNotFound"; message: string }
+  | { kind: "RateLimited"; message: string }
+  | { kind: "Timeout"; message: string }
+  | { kind: "ServerError"; message: string }
+  | { kind: "InvalidResponse"; message: string }
+  | { kind: "Cancelled" }
+  | { kind: "Unknown"; message: string };

@@ -30,6 +30,14 @@ impl<P: AiProvider> AiStreamCoordinator<P> {
         }
     }
 
+    /// 外部からレジストリを注入する（Tauri 管理状態と共有するため）。
+    pub fn with_registry(provider: P, registry: Arc<CancellationRegistry>) -> Self {
+        Self {
+            provider: Arc::new(provider),
+            registry,
+        }
+    }
+
     /// 新しい request ID を発行する。
     pub fn new_request_id(&self) -> String {
         Uuid::new_v4().to_string()

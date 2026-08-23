@@ -19,6 +19,8 @@ describe("AiSettingsDialog", () => {
       model: "qwen2.5",
       temperature: 0.7,
       max_output_tokens: 4096,
+      connect_timeout_seconds: 10,
+      request_timeout_seconds: 300,
     });
     const save = vi.spyOn(tauri, "saveAiConfig").mockResolvedValue();
     const onClose = vi.fn();

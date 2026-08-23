@@ -18,6 +18,8 @@ const DEFAULT_CONFIG: AiConfig = {
   model: "",
   temperature: 0.7,
   max_output_tokens: 4096,
+  connect_timeout_seconds: 10,
+  request_timeout_seconds: 300,
 };
 
 export function AiSettingsDialog({ onClose }: Props) {

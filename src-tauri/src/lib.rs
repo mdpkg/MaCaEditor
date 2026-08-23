@@ -69,6 +69,9 @@ pub fn run() {
             }
             Ok(())
         })
+        .manage(ai::commands::AiStreamState {
+            registry: std::sync::Arc::new(ai::cancel::CancellationRegistry::new()),
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -91,6 +94,8 @@ pub fn run() {
             commands::load_ai_config,
             commands::list_ai_models,
             commands::test_ai_connection,
+            commands::ai_stream,
+            commands::cancel_ai_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
