@@ -160,6 +160,30 @@ export function AiSettingsDialog({ onClose }: Props) {
             }
           />
         </label>
+        <label>
+          Connection Timeout (seconds)
+          <input
+            type="number"
+            min={1}
+            max={3600}
+            value={config.connect_timeout_seconds ?? ""}
+            onChange={(event) =>
+              update({ connect_timeout_seconds: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Request Timeout (seconds)
+          <input
+            type="number"
+            min={1}
+            max={3600}
+            value={config.request_timeout_seconds ?? ""}
+            onChange={(event) =>
+              update({ request_timeout_seconds: Number(event.target.value) })
+            }
+          />
+        </label>
         <div className="about-dialog-actions">
           <button type="button" onClick={handleRefreshModels} disabled={busy}>
             Refresh Models

@@ -36,6 +36,8 @@ describe("AiSettingsDialog", () => {
     expect(dialog?.getAttribute("aria-label")).toBe("AI Settings");
     expect(dialog?.textContent).toContain("Base URL");
     expect(dialog?.textContent).toContain("Model");
+    expect(dialog?.textContent).toContain("Connection Timeout");
+    expect(dialog?.textContent).toContain("Request Timeout");
 
     await act(async () => {
       (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
