@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { AiConfig } from "../types";
-import { loadAiConfig, saveAiConfig } from "../lib/tauri";
+import {
+  listAiModels,
+  loadAiConfig,
+  saveAiConfig,
+  testAiConnection,
+} from "../lib/tauri";
 
 interface Props {
   onClose: () => void;
@@ -20,6 +25,8 @@ export function AiSettingsDialog({ onClose }: Props) {
   const [config, setConfig] = useState<AiConfig>(DEFAULT_CONFIG);
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -48,6 +55,31 @@ export function AiSettingsDialog({ onClose }: Props) {
       setStatus("saved");
     } catch {
       setStatus("error");
+    }
+  };
+
+  const handleRefreshModels = async () => {
+    setBusy(true);
+    try {
+      const list = await listAiModels(config.base_url, config.api_key);
+      setModels(list);
+      setStatus("models-loaded");
+    } catch {
+      setStatus("models-error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setBusy(true);
+    try {
+      await testAiConnection(config.base_url, config.api_key, config.model);
+      setStatus("connected");
+    } catch {
+      setStatus("connection-error");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -95,9 +127,15 @@ export function AiSettingsDialog({ onClose }: Props) {
           Model
           <input
             type="text"
+            list="ai-model-list"
             value={config.model}
             onChange={(event) => update({ model: event.target.value })}
           />
+          <datalist id="ai-model-list">
+            {models.map((model) => (
+              <option key={model} value={model} />
+            ))}
+          </datalist>
         </label>
         <label>
           Temperature
@@ -121,6 +159,12 @@ export function AiSettingsDialog({ onClose }: Props) {
           />
         </label>
         <div className="about-dialog-actions">
+          <button type="button" onClick={handleRefreshModels} disabled={busy}>
+            Refresh Models
+          </button>
+          <button type="button" onClick={handleTestConnection} disabled={busy}>
+            Test Connection
+          </button>
           <button type="button" onClick={handleSave}>
             Save
           </button>
@@ -130,6 +174,10 @@ export function AiSettingsDialog({ onClose }: Props) {
         </div>
         {status === "saved" && <p>Saved.</p>}
         {status === "error" && <p>Failed to save.</p>}
+        {status === "models-loaded" && <p>Models loaded.</p>}
+        {status === "models-error" && <p>Failed to load models.</p>}
+        {status === "connected" && <p>Connection OK.</p>}
+        {status === "connection-error" && <p>Connection failed.</p>}
       </section>
     </div>
   );
