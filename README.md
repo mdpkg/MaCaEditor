@@ -1,3 +1,5 @@
+**日本語** | [英語](README_en.md)
+
 # MaCa Editor
 
 MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://github.com/mdpkg/mdpkg-spec)に則った `.mdpkg` ファイルを閲覧・編集するためのデスクトップエディタです。
