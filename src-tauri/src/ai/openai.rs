@@ -226,6 +226,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn maps_application_request_to_openai_request() {
         let provider = OpenAiCompatibleProvider::new("http://localhost:11434/v1", None);
         let request = provider
@@ -248,6 +249,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn maps_openai_response_to_application_response() {
         let json = r#"{
             "id": "chatcmpl-1",

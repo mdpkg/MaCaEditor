@@ -1,5 +1,6 @@
 pub mod cancel;
 pub mod capability;
+pub mod commands;
 pub mod config;
 pub mod context;
 pub mod error;

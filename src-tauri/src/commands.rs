@@ -294,6 +294,48 @@ pub async fn test_ai_connection(
         .map_err(|e| e.to_string())
 }
 
+/// AI ストリーミングを開始する Tauri コマンド。
+/// Channel へ `AiStreamEvent` を逐次送信する。戻り値は発行した request ID。
+#[tauri::command]
+pub async fn ai_stream(
+    state: tauri::State<'_, crate::ai::commands::AiStreamState>,
+    channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
+    base_url: String,
+    api_key: Option<String>,
+    _model: String,
+    request: crate::ai::types::AiRequest,
+    connect_timeout_seconds: Option<u64>,
+    request_timeout_seconds: Option<u64>,
+) -> Result<String, String> {
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
+        provider,
+        state.registry.clone(),
+    );
+    let sender = move |event: crate::ai::types::AiStreamEvent| {
+        let _ = channel.send(event);
+    };
+    crate::ai::commands::run_ai_stream(
+        &coordinator,
+        sender,
+        request,
+        connect_timeout_seconds,
+        request_timeout_seconds,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// request ID を指定して実行中の AI ストリームをキャンセルする Tauri コマンド。
+/// 存在しない ID は idempotent に成功扱いする。
+#[tauri::command]
+pub fn cancel_ai_request(
+    state: tauri::State<'_, crate::ai::commands::AiStreamState>,
+    request_id: String,
+) -> Result<bool, String> {
+    Ok(state.registry.cancel(&request_id))
+}
+
 /// アプリの状態を管理するためのセットアップ。
 pub fn setup(app: &mut tauri::App) {
     let _ = app;
