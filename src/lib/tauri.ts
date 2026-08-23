@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ImportedFile, ImportedImage, PackageInfo, SaveRequest } from "../types";
+import type {
+  AiConfig,
+  ImportedFile,
+  ImportedImage,
+  PackageInfo,
+  SaveRequest,
+} from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
   return invoke("open_package", { path });
@@ -31,4 +37,12 @@ export function readAttachment(path: string): Promise<ImportedFile> {
 
 export function saveAttachment(path: string, base64: string): Promise<void> {
   return invoke("save_attachment", { path, base64 });
+}
+
+export function saveAiConfig(config: AiConfig): Promise<void> {
+  return invoke("save_ai_config", { config });
+}
+
+export function loadAiConfig(): Promise<AiConfig> {
+  return invoke("load_ai_config");
 }
