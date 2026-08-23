@@ -55,4 +55,23 @@ mod tests {
         let first = futures::executor::block_on(stream.next()).unwrap().unwrap();
         assert!(matches!(first, AiStreamEvent::Delta { .. }));
     }
+
+    #[tokio::test]
+    async fn stream_returns_default_error_when_unsupported() {
+        // stream を実装しない provider（既定実装はエラーを返す）。
+        struct NoStreamProvider;
+        impl crate::ai::provider::AiProvider for NoStreamProvider {
+            async fn complete(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<crate::ai::types::AiResponse, crate::ai::error::AiError> {
+                Ok(crate::ai::types::AiResponse::new(""))
+            }
+        }
+
+        let service = AiService::new(NoStreamProvider);
+        let request = AiRequest::new(vec![AiMessage::new(AiRole::User, "hi")]);
+        let result = service.stream(request).await;
+        assert!(matches!(result, Err(AiError::InvalidConfiguration(_))));
+    }
 }
