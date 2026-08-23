@@ -30,4 +30,11 @@ mod tests {
         assert_eq!(out.format, "json");
         assert!(out.schema.is_some());
     }
+
+    #[test]
+    fn builds_structured_output_without_schema() {
+        let out = StructuredOutput::new("text", None);
+        assert_eq!(out.format, "text");
+        assert!(out.schema.is_none());
+    }
 }
