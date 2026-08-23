@@ -4,6 +4,7 @@ import { FileTree } from "./components/FileTree";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { AboutDialog } from "./components/AboutDialog";
+import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -137,6 +138,7 @@ export default function App() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [notifications, setNotifications] = useState<BannerNotice[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
@@ -877,6 +879,7 @@ export default function App() {
         onAddImage={handleAddImage}
         onAddAttachment={handleAddAttachment}
         onAbout={() => setAboutOpen(true)}
+        onAiSettings={() => setAiSettingsOpen(true)}
         onThirdPartyLicenses={() => setThirdPartyLicensesOpen(true)}
         showToc={showToc}
         onShowTocChange={setShowToc}
@@ -1072,6 +1075,9 @@ export default function App() {
       )}
       {aboutOpen && (
         <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
+      )}
+      {aiSettingsOpen && (
+        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} />
       )}
       {thirdPartyLicensesOpen && (
         <ThirdPartyLicensesDialog

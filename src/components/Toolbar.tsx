@@ -20,6 +20,7 @@ interface Props {
   onAddImage: () => void;
   onAddAttachment: () => void;
   onAbout: () => void;
+  onAiSettings: () => void;
   onThirdPartyLicenses: () => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
@@ -52,6 +53,7 @@ export function Toolbar({
   onAddImage,
   onAddAttachment,
   onAbout,
+  onAiSettings,
   onThirdPartyLicenses,
   showToc,
   onShowTocChange,
@@ -143,6 +145,7 @@ export function Toolbar({
         {openMenu === "help" && (
           <div className="toolbar-menu-items" role="menu">
             <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
+            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>AI Settings</button>
             <button type="button" role="menuitem" onClick={() => run(onThirdPartyLicenses)}>Third party licenses</button>
           </div>
         )}
