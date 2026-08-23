@@ -51,4 +51,17 @@ mod tests {
         let response = provider.complete(request).await.unwrap();
         assert_eq!(response.content, "mock answer");
     }
+
+    #[tokio::test]
+    async fn stream_returns_delta_with_fixed_response() {
+        let provider = MockAiProvider::new("mock answer");
+        let request = AiRequest::new(vec![AiMessage::new(AiRole::User, "hi")]);
+        let mut stream = provider.stream(request).await.unwrap();
+        use futures::StreamExt;
+        let first = stream.next().await.unwrap().unwrap();
+        assert!(matches!(
+            first,
+            crate::ai::types::AiStreamEvent::Delta { content, .. } if content == "mock answer"
+        ));
+    }
 }
