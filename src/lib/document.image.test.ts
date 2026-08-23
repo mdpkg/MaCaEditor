@@ -11,6 +11,8 @@ import {
 function state(paths: string[] = []): DocumentState {
   return {
     path: "test.mdpkg",
+    origin: { kind: "package", path: "test.mdpkg" },
+    originalPaths: [],
     entrypoint: "README.md",
     manifest: {},
     dirty: false,

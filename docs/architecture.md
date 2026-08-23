@@ -6,6 +6,7 @@
 MaCa Editor
 ├─ Tauri / Rust
 │  ├─ .mdpkg 読み込み
+│  ├─ 展開済みフォルダの安全な読み書き
 │  ├─ ZIP 読み書き
 │  ├─ パス検証
 │  ├─ manifest 読み書き
@@ -31,13 +32,15 @@ MaCa Editor
 | `package_loader.rs` | ZIP から Document Model を読み込む |
 | `package_writer.rs` | Document Model から ZIP を生成 |
 | `atomic_save.rs` | 一時ファイル → atomic replace の安全な保存 |
+| `folder_document.rs` | Folderモードの走査、境界・link検証、ファイル単位atomic save、削除差分反映 |
 | `commands.rs` | Tauri コマンド（open / save / new / import / export） |
 
 ## React 側（document UI）
 
 | モジュール | 責務 |
 |---|---|
-| `lib/document.ts` | Document State（files / manifest / dirty） |
+| `lib/document.ts` | Document State（files / manifest / dirty / discriminated `DocumentOrigin` / Folder保存ベースライン） |
+| `lib/documentPersistence.ts` | originによるPackage/Folder保存経路の振り分け。成功時のみdirty解除 |
 | `lib/fileTree.ts` | フラットパス → ツリー構造 |
 | `lib/markdown.ts` | 相対パス解決（パッケージ外参照を拒否） |
 | `lib/sanitize.ts` | 危険な HTML の除去 |
@@ -95,4 +98,12 @@ Drawing Domain Model
 - Markdown の raw HTML は sanitize（任意 JS 実行防止）
 - 画像・リンクの相対パスはパッケージ内に留める
 - 保存は一時ファイル → atomic replace
+- Folderモードは相対package pathのみ受け入れ、Rust側でcanonical root配下を確認する
+- Folder走査・保存ではsymlink/junctionを拒否し、フォルダ外の読み書きを防ぐ
 - SVG 生成は静的出力のみ（script / event handler を含めない）
+
+## Document originと保存
+
+`DocumentOrigin`は`package`、`folder`、`untitled`のdiscriminated unionであり、拡張子や文字列からモードを推測しません。Packageモードは従来のZIP writerを使い、Folderモードはオープン時パス一覧と現在のDocument Modelとの差分から削除・renameを反映します。FolderからのPackage exportは同じpackage validation/writerを通しますが、originを変更しません。
+
+FolderモードはRust側の`notify` watcherでrecursiveなfilesystem eventを受け、Tauriイベントとしてフロントへ通知します。短時間の連続イベントをdebounceした後、フォルダ内容のcanonical fingerprintを比較します。clean状態の外部変更はDocument Modelを再読込し、dirty状態ではローカル編集を保持したまま競合としてSaveを停止します。監視通知と競合判断は分離され、`folderSync.ts`はOS固有イベントへ依存しません。

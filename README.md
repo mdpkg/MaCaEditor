@@ -89,6 +89,17 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 ツールバー左端の **☰** を押すと、左側のファイルリストを閉じて編集領域を広げられます。もう一度押すとファイルリストを再表示します。
 
+### 展開済みフォルダを編集する（Folderモード）
+
+1. **File** → **Open Folder...** で、`manifest.json`を含む展開済みmdpkgフォルダを選択します。
+2. 通常どおりMarkdown、画像、Drawingなどを編集します。
+3. **Save**を実行すると、ZIPは生成せず、変更・追加・rename・削除を選択したフォルダへ直接保存します。
+4. 配布用ファイルが必要になったら、**File** → **Export Package...**で`.mdpkg`を生成します。生成後もDocumentはFolderモードのままです。
+
+ステータスバーには現在の`Package`/`Folder`モードが表示されます。FolderモードではOSのfilesystem notificationを使って外部エディタによる変更を検知し、未保存の編集がなければ自動的に再読込します。dirty状態で外部変更を検知した場合はローカル編集を上書きせず警告し、競合を解消するためフォルダを開き直すまでSaveを停止します。
+
+新しいFolderモードのDocumentを始める場合は、**File** → **Start with New Empty Folder**を選びます。親フォルダを選択して新規フォルダ名を入力すると、そのフォルダに`manifest.json`とentrypointの`README.md`が生成され、すぐに編集を開始できます。入力した名前のフォルダが既に存在する場合はエラーとなり、上書きされません。
+
 ### 新しい `.mdpkg` を作成する
 
 1. **File** メニューの **New** を押します。
@@ -170,6 +181,9 @@ Rspress形式のコンテナを表示するには、ツールバーの **Rspress
 
 - **File** → **Import Folder**: フォルダの内容から `.mdpkg` を作成します。
 - **File** → **Export Folder**: 開いている `.mdpkg` の内容をフォルダへ出力します。
+- **File** → **Open Folder...**: 展開済みmdpkgフォルダをFolderモードで直接編集します。
+- **File** → **Start with New Empty Folder**: 新しいmdpkgフォルダと初期ファイルを作り、Folderモードで開始します。
+- **File** → **Export Package...**: FolderモードのDocument Modelを検証し、配布用`.mdpkg`を生成します。
 
 ## Drawing Editorの操作
 

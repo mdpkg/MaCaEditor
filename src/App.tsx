@@ -15,6 +15,7 @@ import {
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
+  createFolderDocumentState,
   addAttachment,
   addImage,
   deleteAsset,
@@ -26,13 +27,18 @@ import {
 } from "./lib/document";
 import {
   createNewPackage,
+  createEmptyFolder,
   exportFolder,
   importFolder,
   openPackage,
+  openFolder,
   savePackage,
   readAttachment,
   readImage,
   saveAttachment,
+  watchFolder,
+  stopWatchingFolder,
+  onFolderChanged,
 } from "./lib/tauri";
 import type { DrawingDocument } from "./lib/drawing/model";
 import {
@@ -87,6 +93,8 @@ import {
   saveShowToc,
   saveVimMode,
 } from "./lib/editorPreferences";
+import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
+import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -142,6 +150,9 @@ export default function App() {
   const editorCursorRef = useRef<number | null>(null);
   const notificationSequenceRef = useRef(0);
   const notificationTimersRef = useRef<number[]>([]);
+  const documentRef = useRef<DocumentState | null>(null);
+  const externalConflictRef = useRef(false);
+  const externalNoticeRef = useRef<string | null>(null);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
@@ -177,6 +188,19 @@ export default function App() {
     notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!doc?.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [doc?.dirty]);
+
+  const confirmReplaceDirtyDocument = () =>
+    !doc?.dirty || window.confirm("Discard unsaved changes?");
+
   const showNotification = (message: string, tone: NotificationTone) => {
     notificationSequenceRef.current += 1;
     const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone };
@@ -187,6 +211,94 @@ export default function App() {
     }, 3500);
     notificationTimersRef.current.push(timer);
   };
+
+  useEffect(() => {
+    documentRef.current = doc;
+  }, [doc]);
+
+  useEffect(() => {
+    if (doc?.origin.kind !== "folder") {
+      externalConflictRef.current = false;
+      externalNoticeRef.current = null;
+      void stopWatchingFolder();
+      return;
+    }
+    const folderPath = doc.origin.path;
+    let active = true;
+    let checking = false;
+    let debounceTimer: number | null = null;
+    let unlisten: (() => void) | null = null;
+    externalConflictRef.current = false;
+    externalNoticeRef.current = null;
+
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const current = documentRef.current;
+        if (!active || current?.origin.kind !== "folder" || current.origin.path !== folderPath) return;
+        const info = await openFolder(folderPath);
+        if (!active) return;
+        const action = externalFolderAction(current, info);
+        if (action === "unchanged") {
+          externalConflictRef.current = false;
+          externalNoticeRef.current = null;
+        } else if (action === "reload") {
+          externalConflictRef.current = false;
+          externalNoticeRef.current = null;
+          const reloaded = createFolderDocumentState(info, folderPath);
+          setDoc(reloaded);
+          setSelectedPath((selected) =>
+            selected && reloaded.files.some((file) => file.path === selected)
+              ? selected
+              : reloaded.entrypoint,
+          );
+          setStatus(`Reloaded external changes from ${folderPath}`);
+          showNotification("外部エディタによる変更を反映しました", "info");
+        } else {
+          externalConflictRef.current = true;
+          const fingerprint = folderInfoFingerprint(info);
+          if (externalNoticeRef.current !== fingerprint) {
+            externalNoticeRef.current = fingerprint;
+            setStatus("External changes conflict with unsaved edits");
+            showNotification("外部変更を検知しました。未保存の編集があるため自動反映していません", "error");
+          }
+        }
+      } catch (e) {
+        if (active && externalNoticeRef.current !== String(e)) {
+          externalNoticeRef.current = String(e);
+          showNotification(`フォルダの再読込に失敗しました: ${String(e)}`, "error");
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    void onFolderChanged((changedPath) => {
+      if (!active || changedPath !== folderPath) return;
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => { void check(); }, 300);
+    }).then((dispose) => {
+      if (!active) {
+        dispose();
+        return undefined;
+      }
+      unlisten = dispose;
+      return watchFolder(folderPath);
+    }).catch((e) => {
+      if (active) showNotification(`フォルダ監視を開始できませんでした: ${String(e)}`, "error");
+    });
+
+    return () => {
+      active = false;
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      unlisten?.();
+    };
+  }, [
+    doc?.origin.kind,
+    doc?.origin.kind === "folder" ? doc.origin.path : null,
+    doc?.folderSnapshot,
+  ]);
 
   useEffect(() => {
     if (preferencesLoaded) void saveVimMode(vimMode);
@@ -207,6 +319,7 @@ export default function App() {
   }, [doc, selectedPath]);
 
   const handleOpen = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
     const result = await openDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
     });
@@ -229,16 +342,69 @@ export default function App() {
     }
   };
 
+  const handleOpenFolder = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
+    const result = await openDialog({ directory: true });
+    if (typeof result !== "string") return;
+    try {
+      const info = await openFolder(result);
+      setDoc(createFolderDocumentState(info, result));
+      setSelectedPath(info.entrypoint);
+      setMode("preview");
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setPlantUmlPath(null);
+      setMermaidPath(null);
+      setMathJaxPath(null);
+      setError(null);
+      setStatus(`Opened folder ${result}`);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
+  const handleStartWithEmptyFolder = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
+    const parent = await openDialog({ directory: true });
+    if (typeof parent !== "string") return;
+    const requestedName = window.prompt("New folder name", "untitled");
+    if (requestedName === null) return;
+    const name = requestedName.trim();
+    if (!name) return;
+    const path = `${parent.replace(/[\\/]+$/, "")}/${name}`;
+    try {
+      const info = await createEmptyFolder(path);
+      setDoc(createFolderDocumentState(info, path));
+      setSelectedPath(info.entrypoint);
+      setMode("split");
+      setDrawingDoc(null);
+      setDrawingPath(null);
+      setPlantUmlPath(null);
+      setMermaidPath(null);
+      setMathJaxPath(null);
+      setError(null);
+      setStatus(`Created folder ${path}`);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
+    }
+  };
+
   const handleSave = async () => {
     if (!doc) return;
-    if (!doc.path) {
+    if (doc.origin.kind === "folder" && externalConflictRef.current) {
+      setError("External changes conflict with unsaved edits. Reopen the folder before saving.");
+      setStatus("Save blocked by external changes");
+      return;
+    }
+    if (doc.origin.kind === "untitled") {
       await handleSaveAs();
       return;
     }
     try {
-      await savePackage(toSaveRequest(doc));
-      setDoc({ ...doc, dirty: false });
-      setStatus(`Saved ${doc.path}`);
+      setDoc(await saveDocument(doc));
+      setStatus(`Saved ${doc.origin.path}`);
     } catch (e) {
       setError(String(e));
       setStatus("Error");
@@ -254,7 +420,7 @@ export default function App() {
     if (typeof result === "string") {
       try {
         await savePackage({ ...toSaveRequest(doc), path: result });
-        setDoc({ ...doc, path: result, dirty: false });
+        setDoc({ ...doc, path: result, origin: { kind: "package", path: result }, dirty: false, originalPaths: doc.files.map((file) => file.path) });
         setStatus(`Saved ${result}`);
       } catch (e) {
         setError(String(e));
@@ -268,6 +434,7 @@ export default function App() {
   };
 
   const handleNew = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
       defaultPath: "untitled.mdpkg",
@@ -293,6 +460,7 @@ export default function App() {
   };
 
   const handleImport = async () => {
+    if (!confirmReplaceDirtyDocument()) return;
     const folder = await openDialog({ directory: true });
     if (typeof folder === "string") {
       const dest = await saveDialog({
@@ -321,16 +489,34 @@ export default function App() {
   };
 
   const handleExport = async () => {
-    if (!doc?.path) return;
+    if (!doc || doc.origin.kind !== "package") return;
     const folder = await openDialog({ directory: true });
     if (typeof folder === "string") {
       try {
-        await exportFolder(doc.path, folder);
+        await exportFolder(doc.origin.path, folder);
         setStatus(`Exported to ${folder}`);
       } catch (e) {
         setError(String(e));
         setStatus("Error");
       }
+    }
+  };
+
+  const handleExportPackage = async () => {
+    if (!doc || doc.origin.kind !== "folder") return;
+    const result = await saveDialog({
+      filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
+      defaultPath: "document.mdpkg",
+    });
+    if (typeof result !== "string") return;
+    try {
+      const path = result.toLowerCase().endsWith(".mdpkg") ? result : `${result}.mdpkg`;
+      await exportFolderDocumentPackage(doc, path);
+      setStatus(`Exported package ${path}`);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      setStatus("Error");
     }
   };
 
@@ -863,12 +1049,16 @@ export default function App() {
         onToggleFileList={() => setFileListOpen((open) => !open)}
         hasDocument={doc !== null}
         onOpen={handleOpen}
+        onOpenFolder={handleOpenFolder}
+        onStartWithEmptyFolder={handleStartWithEmptyFolder}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onPrint={handlePrint}
         onNew={handleNew}
         onImport={handleImport}
         onExport={handleExport}
+        onExportPackage={handleExportPackage}
+        documentKind={doc?.origin.kind ?? null}
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
         onInsertMermaid={handleInsertMermaid}
@@ -1079,7 +1269,11 @@ export default function App() {
           onClose={() => setThirdPartyLicensesOpen(false)}
         />
       )}
-      <StatusBar message={status} />
+      <StatusBar
+        message={status}
+        mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
+        location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
+      />
       <NotificationBanners notices={notifications} />
     </div>
   );

@@ -6,12 +6,16 @@ interface Props {
   onToggleFileList: () => void;
   hasDocument: boolean;
   onOpen: () => void;
+  onOpenFolder?: () => void;
+  onStartWithEmptyFolder?: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onPrint: () => void;
   onNew: () => void;
   onImport: () => void;
   onExport: () => void;
+  onExportPackage?: () => void;
+  documentKind?: "package" | "folder" | "untitled" | null;
   onInsertDrawing: () => void;
   onInsertPlantUml: () => void;
   onInsertMermaid: () => void;
@@ -38,12 +42,16 @@ export function Toolbar({
   onToggleFileList,
   hasDocument,
   onOpen,
+  onOpenFolder,
+  onStartWithEmptyFolder,
   onSave,
   onSaveAs,
   onPrint,
   onNew,
   onImport,
   onExport,
+  onExportPackage,
+  documentKind,
   onInsertDrawing,
   onInsertPlantUml,
   onInsertMermaid,
@@ -100,12 +108,15 @@ export function Toolbar({
           <div className="toolbar-menu-items" role="menu">
             <button type="button" role="menuitem" onClick={() => run(onNew)}>New</button>
             <button type="button" role="menuitem" onClick={() => run(onOpen)}>Open</button>
+            <button type="button" role="menuitem" onClick={() => run(onOpenFolder ?? (() => {}))}>Open Folder...</button>
+            <button type="button" role="menuitem" onClick={() => run(onStartWithEmptyFolder ?? (() => {}))}>Start with New Empty Folder</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSave)}>Save</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSaveAs)}>Save As</button>
+            <button type="button" role="menuitem" disabled={!hasDocument || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
             <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onExport)}>Export Folder</button>
+            <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>Export Folder</button>
+            <button type="button" role="menuitem" disabled={documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
           </div>
         )}
       </div>

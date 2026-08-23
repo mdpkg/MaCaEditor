@@ -27,6 +27,14 @@ pub struct SaveRequest {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct FolderSaveRequest {
+    pub path: String,
+    pub manifest: serde_json::Value,
+    pub files: Vec<FileContent>,
+    pub original_paths: Vec<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct FileContent {
     pub path: String,
     pub is_text: bool,
@@ -48,7 +56,10 @@ pub fn read_image(path: String) -> Result<ImportedImage, String> {
         .and_then(|value| value.to_str())
         .map(str::to_ascii_lowercase)
         .ok_or("image file must have an extension")?;
-    if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp") {
+    if !matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+    ) {
         return Err(format!("unsupported image type: .{extension}"));
     }
     read_imported_file(&source)
@@ -117,30 +128,87 @@ pub fn open_package(path: String) -> Result<PackageInfo, String> {
     })
 }
 
+#[tauri::command]
+pub fn open_folder(path: String) -> Result<PackageInfo, String> {
+    let loaded =
+        crate::folder_document::load_folder(&PathBuf::from(path)).map_err(|e| e.to_string())?;
+    folder_package_info(loaded)
+}
+
+#[tauri::command]
+pub fn create_empty_folder(path: String) -> Result<PackageInfo, String> {
+    let loaded = crate::folder_document::create_empty_folder(&PathBuf::from(path))
+        .map_err(|e| e.to_string())?;
+    folder_package_info(loaded)
+}
+
+fn folder_package_info(
+    loaded: crate::folder_document::FolderDocument,
+) -> Result<PackageInfo, String> {
+    let files = loaded.files.iter().map(to_file_info).collect();
+    let manifest = serde_json::to_value(&loaded.manifest).map_err(|e| e.to_string())?;
+    Ok(PackageInfo {
+        entrypoint: loaded.manifest.entrypoint.clone(),
+        manifest,
+        files,
+    })
+}
+
 /// Document Model を `.mdpkg` として保存する Tauri コマンド。
 #[tauri::command]
 pub fn save_package(request: SaveRequest) -> Result<(), String> {
-    let manifest = crate::manifest::Manifest::parse(&request.manifest.to_string())
-        .map_err(|e| e.to_string())?;
-
-    let mut files: Vec<crate::package_file::PackageFile> = Vec::new();
-    for f in request.files {
-        let content = if f.is_text {
-            f.content.unwrap_or_default().into_bytes()
-        } else {
-            decode_base64(&f.base64.unwrap_or_default()).map_err(|e| e.to_string())?
-        };
-        let file = if f.is_text {
-            crate::package_file::PackageFile::new_text(f.path, String::from_utf8(content).map_err(|e| e.to_string())?)
-        } else {
-            crate::package_file::PackageFile::new_binary(f.path, content)
-        };
-        files.push(file);
-    }
+    let manifest = parse_manifest(&request.manifest)?;
+    let files = parse_files(request.files)?;
 
     let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
     atomic_save(&PathBuf::from(&request.path), &zip).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn save_folder(request: FolderSaveRequest) -> Result<(), String> {
+    let manifest = parse_manifest(&request.manifest)?;
+    let files = parse_files(request.files)?;
+    crate::folder_document::save_folder(
+        &PathBuf::from(request.path),
+        &manifest,
+        &files,
+        &request.original_paths,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_package(request: SaveRequest) -> Result<(), String> {
+    let manifest = parse_manifest(&request.manifest)?;
+    let files = parse_files(request.files)?;
+    crate::folder_document::validate_document(&manifest, &files).map_err(|e| e.to_string())?;
+    let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
+    atomic_save(&PathBuf::from(request.path), &zip).map_err(|e| e.to_string())
+}
+
+fn parse_manifest(value: &serde_json::Value) -> Result<crate::manifest::Manifest, String> {
+    crate::manifest::Manifest::parse(&value.to_string()).map_err(|e| e.to_string())
+}
+
+fn parse_files(files: Vec<FileContent>) -> Result<Vec<crate::package_file::PackageFile>, String> {
+    files
+        .into_iter()
+        .map(|f| {
+            crate::path_validator::validate_package_path(&f.path).map_err(|e| e.to_string())?;
+            if f.is_text {
+                Ok(crate::package_file::PackageFile::new_text(
+                    f.path,
+                    f.content.unwrap_or_default(),
+                ))
+            } else {
+                Ok(crate::package_file::PackageFile::new_binary(
+                    f.path,
+                    decode_base64(&f.base64.unwrap_or_default())?,
+                ))
+            }
+        })
+        .collect()
 }
 
 fn decode_base64(data: &str) -> Result<Vec<u8>, String> {
@@ -206,7 +274,9 @@ fn collect_folder(
             let file = if is_text_path(&rel_str) {
                 match String::from_utf8(content.clone()) {
                     Ok(text) => crate::package_file::PackageFile::new_text(rel_str.clone(), text),
-                    Err(_) => crate::package_file::PackageFile::new_binary(rel_str.clone(), content),
+                    Err(_) => {
+                        crate::package_file::PackageFile::new_binary(rel_str.clone(), content)
+                    }
                 }
             } else {
                 crate::package_file::PackageFile::new_binary(rel_str.clone(), content)
@@ -245,6 +315,8 @@ pub fn export_folder(package_path: String, dest: String) -> Result<(), String> {
     let loaded = load_package(&data).map_err(|e| e.to_string())?;
     let dest = PathBuf::from(&dest);
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    let manifest = serde_json::to_vec_pretty(&loaded.manifest).map_err(|e| e.to_string())?;
+    atomic_save(&dest.join("manifest.json"), &manifest).map_err(|e| e.to_string())?;
     for file in &loaded.files {
         let target = dest.join(file.path.replace('\\', "/"));
         if let Some(parent) = target.parent() {
@@ -262,7 +334,9 @@ pub fn setup(app: &mut tauri::App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_attachment, save_attachment};
+    use super::{
+        export_folder, export_package, read_attachment, save_attachment, FileContent, SaveRequest,
+    };
     use std::path::PathBuf;
 
     fn temporary_attachment_path() -> PathBuf {
@@ -283,7 +357,10 @@ mod tests {
 
         let imported = read_attachment(path.to_string_lossy().into_owned()).unwrap();
 
-        assert_eq!(imported.file_name, path.file_name().unwrap().to_string_lossy());
+        assert_eq!(
+            imported.file_name,
+            path.file_name().unwrap().to_string_lossy()
+        );
         assert_eq!(imported.base64, "AQID");
         std::fs::remove_file(path).unwrap();
     }
@@ -296,5 +373,64 @@ mod tests {
 
         assert_eq!(std::fs::read(&path).unwrap(), [1_u8, 2, 3]);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn exports_a_valid_document_as_mdpkg() {
+        let path = temporary_attachment_path().with_extension("mdpkg");
+        let request = SaveRequest {
+            path: path.to_string_lossy().into_owned(),
+            manifest: serde_json::json!({
+                "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T"
+            }),
+            files: vec![FileContent {
+                path: "README.md".into(),
+                is_text: true,
+                content: Some("# Hello".into()),
+                base64: None,
+            }],
+        };
+        export_package(request).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let loaded = crate::package_loader::load_package(&bytes).unwrap();
+        assert_eq!(loaded.manifest.entrypoint, "README.md");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn export_folder_includes_manifest_json() {
+        let package_path = temporary_attachment_path().with_extension("mdpkg");
+        let dest = temporary_attachment_path().with_extension("folder");
+        export_package(SaveRequest {
+            path: package_path.to_string_lossy().into_owned(),
+            manifest: serde_json::json!({
+                "format": "mdpkg", "version": "1.0", "entrypoint": "README.md",
+                "title": "Exported", "custom": 42
+            }),
+            files: vec![FileContent {
+                path: "README.md".into(),
+                is_text: true,
+                content: Some("# Exported".into()),
+                base64: None,
+            }],
+        })
+        .unwrap();
+
+        export_folder(
+            package_path.to_string_lossy().into_owned(),
+            dest.to_string_lossy().into_owned(),
+        )
+        .unwrap();
+
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dest.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["format"], "mdpkg");
+        assert_eq!(manifest["custom"], 42);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("README.md")).unwrap(),
+            "# Exported"
+        );
+        std::fs::remove_file(package_path).unwrap();
+        std::fs::remove_dir_all(dest).unwrap();
     }
 }

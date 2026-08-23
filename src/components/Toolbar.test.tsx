@@ -76,7 +76,7 @@ describe("Toolbar menus", () => {
       .find((button) => button.textContent === "File") as HTMLButtonElement;
     act(() => fileButton.click());
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
-      .toEqual(["New", "Open", "Save", "Save As", "Print", "Import Folder", "Export Folder"]);
+      .toEqual(["New", "Open", "Open Folder...", "Start with New Empty Folder", "Save", "Save As", "Print", "Import Folder", "Export Folder", "Export Package..."]);
     const printButton = Array.from(container.querySelectorAll(".toolbar-menu-items button"))
       .find((button) => button.textContent === "Print") as HTMLButtonElement;
     act(() => printButton.click());

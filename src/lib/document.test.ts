@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
-import { createDocumentState, toSaveRequest, updateFileContent } from "./document";
+import { createDocumentState, createFolderDocumentState, toFolderSaveRequest, toSaveRequest, updateFileContent } from "./document";
 
 const info: PackageInfo = {
   manifest: { format: "mdpkg", version: "1.0", entrypoint: "README.md", title: "T" },
@@ -16,6 +16,13 @@ describe("document state", () => {
     const state = createDocumentState(info, "test.mdpkg");
     expect(state.dirty).toBe(false);
     expect(state.path).toBe("test.mdpkg");
+    expect(state.origin).toEqual({ kind: "package", path: "test.mdpkg" });
+  });
+
+  test("creates Folder origin and baseline paths", () => {
+    const state = createFolderDocumentState(info, "C:/docs/example");
+    expect(state.origin).toEqual({ kind: "folder", path: "C:/docs/example" });
+    expect(toFolderSaveRequest(state).original_paths).toEqual(["README.md", "manifest.json"]);
   });
 
   test("marks dirty on update", () => {

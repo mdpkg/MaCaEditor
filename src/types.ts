@@ -24,6 +24,10 @@ export interface SaveRequest {
   files: FileContent[];
 }
 
+export interface FolderSaveRequest extends SaveRequest {
+  original_paths: string[];
+}
+
 export interface ImportedFile {
   file_name: string;
   base64: string;

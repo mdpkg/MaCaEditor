@@ -1,5 +1,7 @@
 pub mod atomic_save;
 pub mod commands;
+pub mod folder_document;
+pub mod folder_watcher;
 pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
@@ -53,6 +55,7 @@ pub fn run() {
     });
 
     builder
+        .manage(folder_watcher::FolderWatcherState::default())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -70,13 +73,19 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             commands::open_package,
+            commands::open_folder,
+            commands::create_empty_folder,
             commands::save_package,
+            commands::save_folder,
+            commands::export_package,
             commands::create_new_package,
             commands::import_folder,
             commands::export_folder,
             commands::read_attachment,
             commands::read_image,
             commands::save_attachment,
+            folder_watcher::watch_folder,
+            folder_watcher::stop_watching_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
