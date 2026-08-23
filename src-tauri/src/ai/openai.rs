@@ -158,7 +158,7 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
     async fn stream(
         &self,
         request: AiRequest,
-    ) -> Result<Box<dyn futures::Stream<Item = Result<AiStreamEvent, AiError>> + Send>, AiError> {
+    ) -> Result<Box<dyn futures::Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin>, AiError> {
         let model = "default";
         let openai_request = self.to_openai_request(model, &request, true)?;
         let stream = self

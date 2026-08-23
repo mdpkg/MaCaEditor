@@ -17,7 +17,7 @@ pub trait AiProvider {
     async fn stream(
         &self,
         _request: AiRequest,
-    ) -> Result<Box<dyn Stream<Item = Result<AiStreamEvent, AiError>> + Send>, AiError> {
+    ) -> Result<Box<dyn Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin>, AiError> {
         Err(AiError::InvalidConfiguration(
             "streaming is not supported".to_string(),
         ))
