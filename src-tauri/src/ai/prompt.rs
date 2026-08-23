@@ -129,4 +129,21 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, AiRole::User);
     }
+
+    #[test]
+    fn omits_all_empty_parts() {
+        let messages = PromptBuilder::new().build();
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn trims_whitespace_only_parts() {
+        let messages = PromptBuilder::new()
+            .with_system_prompt("   ")
+            .with_user_input("  ")
+            .with_context("  ")
+            .with_instruction("  ")
+            .build();
+        assert!(messages.is_empty());
+    }
 }
