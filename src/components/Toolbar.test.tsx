@@ -19,6 +19,7 @@ describe("Toolbar menus", () => {
     const onToggleFileList = vi.fn();
     const onAddAttachment = vi.fn();
     const onAbout = vi.fn();
+    const onAiSettings = vi.fn();
     const onThirdPartyLicenses = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -46,6 +47,7 @@ describe("Toolbar menus", () => {
         onAddImage={noop}
         onAddAttachment={onAddAttachment}
         onAbout={onAbout}
+        onAiSettings={onAiSettings}
         onThirdPartyLicenses={onThirdPartyLicenses}
         showToc={false}
         onShowTocChange={onShowTocChange}
@@ -115,6 +117,11 @@ describe("Toolbar menus", () => {
     expect(licensesButton).toBeInstanceOf(HTMLButtonElement);
     act(() => licensesButton.click());
     expect(onThirdPartyLicenses).toHaveBeenCalledOnce();
+    act(() => helpButton.click());
+    const aiSettingsButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
+      .find((button) => button.textContent === "AI Settings") as HTMLButtonElement;
+    act(() => aiSettingsButton.click());
+    expect(onAiSettings).toHaveBeenCalledOnce();
     act(() => helpButton.click());
     const aboutButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
       .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
