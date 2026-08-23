@@ -72,4 +72,16 @@ mod tests {
         registry.unregister("r1");
         assert!(!registry.cancel("r1"));
     }
+
+    #[test]
+    fn register_returns_distinct_tokens_per_request() {
+        let registry = CancellationRegistry::new();
+        let token_a = registry.register("a");
+        let token_b = registry.register("b");
+        assert!(!std::ptr::eq(&token_a, &token_b));
+        // 片方をキャンセルしても他方は影響されない
+        assert!(registry.cancel("a"));
+        assert!(token_a.is_cancelled());
+        assert!(!token_b.is_cancelled());
+    }
 }
