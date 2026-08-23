@@ -45,4 +45,14 @@ mod tests {
         assert!(!caps.tool_calling);
         assert!(!caps.vision);
     }
+
+    #[test]
+    fn new_constructs_capabilities() {
+        let caps = AiProviderCapabilities::new(true, false, true, false, true);
+        assert!(caps.streaming);
+        assert!(!caps.model_listing);
+        assert!(caps.json_schema);
+        assert!(!caps.tool_calling);
+        assert!(caps.vision);
+    }
 }
