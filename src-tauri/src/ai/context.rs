@@ -52,4 +52,13 @@ mod tests {
         ctx.package_files.push(AiContextFile::new("README.md", "# hi"));
         assert_eq!(ctx.package_files.len(), 1);
     }
+
+    #[test]
+    fn context_can_hold_selection_and_cursor() {
+        let mut ctx = AiRequestContext::new();
+        ctx.selected_text = Some("selected".to_string());
+        ctx.cursor_context = Some("cursor".to_string());
+        assert_eq!(ctx.selected_text.as_deref(), Some("selected"));
+        assert_eq!(ctx.cursor_context.as_deref(), Some("cursor"));
+    }
 }
