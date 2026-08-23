@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod atomic_save;
 pub mod commands;
 pub mod folder_document;
