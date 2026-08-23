@@ -107,6 +107,7 @@ where
     let mut inner = inner;
     let mut cancelled = false;
     let mut completed = false;
+    let mut timed_out = false;
 
     let timeout_duration = std::time::Duration::from_secs(request_timeout_seconds);
     let mut timeout = Box::pin(tokio::time::sleep(timeout_duration));
@@ -132,9 +133,13 @@ where
         }
         use futures::FutureExt;
         if std::task::Poll::Ready(()) == timeout.as_mut().poll_unpin(cx) {
-            return std::task::Poll::Ready(Some(Err(AiError::Timeout(
-                "request timeout".to_string(),
-            ))));
+            if !timed_out {
+                timed_out = true;
+                return std::task::Poll::Ready(Some(Err(AiError::Timeout(
+                    "request timeout".to_string(),
+                ))));
+            }
+            return std::task::Poll::Ready(None);
         }
 
         match inner.poll_next_unpin(cx) {
@@ -245,5 +250,78 @@ mod tests {
         let coordinator = AiStreamCoordinator::new(MockAiProvider::new("answer"));
         assert!(!coordinator.cancel("missing"));
         assert!(!coordinator.cancel("missing"));
+    }
+
+    #[tokio::test]
+    async fn connect_timeout_returns_timeout_error() {
+        // 接続に時間がかかる provider を用意し、短い connect timeout で打ち切る。
+        struct SlowProvider;
+        impl crate::ai::provider::AiProvider for SlowProvider {
+            async fn complete(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<crate::ai::types::AiResponse, crate::ai::error::AiError> {
+                Ok(crate::ai::types::AiResponse::new(""))
+            }
+            async fn stream(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<
+                Box<dyn futures::Stream<Item = Result<crate::ai::types::AiStreamEvent, crate::ai::error::AiError>> + Send + Unpin>,
+                crate::ai::error::AiError,
+            > {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                Err(crate::ai::error::AiError::Unknown("never".to_string()))
+            }
+        }
+
+        let coordinator = AiStreamCoordinator::new(SlowProvider);
+        let result = coordinator
+            .start(sample_request(), Some(1), None)
+            .await;
+        assert!(matches!(result, Err(AiError::Timeout(_))));
+    }
+
+    #[tokio::test]
+    async fn request_timeout_emits_timeout_error() {
+        // 1 つの delta を返した後、応答が止まる provider。
+        struct HangingProvider;
+        impl crate::ai::provider::AiProvider for HangingProvider {
+            async fn complete(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<crate::ai::types::AiResponse, crate::ai::error::AiError> {
+                Ok(crate::ai::types::AiResponse::new(""))
+            }
+            async fn stream(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<
+                Box<dyn futures::Stream<Item = Result<crate::ai::types::AiStreamEvent, crate::ai::error::AiError>> + Send + Unpin>,
+                crate::ai::error::AiError,
+            > {
+                use futures::stream;
+                let item: Result<crate::ai::types::AiStreamEvent, crate::ai::error::AiError> =
+                    Ok(crate::ai::types::AiStreamEvent::Delta {
+                        request_id: String::new(),
+                        content: "hi".to_string(),
+                    });
+                Ok(Box::new(stream::iter(vec![item]).chain(stream::pending())))
+            }
+        }
+
+        let coordinator = AiStreamCoordinator::new(HangingProvider);
+        let mut stream = coordinator
+            .start(sample_request(), None, Some(1))
+            .await
+            .unwrap();
+        use futures::StreamExt;
+        let mut events = Vec::new();
+        while let Some(item) = stream.next().await {
+            events.push(item);
+        }
+        assert!(matches!(events[0], Ok(AiStreamEvent::Started { .. })));
+        assert!(matches!(events[1], Ok(AiStreamEvent::Delta { .. })));
+        assert!(matches!(events[2], Err(AiError::Timeout(_))));
     }
 }
