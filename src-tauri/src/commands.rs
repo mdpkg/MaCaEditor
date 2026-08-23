@@ -267,6 +267,33 @@ pub fn load_ai_config() -> Result<crate::ai::config::AiConfig, String> {
     crate::ai::storage::load_ai_config()
 }
 
+/// Model 一覧を取得する Tauri コマンド。
+#[tauri::command]
+pub async fn list_ai_models(
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    provider
+        .list_models()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 接続テストを実行する Tauri コマンド。
+#[tauri::command]
+pub async fn test_ai_connection(
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+) -> Result<(), String> {
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    provider
+        .test_connection(&model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// アプリの状態を管理するためのセットアップ。
 pub fn setup(app: &mut tauri::App) {
     let _ = app;
