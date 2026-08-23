@@ -132,6 +132,54 @@ describe("startAiStream", () => {
       error: { kind: "ConnectionFailed" },
     });
   });
+
+  test("forwards completed and cancelled events", async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "ai_stream") {
+        emitChannelEvent({ type: "completed", request_id: "r1" });
+        emitChannelEvent({ type: "cancelled", request_id: "r1" });
+        return "r1";
+      }
+      return undefined;
+    });
+
+    const events: AiStreamEvent[] = [];
+    await startAiStream(
+      {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: null,
+        model: "qwen2.5",
+        request: { messages: [{ role: "User", content: "hi" }] },
+      },
+      (e) => events.push(e)
+    );
+
+    expect(events[0]).toMatchObject({ type: "completed", request_id: "r1" });
+    expect(events[1]).toMatchObject({ type: "cancelled", request_id: "r1" });
+  });
+
+  test("passes timeout settings to ai_stream", async () => {
+    invokeMock.mockResolvedValue("r1");
+    await startAiStream(
+      {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: null,
+        model: "qwen2.5",
+        request: { messages: [{ role: "User", content: "hi" }] },
+        connectTimeoutSeconds: 10,
+        requestTimeoutSeconds: 300,
+      },
+      () => {}
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "ai_stream",
+      expect.objectContaining({
+        connectTimeoutSeconds: 10,
+        requestTimeoutSeconds: 300,
+      })
+    );
+  });
 });
 
 describe("cancelAiRequest", () => {
