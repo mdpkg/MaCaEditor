@@ -89,6 +89,8 @@ pub fn run() {
             folder_watcher::stop_watching_folder,
             commands::save_ai_config,
             commands::load_ai_config,
+            commands::list_ai_models,
+            commands::test_ai_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
