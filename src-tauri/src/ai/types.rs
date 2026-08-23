@@ -136,4 +136,23 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn stream_event_round_trips_all_variants() {
+        let events = [
+            AiStreamEvent::Started { request_id: "r1".to_string() },
+            AiStreamEvent::Delta { request_id: "r1".to_string(), content: "hi".to_string() },
+            AiStreamEvent::Completed { request_id: "r1".to_string() },
+            AiStreamEvent::Cancelled { request_id: "r1".to_string() },
+            AiStreamEvent::Error {
+                request_id: "r1".to_string(),
+                error: crate::ai::error::AiError::Timeout("slow".to_string()),
+            },
+        ];
+        for event in events {
+            let json = serde_json::to_string(&event).unwrap();
+            let decoded: AiStreamEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(decoded, event);
+        }
+    }
 }
