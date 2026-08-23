@@ -139,6 +139,18 @@ fn delta_content_from_chunk(
     Some(content)
 }
 
+/// stream chunk を `AiStreamEvent::Delta` へ変換する。
+/// content が無い chunk（role のみ・finish chunk・空 chunk）は None を返し、
+/// UI へは実際に content がある chunk のみを流す。
+fn chunk_to_stream_event(
+    chunk: &async_openai::types::chat::CreateChatCompletionStreamResponse,
+) -> Option<AiStreamEvent> {
+    delta_content_from_chunk(chunk).map(|content| AiStreamEvent::Delta {
+        request_id: String::new(),
+        content,
+    })
+}
+
 impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
     async fn complete(
         &self,
@@ -168,17 +180,16 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
             .await
             .map_err(map_openai_error)?;
         use futures::StreamExt;
-        Ok(Box::new(stream.map(|item| {
-            item.map_err(map_openai_error).and_then(|chunk| {
-                match delta_content_from_chunk(&chunk) {
-                    Some(content) => Ok(AiStreamEvent::Delta {
-                        request_id: String::new(),
-                        content,
-                    }),
-                    None => Err(AiError::InvalidResponse("empty chunk".to_string())),
+        let filtered = stream.filter_map(|item| {
+            let mapped = item.map_err(map_openai_error);
+            async move {
+                match mapped {
+                    Ok(chunk) => chunk_to_stream_event(&chunk).map(Ok),
+                    Err(error) => Some(Err(error)),
                 }
-            })
-        })))
+            }
+        });
+        Ok(Box::new(Box::pin(filtered)))
     }
 }
 
@@ -337,6 +348,46 @@ mod tests {
         let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
             serde_json::from_str(json).unwrap();
         assert_eq!(delta_content_from_chunk(&chunk), None);
+    }
+
+    #[test]
+    fn maps_chunk_with_content_to_delta_event() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{
+                "index": 0,
+                "delta": { "content": "hello" },
+                "finish_reason": null
+            }]
+        }"#;
+        let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
+            serde_json::from_str(json).unwrap();
+        let event = chunk_to_stream_event(&chunk);
+        assert!(matches!(
+            event,
+            Some(AiStreamEvent::Delta { content, .. }) if content == "hello"
+        ));
+    }
+
+    #[test]
+    fn skips_chunk_without_content_in_stream_mapping() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{
+                "index": 0,
+                "delta": { "role": "assistant" },
+                "finish_reason": null
+            }]
+        }"#;
+        let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
+            serde_json::from_str(json).unwrap();
+        assert!(chunk_to_stream_event(&chunk).is_none());
     }
 
     #[test]
