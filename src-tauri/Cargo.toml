@@ -23,6 +23,10 @@ base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate", "deflate-flate2"] }
 thiserror = "2"
 notify = "8.2"
+async-openai = { version = "0.41", default-features = false, features = ["rustls", "chat-completion", "model"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-window-state = "2"
