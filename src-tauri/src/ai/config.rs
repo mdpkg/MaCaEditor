@@ -13,6 +13,8 @@ pub struct AiConfig {
     pub model: String,
     pub temperature: Option<f32>,
     pub max_output_tokens: Option<u32>,
+    pub connect_timeout_seconds: Option<u64>,
+    pub request_timeout_seconds: Option<u64>,
 }
 
 impl AiConfig {
@@ -23,6 +25,8 @@ impl AiConfig {
         model: String,
         temperature: Option<f32>,
         max_output_tokens: Option<u32>,
+        connect_timeout_seconds: Option<u64>,
+        request_timeout_seconds: Option<u64>,
     ) -> Self {
         Self {
             provider,
@@ -31,6 +35,8 @@ impl AiConfig {
             model,
             temperature,
             max_output_tokens,
+            connect_timeout_seconds,
+            request_timeout_seconds,
         }
     }
 }
@@ -45,7 +51,14 @@ pub enum ConfigError {
     EmptyModel,
     #[error("temperature must be between 0.0 and 2.0")]
     InvalidTemperature,
+    #[error("timeout must be a positive number")]
+    InvalidTimeout,
+    #[error("timeout is too large")]
+    TimeoutTooLarge,
 }
+
+/// Timeout の妥当な上限（秒）。ローカル LLM の遅さを考慮しつつ、誤設定を防ぐ。
+pub const MAX_TIMEOUT_SECONDS: u64 = 3600;
 
 /// AI 設定を検証する。
 pub fn validate_config(config: &AiConfig) -> Result<(), ConfigError> {
@@ -66,6 +79,17 @@ pub fn validate_config(config: &AiConfig) -> Result<(), ConfigError> {
             return Err(ConfigError::InvalidTemperature);
         }
     }
+    for timeout in [config.connect_timeout_seconds, config.request_timeout_seconds]
+        .into_iter()
+        .flatten()
+    {
+        if timeout == 0 {
+            return Err(ConfigError::InvalidTimeout);
+        }
+        if timeout > MAX_TIMEOUT_SECONDS {
+            return Err(ConfigError::TimeoutTooLarge);
+        }
+    }
     Ok(())
 }
 
@@ -81,6 +105,8 @@ mod tests {
             "qwen2.5".to_string(),
             Some(0.7),
             Some(4096),
+            Some(10),
+            Some(300),
         )
     }
 
@@ -129,5 +155,25 @@ mod tests {
         let c = valid_config();
         assert!(c.api_key.is_none());
         assert!(validate_config(&c).is_ok());
+    }
+
+    #[test]
+    fn accepts_timeouts() {
+        let c = valid_config();
+        assert!(validate_config(&c).is_ok());
+    }
+
+    #[test]
+    fn rejects_zero_timeout() {
+        let mut c = valid_config();
+        c.connect_timeout_seconds = Some(0);
+        assert_eq!(validate_config(&c), Err(ConfigError::InvalidTimeout));
+    }
+
+    #[test]
+    fn rejects_negative_timeout() {
+        let mut c = valid_config();
+        c.request_timeout_seconds = Some(u64::MAX);
+        assert_eq!(validate_config(&c), Err(ConfigError::TimeoutTooLarge));
     }
 }
