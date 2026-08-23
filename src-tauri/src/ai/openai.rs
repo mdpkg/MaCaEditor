@@ -10,7 +10,7 @@ use async_openai::types::chat::{
 };
 
 use crate::ai::error::{classify_http_status, AiError};
-use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole};
+use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
 
 /// OpenAI Compatible API へ接続する Provider。
 pub struct OpenAiCompatibleProvider {
@@ -35,6 +35,7 @@ impl OpenAiCompatibleProvider {
         &self,
         model: &str,
         request: &AiRequest,
+        stream: bool,
     ) -> Result<CreateChatCompletionRequest, AiError> {
         let mut builder = CreateChatCompletionRequestArgs::default();
         let messages = request
@@ -49,6 +50,9 @@ impl OpenAiCompatibleProvider {
         }
         if let Some(n) = request.max_output_tokens {
             builder.max_tokens(n);
+        }
+        if stream {
+            builder.stream(true);
         }
         builder.build().map_err(|e| AiError::InvalidConfiguration(e.to_string()))
     }
@@ -113,7 +117,7 @@ impl OpenAiCompatibleProvider {
     /// 最小の Chat Completion を送信して接続を確認する。
     pub async fn test_connection(&self, model: &str) -> Result<(), AiError> {
         let request = AiRequest::new(vec![AiMessage::new(AiRole::User, "ping")]);
-        let openai_request = self.to_openai_request(model, &request)?;
+        let openai_request = self.to_openai_request(model, &request, false)?;
         self.client
             .chat()
             .create(openai_request)
@@ -123,13 +127,25 @@ impl OpenAiCompatibleProvider {
     }
 }
 
+/// stream chunk からユーザー向けテキスト delta を抽出する。
+/// content が無い chunk（role のみ・finish chunk・空 chunk）は None を返す。
+fn delta_content_from_chunk(
+    chunk: &async_openai::types::chat::CreateChatCompletionStreamResponse,
+) -> Option<String> {
+    let content = chunk.choices.first()?.delta.content.clone()?;
+    if content.trim().is_empty() {
+        return None;
+    }
+    Some(content)
+}
+
 impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
     async fn complete(
         &self,
         request: AiRequest,
     ) -> Result<AiResponse, AiError> {
         let model = "default";
-        let openai_request = self.to_openai_request(model, &request)?;
+        let openai_request = self.to_openai_request(model, &request, false)?;
         let response = self
             .client
             .chat()
@@ -137,6 +153,32 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
             .await
             .map_err(map_openai_error)?;
         from_openai_response(response)
+    }
+
+    async fn stream(
+        &self,
+        request: AiRequest,
+    ) -> Result<Box<dyn futures::Stream<Item = Result<AiStreamEvent, AiError>> + Send>, AiError> {
+        let model = "default";
+        let openai_request = self.to_openai_request(model, &request, true)?;
+        let stream = self
+            .client
+            .chat()
+            .create_stream(openai_request)
+            .await
+            .map_err(map_openai_error)?;
+        use futures::StreamExt;
+        Ok(Box::new(stream.map(|item| {
+            item.map_err(map_openai_error).and_then(|chunk| {
+                match delta_content_from_chunk(&chunk) {
+                    Some(content) => Ok(AiStreamEvent::Delta {
+                        request_id: String::new(),
+                        content,
+                    }),
+                    None => Err(AiError::InvalidResponse("empty chunk".to_string())),
+                }
+            })
+        })))
     }
 }
 
@@ -187,12 +229,22 @@ mod tests {
     fn maps_application_request_to_openai_request() {
         let provider = OpenAiCompatibleProvider::new("http://localhost:11434/v1", None);
         let request = provider
-            .to_openai_request("qwen2.5", &sample_request())
+            .to_openai_request("qwen2.5", &sample_request(), false)
             .unwrap();
         assert_eq!(request.model, "qwen2.5");
         assert_eq!(request.messages.len(), 2);
         assert_eq!(request.temperature, Some(0.7));
         assert_eq!(request.max_tokens, Some(4096));
+        assert_eq!(request.stream, None);
+    }
+
+    #[test]
+    fn maps_streaming_request_with_stream_flag() {
+        let provider = OpenAiCompatibleProvider::new("http://localhost:11434/v1", None);
+        let request = provider
+            .to_openai_request("qwen2.5", &sample_request(), true)
+            .unwrap();
+        assert_eq!(request.stream, Some(true));
     }
 
     #[test]
@@ -229,6 +281,60 @@ mod tests {
             from_openai_response(response),
             Err(AiError::InvalidResponse(_))
         ));
+    }
+
+    #[test]
+    fn extracts_content_delta_from_chunk() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{
+                "index": 0,
+                "delta": { "content": "hello" },
+                "finish_reason": null
+            }]
+        }"#;
+        let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
+            serde_json::from_str(json).unwrap();
+        assert_eq!(delta_content_from_chunk(&chunk).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn ignores_chunk_without_content() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{
+                "index": 0,
+                "delta": { "role": "assistant" },
+                "finish_reason": null
+            }]
+        }"#;
+        let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
+            serde_json::from_str(json).unwrap();
+        assert_eq!(delta_content_from_chunk(&chunk), None);
+    }
+
+    #[test]
+    fn ignores_empty_content_chunk() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{
+                "index": 0,
+                "delta": { "content": "" },
+                "finish_reason": null
+            }]
+        }"#;
+        let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
+            serde_json::from_str(json).unwrap();
+        assert_eq!(delta_content_from_chunk(&chunk), None);
     }
 
     #[test]
