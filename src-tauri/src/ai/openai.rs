@@ -449,4 +449,34 @@ mod tests {
         let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
         assert!(matches!(mapped, AiError::ModelNotFound(_)));
     }
+
+    #[test]
+    fn maps_403_to_permission_denied() {
+        let api_error = async_openai::error::ApiErrorResponse {
+            status_code: reqwest::StatusCode::FORBIDDEN,
+            api_error: async_openai::error::ApiError {
+                message: "denied".to_string(),
+                r#type: None,
+                param: None,
+                code: None,
+            },
+        };
+        let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
+        assert!(matches!(mapped, AiError::PermissionDenied(_)));
+    }
+
+    #[test]
+    fn maps_400_to_invalid_configuration() {
+        let api_error = async_openai::error::ApiErrorResponse {
+            status_code: reqwest::StatusCode::BAD_REQUEST,
+            api_error: async_openai::error::ApiError {
+                message: "bad request".to_string(),
+                r#type: None,
+                param: None,
+                code: None,
+            },
+        };
+        let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
+        assert!(matches!(mapped, AiError::InvalidConfiguration(_)));
+    }
 }
