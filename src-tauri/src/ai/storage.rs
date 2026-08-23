@@ -71,4 +71,21 @@ mod tests {
             .unwrap();
         assert_eq!(json, "\"OpenAiCompatible\"");
     }
+
+    #[test]
+    fn config_round_trips_through_json() {
+        let config = crate::ai::config::AiConfig::new(
+            crate::ai::config::AiProviderKind::OpenAiCompatible,
+            "http://localhost:11434/v1".to_string(),
+            None,
+            "qwen2.5".to_string(),
+            Some(0.7),
+            Some(4096),
+            Some(10),
+            Some(300),
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        let decoded: crate::ai::config::AiConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, config);
+    }
 }
