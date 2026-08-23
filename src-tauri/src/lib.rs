@@ -87,6 +87,8 @@ pub fn run() {
             commands::save_attachment,
             folder_watcher::watch_folder,
             folder_watcher::stop_watching_folder,
+            commands::save_ai_config,
+            commands::load_ai_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
