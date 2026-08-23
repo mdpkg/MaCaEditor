@@ -255,6 +255,18 @@ pub fn export_folder(package_path: String, dest: String) -> Result<(), String> {
     Ok(())
 }
 
+/// AI 設定を保存する Tauri コマンド。
+#[tauri::command]
+pub fn save_ai_config(config: crate::ai::config::AiConfig) -> Result<(), String> {
+    crate::ai::storage::save_ai_config(&config)
+}
+
+/// AI 設定を読み込む Tauri コマンド。
+#[tauri::command]
+pub fn load_ai_config() -> Result<crate::ai::config::AiConfig, String> {
+    crate::ai::storage::load_ai_config()
+}
+
 /// アプリの状態を管理するためのセットアップ。
 pub fn setup(app: &mut tauri::App) {
     let _ = app;

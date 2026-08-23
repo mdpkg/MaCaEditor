@@ -78,6 +78,8 @@ pub fn run() {
             commands::read_attachment,
             commands::read_image,
             commands::save_attachment,
+            commands::save_ai_config,
+            commands::load_ai_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
