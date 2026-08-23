@@ -1,5 +1,5 @@
 /// AI エラー。
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error, serde::Serialize, serde::Deserialize)]
 pub enum AiError {
     #[error("AI configuration is invalid: {0}")]
     InvalidConfiguration(String),

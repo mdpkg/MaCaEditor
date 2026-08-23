@@ -68,6 +68,30 @@ impl AiDelta {
     }
 }
 
+/// ストリーミング中のイベント。
+/// request ID で複数 request を区別できるようにする。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AiStreamEvent {
+    Started {
+        request_id: String,
+    },
+    Delta {
+        request_id: String,
+        content: String,
+    },
+    Completed {
+        request_id: String,
+    },
+    Error {
+        request_id: String,
+        error: crate::ai::error::AiError,
+    },
+    Cancelled {
+        request_id: String,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +112,28 @@ mod tests {
     fn builds_response() {
         let resp = AiResponse::new("hi");
         assert_eq!(resp.content, "hi");
+    }
+
+    #[test]
+    fn stream_event_serializes_with_type_tag() {
+        let event = AiStreamEvent::Delta {
+            request_id: "r1".to_string(),
+            content: "hi".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"delta\""));
+        assert!(json.contains("\"request_id\":\"r1\""));
+    }
+
+    #[test]
+    fn stream_event_deserializes() {
+        let json = r#"{"type":"completed","request_id":"r1"}"#;
+        let event: AiStreamEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            event,
+            AiStreamEvent::Completed {
+                request_id: "r1".to_string()
+            }
+        );
     }
 }
