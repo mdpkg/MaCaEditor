@@ -71,5 +71,17 @@ mod tests {
             classify_http_status(400, "bad request"),
             AiError::InvalidConfiguration(_)
         ));
+        assert!(matches!(
+            classify_http_status(408, "timed out"),
+            AiError::Timeout(_)
+        ));
+        assert!(matches!(
+            classify_http_status(599, "boom"),
+            AiError::ServerError(_)
+        ));
+        assert!(matches!(
+            classify_http_status(418, "teapot"),
+            AiError::Unknown(_)
+        ));
     }
 }
