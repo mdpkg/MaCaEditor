@@ -7,5 +7,6 @@ pub mod openai;
 pub mod prompt;
 pub mod provider;
 pub mod service;
+pub mod storage;
 pub mod structured;
 pub mod types;
