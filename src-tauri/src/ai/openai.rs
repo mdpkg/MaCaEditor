@@ -134,3 +134,83 @@ fn map_openai_error(error: async_openai::error::OpenAIError) -> AiError {
         other => AiError::Unknown(other.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::types::AiRole;
+
+    fn sample_request() -> AiRequest {
+        AiRequest {
+            messages: vec![
+                AiMessage::new(AiRole::System, "You are helpful."),
+                AiMessage::new(AiRole::User, "Hello"),
+            ],
+            temperature: Some(0.7),
+            max_output_tokens: Some(4096),
+        }
+    }
+
+    #[test]
+    fn maps_application_request_to_openai_request() {
+        let provider = OpenAiCompatibleProvider::new("http://localhost:11434/v1", None);
+        let request = provider
+            .to_openai_request("qwen2.5", &sample_request())
+            .unwrap();
+        assert_eq!(request.model, "qwen2.5");
+        assert_eq!(request.messages.len(), 2);
+        assert_eq!(request.temperature, Some(0.7));
+        assert_eq!(request.max_tokens, Some(4096));
+    }
+
+    #[test]
+    fn maps_openai_response_to_application_response() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "hi" },
+                "finish_reason": "stop"
+            }]
+        }"#;
+        let response: async_openai::types::chat::CreateChatCompletionResponse =
+            serde_json::from_str(json).unwrap();
+        let mapped = from_openai_response(response).unwrap();
+        assert_eq!(mapped.content, "hi");
+    }
+
+    #[test]
+    fn maps_empty_response_to_invalid_response_error() {
+        let json = r#"{
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": []
+        }"#;
+        let response: async_openai::types::chat::CreateChatCompletionResponse =
+            serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            from_openai_response(response),
+            Err(AiError::InvalidResponse(_))
+        ));
+    }
+
+    #[test]
+    fn maps_api_error_to_http_status_classification() {
+        let api_error = async_openai::error::ApiErrorResponse {
+            status_code: reqwest::StatusCode::UNAUTHORIZED,
+            api_error: async_openai::error::ApiError {
+                message: "bad key".to_string(),
+                r#type: None,
+                param: None,
+                code: None,
+            },
+        };
+        let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
+        assert!(matches!(mapped, AiError::AuthenticationFailed(_)));
+    }
+}
