@@ -5,6 +5,8 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod mock;
+#[cfg(test)]
+pub mod mock_server;
 pub mod openai;
 pub mod prompt;
 pub mod provider;
