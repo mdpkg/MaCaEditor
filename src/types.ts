@@ -34,3 +34,14 @@ export interface ImportedFile {
 }
 
 export type ImportedImage = ImportedFile;
+
+export type AiProviderKind = "OpenAiCompatible";
+
+export interface AiConfig {
+  provider: AiProviderKind;
+  base_url: string;
+  api_key: string | null;
+  model: string;
+  temperature: number | null;
+  max_output_tokens: number | null;
+}
