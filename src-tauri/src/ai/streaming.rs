@@ -49,6 +49,11 @@ impl<P: AiProvider> AiStreamCoordinator<P> {
         self.registry.cancel(request_id)
     }
 
+    /// 実行完了後に登録を解除する。存在しない ID は何もしない。
+    pub fn unregister(&self, request_id: &str) {
+        self.registry.unregister(request_id);
+    }
+
     /// ストリーミングを開始し、request ID 付きイベント列を返す。
     /// 接続失敗は即時エラーとして返す。
     pub async fn start(
@@ -85,7 +90,7 @@ impl<P: AiProvider> AiStreamCoordinator<P> {
         let started = AiStreamEvent::Started {
             request_id: request_id.clone(),
         };
-        let stream = wrap_stream(inner, token, request_id.clone(), request_timeout);
+        let stream = wrap_stream(inner, token, self.registry.clone(), request_id.clone(), request_timeout);
         use futures::StreamExt;
         Ok(Box::new(futures::stream::iter(vec![Ok(started)]).chain(stream)))
     }
@@ -96,6 +101,7 @@ impl<P: AiProvider> AiStreamCoordinator<P> {
 fn wrap_stream<S>(
     inner: S,
     token: CancellationToken,
+    registry: Arc<CancellationRegistry>,
     request_id: String,
     request_timeout_seconds: u64,
 ) -> impl Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin
@@ -119,6 +125,7 @@ where
         if token.is_cancelled() {
             if !cancelled {
                 cancelled = true;
+                registry.unregister(&request_id);
                 return std::task::Poll::Ready(Some(Ok(AiStreamEvent::Cancelled {
                     request_id: request_id.clone(),
                 })));
@@ -135,6 +142,7 @@ where
         if std::task::Poll::Ready(()) == timeout.as_mut().poll_unpin(cx) {
             if !timed_out {
                 timed_out = true;
+                registry.unregister(&request_id);
                 return std::task::Poll::Ready(Some(Err(AiError::Timeout(
                     "request timeout".to_string(),
                 ))));
@@ -152,12 +160,16 @@ where
                         })))
                     }
                     Ok(other) => std::task::Poll::Ready(Some(Ok(other))),
-                    Err(e) => std::task::Poll::Ready(Some(Err(e))),
+                    Err(e) => {
+                        registry.unregister(&request_id);
+                        std::task::Poll::Ready(Some(Err(e)))
+                    }
                 }
             }
             std::task::Poll::Ready(None) => {
                 if !completed {
                     completed = true;
+                    registry.unregister(&request_id);
                     std::task::Poll::Ready(Some(Ok(AiStreamEvent::Completed {
                         request_id: request_id.clone(),
                     })))
@@ -283,6 +295,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unregisters_request_after_completion() {
+        let registry = Arc::new(CancellationRegistry::new());
+        let coordinator = AiStreamCoordinator::with_registry(MockAiProvider::new("answer"), registry.clone());
+        let mut stream = coordinator
+            .start(sample_request(), None, None)
+            .await
+            .unwrap();
+        use futures::StreamExt;
+        let started = stream.next().await.unwrap().unwrap();
+        let request_id = match started {
+            AiStreamEvent::Started { request_id } => request_id,
+            _ => panic!("expected started"),
+        };
+        // 完了まで読み切る
+        while let Some(_) = stream.next().await {}
+        // 完了後はレジストリから解除されている
+        assert!(!registry.cancel(&request_id));
+    }
+
+    #[tokio::test]
     async fn request_timeout_emits_timeout_error() {
         // 1 つの delta を返した後、応答が止まる provider。
         struct HangingProvider;
@@ -323,5 +355,12 @@ mod tests {
         assert!(matches!(events[0], Ok(AiStreamEvent::Started { .. })));
         assert!(matches!(events[1], Ok(AiStreamEvent::Delta { .. })));
         assert!(matches!(events[2], Err(AiError::Timeout(_))));
+        // Timeout 後はレジストリから解除されている
+        let started = &events[0];
+        let request_id = match started {
+            Ok(AiStreamEvent::Started { request_id }) => request_id.clone(),
+            _ => panic!("expected started"),
+        };
+        assert!(!coordinator.cancel(&request_id));
     }
 }
