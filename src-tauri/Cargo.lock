@@ -2154,6 +2154,8 @@ dependencies = [
  "tauri-plugin-window-state",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-util",
+ "uuid",
  "zip",
 ]
 
