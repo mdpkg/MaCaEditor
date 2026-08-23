@@ -24,7 +24,9 @@ zip = { version = "2", default-features = false, features = ["deflate", "deflate
 thiserror = "2"
 async-openai = { version = "0.41", default-features = false, features = ["rustls", "chat-completion", "model"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 [dev-dependencies]
