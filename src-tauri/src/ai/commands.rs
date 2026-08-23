@@ -112,4 +112,44 @@ mod tests {
         // Cancelled の後は Completed が来ない
         assert!(!events.iter().any(|e| matches!(e, AiStreamEvent::Completed { .. })));
     }
+
+    #[tokio::test]
+    async fn error_events_are_forwarded_with_request_id() {
+        // stream がエラーを返す provider。
+        struct ErrorProvider;
+        impl crate::ai::provider::AiProvider for ErrorProvider {
+            async fn complete(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<crate::ai::types::AiResponse, crate::ai::error::AiError> {
+                Ok(crate::ai::types::AiResponse::new(""))
+            }
+            async fn stream(
+                &self,
+                _request: crate::ai::types::AiRequest,
+            ) -> Result<
+                Box<dyn futures::Stream<Item = Result<crate::ai::types::AiStreamEvent, crate::ai::error::AiError>> + Send + Unpin>,
+                crate::ai::error::AiError,
+            > {
+                use futures::stream;
+                let item: Result<crate::ai::types::AiStreamEvent, crate::ai::error::AiError> =
+                    Err(crate::ai::error::AiError::ServerError("boom".to_string()));
+                Ok(Box::new(stream::iter(vec![item])))
+            }
+        }
+
+        let coordinator = AiStreamCoordinator::new(ErrorProvider);
+        let (events, sender) = collector();
+        let _request_id = run_ai_stream(&coordinator, sender, sample_request(), None, None)
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let events = events.lock().unwrap().clone();
+        assert!(matches!(events[0], AiStreamEvent::Started { .. }));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            AiStreamEvent::Error { request_id, error: AiError::ServerError(_) }
+                if !request_id.is_empty()
+        )));
+    }
 }
