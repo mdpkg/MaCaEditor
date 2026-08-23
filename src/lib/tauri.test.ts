@@ -5,9 +5,6 @@ import {
 } from "./tauri";
 import type { AiStreamEvent } from "../types";
 
-// invoke をモックして Channel のコールバックを直接呼ぶ
-type InvokeMock = (cmd: string, args: Record<string, unknown>) => Promise<unknown>;
-
 vi.mock("@tauri-apps/api/core", async () => {
   const actual = await vi.importActual<typeof import("@tauri-apps/api/core")>(
     "@tauri-apps/api/core"
@@ -41,20 +38,6 @@ beforeEach(() => {
   };
 });
 
-function captureChannel(
-  args: Record<string, unknown>
-): (event: AiStreamEvent) => void {
-  const channel = args.channel as { onmessage?: (e: unknown) => void };
-  const onmessage = channel?.onmessage;
-  expect(onmessage).toBeTypeOf("function");
-  return (event: AiStreamEvent) => {
-    // Channel の onmessage は { message } を受け取る
-    (onmessage as (e: { message: AiStreamEvent }) => void)({
-      message: event,
-    });
-  };
-}
-
 function emitChannelEvent(event: AiStreamEvent) {
   const cb = channelCallback;
   expect(cb).toBeTypeOf("function");
@@ -66,7 +49,7 @@ function emitChannelEvent(event: AiStreamEvent) {
 
 describe("startAiStream", () => {
   test("invokes ai_stream with channel and returns request id", async () => {
-    invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === "ai_stream") {
         emitChannelEvent({ type: "started", request_id: "r1" });
         return "r1";
@@ -94,7 +77,7 @@ describe("startAiStream", () => {
   });
 
   test("forwards delta events by request id", async () => {
-    invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === "ai_stream") {
         emitChannelEvent({ type: "delta", request_id: "r1", content: "he" });
         emitChannelEvent({ type: "delta", request_id: "r1", content: "llo" });
@@ -120,7 +103,7 @@ describe("startAiStream", () => {
   });
 
   test("forwards error events", async () => {
-    invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === "ai_stream") {
         emitChannelEvent({
           type: "error",
