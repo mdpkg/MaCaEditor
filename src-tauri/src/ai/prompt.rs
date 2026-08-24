@@ -20,9 +20,8 @@ pub fn build_diagram_request(
     markdown: &str,
 ) -> crate::ai::types::AiRequest {
     let format_rules = match format {
-        DiagramFormat::Plantuml => concat!(
-            "Return complete PlantUML source beginning with @startuml and ending with @enduml. "
-        ),
+        DiagramFormat::Plantuml =>
+            "Return complete PlantUML source beginning with @startuml and ending with @enduml. ",
         DiagramFormat::Mermaid => "Return syntax-valid Mermaid source with a valid diagram header. ",
     };
     let intent_rule = match intent {
