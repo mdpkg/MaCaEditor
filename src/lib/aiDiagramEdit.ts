@@ -1,5 +1,5 @@
 import type { AiConfig, AiStreamEvent } from "../types";
-import { normalizeDiagramSource, type DiagramFormat } from "./aiDiagram";
+import { normalizeEditedDiagramSource, type DiagramFormat } from "./aiDiagram";
 import { cancelAiRequest, startAiDiagramEdit } from "./tauri";
 
 type StartOptions = {
@@ -46,7 +46,7 @@ export class AiDiagramEditService {
   private handle(event: AiStreamEvent, generation: number, format: DiagramFormat) {
     if (generation !== this.generation || this.status !== "running") return;
     if (event.type === "delta") this.result += event.content;
-    else if (event.type === "completed") { this.result = normalizeDiagramSource(this.result, format); this.status = "completed"; }
+    else if (event.type === "completed") { this.result = normalizeEditedDiagramSource(this.result, format); this.status = "completed"; }
     else if (event.type === "cancelled") { this.status = "cancelled"; this.result = ""; }
     else if (event.type === "error") { this.status = "error"; this.errorKind = event.error.kind; }
     this.emit();

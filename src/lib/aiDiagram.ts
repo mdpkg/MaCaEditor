@@ -29,7 +29,17 @@ function restoreCollapsedPlantUml(source: string): string {
   return restored.replace(/[ \t]+$/gm, "").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Phase 3 generation の限定的な source normalization。 */
 export function normalizeDiagramSource(value: string, format: DiagramFormat): string {
+  const trimmed = value.trim();
+  const language = format === "plantuml" ? "(?:plantuml|puml)" : "mermaid";
+  const fence = "`".repeat(3);
+  const match = trimmed.match(new RegExp(`^${fence}${language}\\s*\\n([\\s\\S]*?)\\n${fence}$`, "i"));
+  return (match ? match[1] : trimmed).trim();
+}
+
+/** Phase 4 edit で必要な、既存図を保護するための追加 normalization。 */
+export function normalizeEditedDiagramSource(value: string, format: DiagramFormat): string {
   let normalized = value.trim();
   if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
       (normalized.startsWith("{") && normalized.endsWith("}"))) {
