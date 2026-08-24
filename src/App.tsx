@@ -7,6 +7,7 @@ import { AboutDialog } from "./components/AboutDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
+import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
 import {
@@ -1260,7 +1261,7 @@ export default function App() {
                 </div>
               )}
               {mode === "split" && (
-                <div className="split-view">
+                <SynchronizedScrollView>
                   <MarkdownEditor
                     value={displayContent}
                     onChange={handleContentChange}
@@ -1284,7 +1285,7 @@ export default function App() {
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                     onDownloadAttachment={handleDownloadAttachment}
                   />
-                </div>
+                </SynchronizedScrollView>
               )}
             </>
           )}

@@ -197,6 +197,17 @@ export function MarkdownPreview({
   };
 
   const components: Components = {
+    ...Object.fromEntries(([1, 2, 3, 4, 5, 6] as const).map((level) => {
+      const Tag = `h${level}` as const;
+      return [Tag, ({ node, ...props }: ComponentProps<typeof Tag> & { node?: { position?: { start: { offset?: number } } } }) => {
+        const previewOffset = node?.position?.start.offset;
+        const tocPrefixLength = showToc ? "## 目次\n\n".length : 0;
+        const sourceOffset = previewOffset === undefined || previewOffset < tocPrefixLength
+          ? undefined
+          : previewOffset - tocPrefixLength;
+        return <Tag {...props} data-source-offset={sourceOffset} />;
+      }];
+    })),
     table({ node, ...props }) {
       const start = node?.position?.start.offset;
       const end = node?.position?.end.offset;
