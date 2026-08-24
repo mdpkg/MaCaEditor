@@ -2,7 +2,7 @@ import type { AiConfig, AiStreamEvent } from "../types";
 import { cancelAiRequest, loadAiConfig, startAiSelectionAction } from "./tauri";
 
 /// AI タスクの種類。Rust 側 `AiTaskKind` と対応する。
-export type AiTaskKind = "Rewrite" | "Summarize" | "Proofread";
+export type AiTaskKind = "Rewrite" | "Summarize" | "Proofread" | "GenerateDiagram";
 
 /// AI Action 実行時点の selection を明示的に保持するスナップショット。
 export interface AiSelectionSnapshot {
@@ -95,7 +95,7 @@ export function aiErrorMessage(kind: AiErrorKind): string {
 /// 既存の `ai_selection_action` Tauri command / Streaming 基盤を利用する。
 export async function runAiSelectionAction(
   config: AiConfig,
-  task: AiTaskKind,
+  task: Exclude<AiTaskKind, "GenerateDiagram">,
   snapshot: AiSelectionSnapshot,
   onEvent: (event: AiStreamEvent) => void,
 ): Promise<string> {
