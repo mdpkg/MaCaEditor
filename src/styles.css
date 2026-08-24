@@ -1166,6 +1166,57 @@ body {
   margin-top: 24px;
 }
 
+.ai-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.ai-status-testing {
+  color: var(--text);
+}
+
+.ai-status-ok {
+  color: #2e9d55;
+}
+
+.ai-status-error {
+  color: #d73a49;
+}
+
+.ai-status-detail {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ai-spin 700ms linear infinite;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-spinner {
+    animation-duration: 1.6s;
+  }
+}
+
 .about-dialog button {
   min-width: 72px;
   padding: 4px 12px;
