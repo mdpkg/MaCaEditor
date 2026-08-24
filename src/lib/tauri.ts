@@ -133,6 +133,18 @@ export function startAiDiagramGeneration(options: {
     requestTimeoutSeconds: options.requestTimeoutSeconds ?? null });
 }
 
+export function startAiDiagramEdit(options: {
+  baseUrl: string; apiKey: string | null; model: string; format: "plantuml" | "mermaid";
+  currentSource: string; instruction: string;
+  connectTimeoutSeconds?: number | null; requestTimeoutSeconds?: number | null;
+}, onEvent: (event: AiStreamEvent) => void): Promise<string> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_edit_diagram", { channel, baseUrl: options.baseUrl, apiKey: options.apiKey,
+    model: options.model, format: options.format, currentSource: options.currentSource,
+    instruction: options.instruction, connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
+    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null });
+}
+
 /** 最新の editor 内容と正常な会話履歴を使って document chat を開始する。 */
 export function startAiDocumentChat(
   options: {
