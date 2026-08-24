@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
+import type { AiTaskKind } from "../lib/aiSelection";
 
 interface Props {
   value: string;
@@ -13,6 +15,7 @@ interface Props {
   language?: "markdown" | "plain";
   className?: string;
   ariaLabel?: string;
+  onAiSelection?: (task: AiTaskKind) => void;
 }
 
 const vimSaveHandlers = new WeakMap<object, () => void>();
@@ -30,6 +33,7 @@ export function CodeEditor({
   className = "",
   ariaLabel,
   onSelectionChange,
+  onAiSelection,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -37,11 +41,14 @@ export function CodeEditor({
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const onAiSelectionRef = useRef(onAiSelection);
   const onSaveRef = useRef(onSave);
+  const [contextMenu, setContextMenu] = useState<{ from: number; to: number; text: string; hasSelection: boolean; x: number; y: number } | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
   onCursorChangeRef.current = onCursorChange;
   onSelectionChangeRef.current = onSelectionChange;
+  onAiSelectionRef.current = onAiSelection;
   onSaveRef.current = onSave;
 
   useEffect(() => {
@@ -62,6 +69,21 @@ export function CodeEditor({
             sel.from === sel.to ? null : { from: sel.from, to: sel.to, text },
           );
         }
+      }),
+      EditorView.domEventHandlers({
+        contextmenu: (event, view) => {
+          event.preventDefault?.();
+          const sel = view.state.selection.main;
+          const text = view.state.doc.sliceString(sel.from, sel.to);
+          setContextMenu({
+            from: sel.from,
+            to: sel.to,
+            text,
+            hasSelection: sel.from !== sel.to,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        },
       }),
       EditorView.theme({
         "&": { height: "100%" },
@@ -95,8 +117,87 @@ export function CodeEditor({
     });
   }, [value]);
 
-  return <div
-    ref={hostRef}
-    className={`code-editor ${className}`.trim()}
-  />;
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  const run = (task: AiTaskKind) => {
+    setContextMenu(null);
+    onAiSelectionRef.current?.(task);
+  };
+
+  const closeMenu = () => setContextMenu(null);
+
+  const copy = () => {
+    const view = viewRef.current;
+    if (!view || !contextMenu) return;
+    const text = view.state.doc.sliceString(contextMenu.from, contextMenu.to);
+    void navigator.clipboard?.writeText(text);
+    closeMenu();
+  };
+
+  const cut = () => {
+    const view = viewRef.current;
+    if (!view || !contextMenu) return;
+    const text = view.state.doc.sliceString(contextMenu.from, contextMenu.to);
+    void navigator.clipboard?.writeText(text);
+    view.dispatch({ changes: { from: contextMenu.from, to: contextMenu.to, insert: "" } });
+    closeMenu();
+  };
+
+  const paste = () => {
+    const view = viewRef.current;
+    const menu = contextMenu;
+    if (!view || !menu) return;
+    void navigator.clipboard?.readText().then((text) => {
+      view.dispatch({ changes: { from: menu.from, to: menu.to, insert: text } });
+    });
+    closeMenu();
+  };
+
+  const deleteSelection = () => {
+    const view = viewRef.current;
+    if (!view || !contextMenu) return;
+    view.dispatch({ changes: { from: contextMenu.from, to: contextMenu.to, insert: "" } });
+    closeMenu();
+  };
+
+  return (
+    <>
+      <div
+        ref={hostRef}
+        className={`code-editor ${className}`.trim()}
+      />
+      {contextMenu && createPortal(
+        <div
+          className="editor-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button type="button" onClick={copy}>コピー</button>
+          <button type="button" onClick={cut}>切り取り</button>
+          <button type="button" onClick={paste}>貼り付け</button>
+          <button type="button" onClick={deleteSelection}>削除</button>
+          <div className="editor-context-menu-divider" />
+          <div className="editor-context-menu-submenu">
+            <span className="editor-context-menu-submenu-label">AI</span>
+            <div className="editor-context-menu-submenu-items">
+              <button type="button" onClick={() => run("Rewrite")}>Rewrite</button>
+              <button type="button" onClick={() => run("Summarize")}>Summarize</button>
+              <button type="button" onClick={() => run("Proofread")}>Proofread</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
 }

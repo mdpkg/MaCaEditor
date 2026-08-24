@@ -1,4 +1,5 @@
 import { CodeEditor } from "./CodeEditor";
+import type { AiTaskKind } from "../lib/aiSelection";
 
 interface Props {
   value: string;
@@ -7,9 +8,10 @@ interface Props {
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onSave?: () => void | Promise<void>;
   vimMode?: boolean;
+  onAiSelection?: (task: AiTaskKind) => void;
 }
 
-export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false }: Props) {
+export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
@@ -21,6 +23,7 @@ export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionCha
       vimMode={vimMode}
       language="markdown"
       ariaLabel="Markdown source"
+      onAiSelection={onAiSelection}
     />
   );
 }

@@ -143,6 +143,19 @@ describe("drawing toolbar dropdowns", () => {
   });
 });
 
+describe("editor context menu", () => {
+  it("styles the editor AI context menu", () => {
+    const start = styles.indexOf(".editor-context-menu {");
+    const block = start >= 0 ? styles.slice(start, styles.indexOf("}", start)) : "";
+    expect(block).toContain("position: fixed");
+    expect(block).toContain("z-index: 1000");
+    expect(styles).toContain(".editor-context-menu button");
+    expect(styles).toContain(".editor-context-menu-divider");
+    expect(styles).toContain(".editor-context-menu-submenu");
+    expect(styles).toContain(".editor-context-menu-submenu:hover .editor-context-menu-submenu-items");
+  });
+});
+
 describe("drawing context menu", () => {
   it("keeps scrolling available while hiding its scrollbar", () => {
     const start = styles.indexOf(".drawing-context-menu {");
