@@ -12,6 +12,7 @@ interface Props {
   render?: (source: string) => Promise<string>;
   vimMode?: boolean;
   onSave?: () => void | Promise<void>;
+  onAiEdit?: () => void;
 }
 
 export function PlantUmlEditor({
@@ -22,6 +23,7 @@ export function PlantUmlEditor({
   render = renderPlantUml,
   vimMode = false,
   onSave,
+  onAiEdit,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export function PlantUmlEditor({
   return (
     <div className="plantuml-editor">
       <div className="plantuml-source-pane">
-        <div className="plantuml-pane-title">PlantUML</div>
+        <div className="plantuml-pane-title">PlantUML {onAiEdit && <button type="button" onClick={onAiEdit}>AI Edit</button>}</div>
         <CodeEditor
           className="plantuml-source"
           value={source}

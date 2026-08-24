@@ -31,6 +31,7 @@ describe("PlantUmlEditor", () => {
     vi.useFakeTimers();
     const onSourceChange = vi.fn();
     const onRendered = vi.fn();
+    const onAiEdit = vi.fn();
     const render = vi.fn().mockResolvedValue(
       '<svg><text>rendered</text><script>alert(1)</script></svg>',
     );
@@ -45,9 +46,12 @@ describe("PlantUmlEditor", () => {
         onSourceChange={onSourceChange}
         onRendered={onRendered}
         render={render}
+        onAiEdit={onAiEdit}
       />,
     ));
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    act(() => (Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "AI Edit") as HTMLButtonElement).click());
+    expect(onAiEdit).toHaveBeenCalledOnce();
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
         textarea,
@@ -63,6 +67,7 @@ describe("PlantUmlEditor", () => {
         onSourceChange={onSourceChange}
         onRendered={onRendered}
         render={render}
+        onAiEdit={onAiEdit}
       />,
     ));
 

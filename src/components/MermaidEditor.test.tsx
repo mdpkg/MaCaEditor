@@ -31,16 +31,19 @@ describe("MermaidEditor", () => {
     vi.useFakeTimers();
     const onSourceChange = vi.fn();
     const onRendered = vi.fn();
+    const onAiEdit = vi.fn();
     const render = vi.fn().mockResolvedValue(
       '<svg><text>rendered</text><script>alert(1)</script></svg>',
     );
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    const props = { initialSvg: "", onSourceChange, onRendered, render };
+    const props = { initialSvg: "", onSourceChange, onRendered, render, onAiEdit };
 
     act(() => root.render(<MermaidEditor source={"flowchart LR\nA --> B"} {...props} />));
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    act(() => (Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "AI Edit") as HTMLButtonElement).click());
+    expect(onAiEdit).toHaveBeenCalledOnce();
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
         textarea, "flowchart LR\nB --> C",

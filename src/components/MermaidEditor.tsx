@@ -12,10 +12,11 @@ interface Props {
   render?: (source: string) => Promise<string>;
   vimMode?: boolean;
   onSave?: () => void | Promise<void>;
+  onAiEdit?: () => void;
 }
 
 export function MermaidEditor({
-  source, initialSvg, onSourceChange, onRendered, render = renderMermaid, vimMode = false, onSave,
+  source, initialSvg, onSourceChange, onRendered, render = renderMermaid, vimMode = false, onSave, onAiEdit,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,7 @@ export function MermaidEditor({
   return (
     <div className="mermaid-editor">
       <div className="mermaid-source-pane">
-        <div className="diagram-pane-title">Mermaid</div>
+        <div className="diagram-pane-title">Mermaid {onAiEdit && <button type="button" onClick={onAiEdit}>AI Edit</button>}</div>
         <CodeEditor
           className="mermaid-source"
           value={source}

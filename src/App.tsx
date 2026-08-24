@@ -8,7 +8,9 @@ import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { AiChatPanel } from "./components/AiChatPanel";
 import { AiDiagramDialog } from "./components/AiDiagramDialog";
+import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
 import type { GeneratedDiagram } from "./lib/aiDiagram";
+import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
@@ -158,6 +160,7 @@ export default function App() {
   const [aiSelection, setAiSelection] = useState<{ task: Exclude<AiTaskKind, "GenerateDiagram">; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagram, setAiDiagram] = useState<{ markdown: string; sourceLabel: "Selected text" | "Current document"; path: string; content: string; cursor: number | null } | null>(null);
+  const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
@@ -542,6 +545,7 @@ export default function App() {
   const handleEditMarkdown = (path: string) => {
     if (!/\.(md|markdown)$/i.test(path)) return;
     setAiDiagram(null);
+    setAiDiagramEdit(null);
     editorCursorRef.current = null;
     setSelectedPath(path);
     setMode("split");
@@ -549,6 +553,7 @@ export default function App() {
 
   const handleSelect = (path: string) => {
     setAiDiagram(null);
+    setAiDiagramEdit(null);
     editorCursorRef.current = null;
     setTableEdit(null);
     setSelectedPath(path);
@@ -783,6 +788,20 @@ export default function App() {
       : current);
     setStatus("Mermaid preview updated");
   }, [mermaidPath]);
+
+  const handleAiDiagramEditApply = (updatedSource: string, snapshot: { path: string; source: string }) => {
+    if (!doc || !aiDiagramEdit) return;
+    const currentPath = aiDiagramEdit.format === "plantuml" ? plantUmlPath : mermaidPath;
+    const currentSource = doc.files.find((file) => file.path === currentPath)?.content ?? "";
+    const applied = applyDiagramEdit(currentPath ?? "", currentSource, snapshot, updatedSource);
+    if (!applied.ok) {
+      setError("The diagram changed while the AI edit was running. Run AI Edit again using the latest source.");
+      setStatus("Error"); return;
+    }
+    if (aiDiagramEdit.format === "plantuml") handlePlantUmlSourceChange(applied.source);
+    else handleMermaidSourceChange(applied.source);
+    setAiDiagramEdit(null); setStatus("AI diagram edit applied"); setError(null);
+  };
 
   const handleInsertMathJax = () => {
     if (!doc) return;
@@ -1221,6 +1240,7 @@ export default function App() {
                 onRendered={handlePlantUmlRendered}
                 vimMode={vimMode}
                 onSave={handleSave}
+                onAiEdit={() => setAiDiagramEdit({ format: "plantuml", path: plantUmlPath })}
               />
             ) : null;
           })()}
@@ -1239,6 +1259,7 @@ export default function App() {
                 onRendered={handleMermaidRendered}
                 vimMode={vimMode}
                 onSave={handleSave}
+                onAiEdit={() => setAiDiagramEdit({ format: "mermaid", path: mermaidPath })}
               />
             ) : null;
           })()}
@@ -1379,6 +1400,12 @@ export default function App() {
       )}
       {aiDiagram && <AiDiagramDialog markdown={aiDiagram.markdown} sourceLabel={aiDiagram.sourceLabel}
         onConfirm={handleAiDiagramConfirm} onOpenAiSettings={() => setAiSettingsOpen(true)} onClose={() => setAiDiagram(null)} />}
+      {aiDiagramEdit && (() => {
+        const source = doc?.files.find((file) => file.path === aiDiagramEdit.path)?.content ?? "";
+        return <AiDiagramEditDialog key={aiDiagramEdit.path} format={aiDiagramEdit.format} path={aiDiagramEdit.path}
+          currentSource={source} onApply={handleAiDiagramEditApply} onOpenAiSettings={() => setAiSettingsOpen(true)}
+          onClose={() => setAiDiagramEdit(null)} />;
+      })()}
       {thirdPartyLicensesOpen && (
         <ThirdPartyLicensesDialog
           text={thirdPartyLicenses}
