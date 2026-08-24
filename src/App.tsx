@@ -1266,6 +1266,7 @@ export default function App() {
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
                     onSelectionChange={handleSelectionChange}
+                    onAiSelection={handleAiSelection}
                     vimMode={vimMode}
                     onSave={handleSave}
                   />
