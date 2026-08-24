@@ -47,6 +47,81 @@ describe("AiSettingsDialog", () => {
     act(() => root.unmount());
   });
 
+  test("shows connecting status while testing connection", async () => {
+    vi.spyOn(tauri, "loadAiConfig").mockResolvedValue({
+      provider: "OpenAiCompatible",
+      base_url: "http://localhost:11434/v1",
+      api_key: null,
+      model: "qwen2.5",
+      temperature: 0.7,
+      max_output_tokens: 4096,
+      connect_timeout_seconds: 10,
+      request_timeout_seconds: 300,
+    });
+    let resolveTest: (() => void) | undefined;
+    vi.spyOn(tauri, "testAiConnection").mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveTest = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AiSettingsDialog onClose={onClose} />);
+    });
+
+    // Test Connection ボタン（Refresh Models の次、index 2）を押す
+    await act(async () => {
+      (container.querySelectorAll("button")[2] as HTMLButtonElement).click();
+    });
+    expect(container.textContent).toContain("Connecting…");
+    // 接続中はスピナーが表示される
+    expect(container.querySelector(".ai-spinner")).not.toBeNull();
+
+    // 接続完了で表示が切り替わる
+    await act(async () => {
+      resolveTest?.();
+    });
+    expect(container.textContent).toContain("Connection OK.");
+    expect(container.querySelector(".ai-spinner")).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("shows error detail when test connection fails", async () => {
+    vi.spyOn(tauri, "loadAiConfig").mockResolvedValue({
+      provider: "OpenAiCompatible",
+      base_url: "http://localhost:11434/v1",
+      api_key: null,
+      model: "qwen2.5",
+      temperature: 0.7,
+      max_output_tokens: 4096,
+      connect_timeout_seconds: 10,
+      request_timeout_seconds: 300,
+    });
+    vi.spyOn(tauri, "testAiConnection").mockRejectedValue(
+      new Error("connection refused"),
+    );
+    const onClose = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AiSettingsDialog onClose={onClose} />);
+    });
+
+    await act(async () => {
+      (container.querySelectorAll("button")[2] as HTMLButtonElement).click();
+    });
+    expect(container.textContent).toContain("Connection failed.");
+    expect(container.textContent).toContain("connection refused");
+    act(() => root.unmount());
+  });
+
   test("shows error when save fails", async () => {
     vi.spyOn(tauri, "loadAiConfig").mockRejectedValue(new Error("no config"));
     vi.spyOn(tauri, "saveAiConfig").mockRejectedValue(new Error("boom"));

@@ -27,6 +27,7 @@ export function AiSettingsDialog({ onClose }: Props) {
   const [config, setConfig] = useState<AiConfig>(DEFAULT_CONFIG);
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -75,11 +76,14 @@ export function AiSettingsDialog({ onClose }: Props) {
 
   const handleTestConnection = async () => {
     setBusy(true);
+    setStatus("testing");
+    setErrorDetail(null);
     try {
       await testAiConnection(config.base_url, config.api_key, config.model);
       setStatus("connected");
-    } catch {
+    } catch (error) {
       setStatus("connection-error");
+      setErrorDetail(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -202,8 +206,19 @@ export function AiSettingsDialog({ onClose }: Props) {
         {status === "error" && <p>Failed to save.</p>}
         {status === "models-loaded" && <p>Models loaded.</p>}
         {status === "models-error" && <p>Failed to load models.</p>}
-        {status === "connected" && <p>Connection OK.</p>}
-        {status === "connection-error" && <p>Connection failed.</p>}
+        {status === "testing" && (
+          <p className="ai-status ai-status-testing">
+            <span className="ai-spinner" aria-hidden="true" />
+            Connecting…
+          </p>
+        )}
+        {status === "connected" && <p className="ai-status ai-status-ok">Connection OK.</p>}
+        {status === "connection-error" && (
+          <p className="ai-status ai-status-error">
+            Connection failed.
+            {errorDetail && <span className="ai-status-detail">{errorDetail}</span>}
+          </p>
+        )}
       </section>
     </div>
   );
