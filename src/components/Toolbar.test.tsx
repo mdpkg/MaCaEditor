@@ -65,7 +65,7 @@ describe("Toolbar menus", () => {
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
     expect(topLevel).toEqual([
-      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "AI", "Help",
+      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "AI", "AI Chat", "Help",
     ]);
     const addAttachmentButton = [...container.querySelectorAll(".toolbar > button")]
       .find((button) => button.textContent === "Add Attachment") as HTMLButtonElement;

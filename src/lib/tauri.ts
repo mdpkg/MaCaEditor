@@ -121,6 +121,26 @@ export function cancelAiRequest(requestId: string): Promise<boolean> {
   return invoke("cancel_ai_request", { requestId });
 }
 
+/** 最新の editor 内容と正常な会話履歴を使って document chat を開始する。 */
+export function startAiDocumentChat(
+  options: {
+    baseUrl: string; apiKey: string | null; model: string;
+    filename: string; currentDocument: string; history: AiRequest["messages"];
+    question: string; connectTimeoutSeconds?: number | null; requestTimeoutSeconds?: number | null;
+  },
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<string> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_document_chat", {
+    channel,
+    baseUrl: options.baseUrl, apiKey: options.apiKey, model: options.model,
+    filename: options.filename, currentDocument: options.currentDocument,
+    history: options.history, question: options.question,
+    connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
+    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null,
+  });
+}
+
 export type AiTaskKind = "Rewrite" | "Summarize" | "Proofread";
 
 /** 選択テキストを対象とした AI タスクを実行する。戻り値は request ID。 */

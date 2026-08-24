@@ -15,6 +15,7 @@ use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
 /// OpenAI Compatible API へ接続する Provider。
 pub struct OpenAiCompatibleProvider {
     client: async_openai::Client<async_openai::config::OpenAIConfig>,
+    model: String,
 }
 
 impl OpenAiCompatibleProvider {
@@ -28,7 +29,13 @@ impl OpenAiCompatibleProvider {
         }
         Self {
             client: async_openai::Client::with_config(config),
+            model: "default".to_string(),
         }
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
     }
 
     fn to_openai_request(
@@ -156,8 +163,7 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
         &self,
         request: AiRequest,
     ) -> Result<AiResponse, AiError> {
-        let model = "default";
-        let openai_request = self.to_openai_request(model, &request, false)?;
+        let openai_request = self.to_openai_request(&self.model, &request, false)?;
         let response = self
             .client
             .chat()
@@ -171,8 +177,7 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
         &self,
         request: AiRequest,
     ) -> Result<Box<dyn futures::Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin>, AiError> {
-        let model = "default";
-        let openai_request = self.to_openai_request(model, &request, true)?;
+        let openai_request = self.to_openai_request(&self.model, &request, true)?;
         let stream = self
             .client
             .chat()
@@ -257,6 +262,13 @@ mod tests {
             .to_openai_request("qwen2.5", &sample_request(), true)
             .unwrap();
         assert_eq!(request.stream, Some(true));
+    }
+
+    #[test]
+    fn configured_model_is_retained_for_provider_requests() {
+        let provider = OpenAiCompatibleProvider::new("http://localhost:11434/v1", None)
+            .with_model("configured-model");
+        assert_eq!(provider.model, "configured-model");
     }
 
     #[test]

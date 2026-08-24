@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   cancelAiRequest,
+  startAiDocumentChat,
   startAiStream,
 } from "./tauri";
 import type { AiStreamEvent } from "../types";
@@ -190,5 +191,21 @@ describe("cancelAiRequest", () => {
     expect(invokeMock).toHaveBeenCalledWith("cancel_ai_request", {
       requestId: "r1",
     });
+  });
+});
+
+describe("startAiDocumentChat", () => {
+  test("sends current editor document and conversation to the dedicated command", async () => {
+    invokeMock.mockResolvedValue("chat-1");
+    const requestId = await startAiDocumentChat({
+      baseUrl: "http://localhost:11434/v1", apiKey: null, model: "qwen",
+      filename: "README.md", currentDocument: "unsaved BBB",
+      history: [{ role: "User", content: "first" }], question: "next",
+    }, () => {});
+    expect(requestId).toBe("chat-1");
+    expect(invokeMock).toHaveBeenCalledWith("ai_document_chat", expect.objectContaining({
+      filename: "README.md", currentDocument: "unsaved BBB", question: "next",
+      history: [{ role: "User", content: "first" }],
+    }));
   });
 });

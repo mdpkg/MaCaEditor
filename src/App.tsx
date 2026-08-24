@@ -6,6 +6,7 @@ import { Toolbar } from "./components/Toolbar";
 import { AboutDialog } from "./components/AboutDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
+import { AiChatPanel } from "./components/AiChatPanel";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
@@ -154,6 +155,7 @@ export default function App() {
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
@@ -1120,6 +1122,9 @@ export default function App() {
         aiSelectionEnabled={displayIsMarkdown && mode === "split" && isSelectionValid(editorSelection)}
         aiSelectionRunning={aiSelectionRunning}
         onAiSelection={handleAiSelection}
+        aiChatOpen={aiChatOpen}
+        aiChatEnabled={displayIsMarkdown}
+        onToggleAiChat={() => setAiChatOpen((open) => !open)}
         showToc={showToc}
         onShowTocChange={setShowToc}
         rspressMode={rspressMode}
@@ -1299,6 +1304,15 @@ export default function App() {
           )}
           </Suspense>
         </main>
+        {aiChatOpen && displayFile && displayIsMarkdown && (
+          <AiChatPanel
+            key={displayFile.path}
+            filename={displayFile.path}
+            currentDocument={displayContent}
+            onOpenAiSettings={() => setAiSettingsOpen(true)}
+            onClose={() => setAiChatOpen(false)}
+          />
+        )}
       </div>
       {error && (
         <div className="error-dialog">
