@@ -4,9 +4,8 @@ import { type DiagramFormat } from "../lib/aiDiagram";
 import { AiDiagramEditService } from "../lib/aiDiagramEdit";
 import { aiErrorMessage, isAiConfigured, type AiErrorKind } from "../lib/aiSelection";
 import { loadAiConfig } from "../lib/tauri";
-import { renderPlantUml } from "../lib/plantuml/renderer";
-import { renderMermaid } from "../lib/mermaid/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
+import { validateDiagramSource } from "../lib/aiDiagramValidation";
 
 interface Props {
   format: DiagramFormat; path: string; currentSource: string;
@@ -32,8 +31,7 @@ export function AiDiagramEditDialog({ format, path, currentSource, onApply, onCl
   useEffect(() => {
     if (stream.status !== "completed") return;
     setSvg(""); setValidationError(null); setValidating(true);
-    const render = format === "plantuml" ? renderPlantUml : renderMermaid;
-    void render(stream.result).then(setSvg).catch((reason) => setValidationError(String(reason))).finally(() => setValidating(false));
+    void validateDiagramSource(format, stream.result).then(setSvg).catch((reason) => setValidationError(String(reason))).finally(() => setValidating(false));
   }, [stream.status, stream.result, format]);
 
   const run = async () => {

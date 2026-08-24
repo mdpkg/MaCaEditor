@@ -3,9 +3,8 @@ import type { AiConfig } from "../types";
 import { AiDiagramGenerationService, type DiagramFormat, type DiagramIntent, type GeneratedDiagram } from "../lib/aiDiagram";
 import { aiErrorMessage, isAiConfigured, type AiErrorKind } from "../lib/aiSelection";
 import { loadAiConfig } from "../lib/tauri";
-import { renderPlantUml } from "../lib/plantuml/renderer";
-import { renderMermaid } from "../lib/mermaid/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
+import { validateDiagramSource } from "../lib/aiDiagramValidation";
 
 interface Props {
   markdown: string; sourceLabel: "Selected text" | "Current document";
@@ -31,13 +30,12 @@ export function AiDiagramDialog({ markdown, sourceLabel, onConfirm, onClose, onO
     if (stream.status !== "completed") return;
     setSource(stream.result);
     setSvg(""); setValidationError(null);
-    const render = format === "plantuml" ? renderPlantUml : renderMermaid;
-    void render(stream.result).then(setSvg).catch((reason) => setValidationError(String(reason)));
+    void validateDiagramSource(format, stream.result).then(setSvg).catch((reason) => setValidationError(String(reason)));
   }, [stream.status, stream.result, format]);
 
   const validate = async () => {
     setSvg(""); setValidationError(null);
-    try { setSvg(await (format === "plantuml" ? renderPlantUml(source) : renderMermaid(source))); }
+    try { setSvg(await validateDiagramSource(format, source)); }
     catch (reason) { setValidationError(String(reason)); }
   };
   const close = async () => { await service.cancel(); onClose(); };
