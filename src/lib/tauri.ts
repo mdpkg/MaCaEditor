@@ -1,6 +1,15 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { FolderSaveRequest, ImportedFile, ImportedImage, PackageInfo, SaveRequest } from "../types";
+import type {
+  AiConfig,
+  AiRequest,
+  AiStreamEvent,
+  FolderSaveRequest,
+  ImportedFile,
+  ImportedImage,
+  PackageInfo,
+  SaveRequest,
+} from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
   return invoke("open_package", { path });
@@ -60,4 +69,82 @@ export function stopWatchingFolder(): Promise<void> {
 
 export function onFolderChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<{ path: string }>("folder-changed", (event) => handler(event.payload.path));
+}
+
+export function saveAiConfig(config: AiConfig): Promise<void> {
+  return invoke("save_ai_config", { config });
+}
+
+export function loadAiConfig(): Promise<AiConfig> {
+  return invoke("load_ai_config");
+}
+
+export function listAiModels(
+  baseUrl: string,
+  apiKey: string | null,
+): Promise<string[]> {
+  return invoke("list_ai_models", { baseUrl, apiKey });
+}
+
+export function testAiConnection(
+  baseUrl: string,
+  apiKey: string | null,
+  model: string,
+): Promise<void> {
+  return invoke("test_ai_connection", { baseUrl, apiKey, model });
+}
+
+export function startAiStream(
+  options: {
+    baseUrl: string;
+    apiKey: string | null;
+    model: string;
+    request: AiRequest;
+    connectTimeoutSeconds?: number | null;
+    requestTimeoutSeconds?: number | null;
+  },
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<string> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_stream", {
+    channel,
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    model: options.model,
+    request: options.request,
+    connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
+    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null,
+  });
+}
+
+export function cancelAiRequest(requestId: string): Promise<boolean> {
+  return invoke("cancel_ai_request", { requestId });
+}
+
+export type AiTaskKind = "Rewrite" | "Summarize" | "Proofread";
+
+/** 選択テキストを対象とした AI タスクを実行する。戻り値は request ID。 */
+export function startAiSelectionAction(
+  options: {
+    baseUrl: string;
+    apiKey: string | null;
+    model: string;
+    task: AiTaskKind;
+    selectedText: string;
+    connectTimeoutSeconds?: number | null;
+    requestTimeoutSeconds?: number | null;
+  },
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<string> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_selection_action", {
+    channel,
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    model: options.model,
+    task: options.task,
+    selectedText: options.selectedText,
+    connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
+    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null,
+  });
 }

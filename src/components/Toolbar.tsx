@@ -24,7 +24,11 @@ interface Props {
   onAddImage: () => void;
   onAddAttachment: () => void;
   onAbout: () => void;
+  onAiSettings: () => void;
   onThirdPartyLicenses: () => void;
+  aiSelectionEnabled: boolean;
+  aiSelectionRunning: boolean;
+  onAiSelection: (task: "Rewrite" | "Summarize" | "Proofread") => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
   rspressMode: boolean;
@@ -34,7 +38,7 @@ interface Props {
   canPrint: boolean;
 }
 
-type Menu = "file" | "diagram" | "help" | null;
+type Menu = "file" | "diagram" | "ai" | "help" | null;
 
 export function Toolbar({
   dirty,
@@ -60,7 +64,11 @@ export function Toolbar({
   onAddImage,
   onAddAttachment,
   onAbout,
+  onAiSettings,
   onThirdPartyLicenses,
+  aiSelectionEnabled,
+  aiSelectionRunning,
+  onAiSelection,
   showToc,
   onShowTocChange,
   rspressMode,
@@ -148,11 +156,30 @@ export function Toolbar({
           type="button"
           className="toolbar-menu-trigger"
           aria-haspopup="menu"
+          aria-expanded={openMenu === "ai"}
+          disabled={!aiSelectionEnabled || aiSelectionRunning}
+          onClick={() => setOpenMenu((current) => current === "ai" ? null : "ai")}
+        >AI</button>
+        {openMenu === "ai" && (
+          <div className="toolbar-menu-items" role="menu">
+            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Rewrite"))}>Rewrite</button>
+            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Summarize"))}>Summarize</button>
+            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Proofread"))}>Proofread</button>
+          </div>
+        )}
+      </div>
+      <div className="toolbar-menu">
+        <button
+          type="button"
+          className="toolbar-menu-trigger"
+          aria-haspopup="menu"
           aria-expanded={openMenu === "help"}
           onClick={() => setOpenMenu((current) => current === "help" ? null : "help")}
         >Help</button>
         {openMenu === "help" && (
           <div className="toolbar-menu-items" role="menu">
+            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>AI Settings</button>
+            <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
             <button type="button" role="menuitem" onClick={() => run(onThirdPartyLicenses)}>Third party licenses</button>
           </div>

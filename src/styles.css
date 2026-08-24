@@ -1166,6 +1166,103 @@ body {
   margin-top: 24px;
 }
 
+/* AI Settings: 各項目を縦に並べる */
+.about-dialog label {
+  display: block;
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+
+.about-dialog label > input,
+.about-dialog label > select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.about-dialog label > input[type="number"] {
+  width: 100%;
+}
+
+.ai-field-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ai-field-row > input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.ai-field-row > button {
+  flex: 0 0 auto;
+  min-width: 64px;
+}
+
+.ai-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.ai-status-testing {
+  color: var(--text);
+}
+
+.ai-status-ok {
+  color: #2e9d55;
+}
+
+.ai-status-error {
+  color: #d73a49;
+}
+
+.ai-status-detail {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ai-spin 700ms linear infinite;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-spinner {
+    animation-duration: 1.6s;
+  }
+}
+
 .about-dialog button {
   min-width: 72px;
   padding: 4px 12px;

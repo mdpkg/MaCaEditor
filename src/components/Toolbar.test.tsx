@@ -19,6 +19,7 @@ describe("Toolbar menus", () => {
     const onToggleFileList = vi.fn();
     const onAddAttachment = vi.fn();
     const onAbout = vi.fn();
+    const onAiSettings = vi.fn();
     const onThirdPartyLicenses = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -46,7 +47,11 @@ describe("Toolbar menus", () => {
         onAddImage={noop}
         onAddAttachment={onAddAttachment}
         onAbout={onAbout}
+        onAiSettings={onAiSettings}
         onThirdPartyLicenses={onThirdPartyLicenses}
+        aiSelectionEnabled={true}
+        aiSelectionRunning={false}
+        onAiSelection={noop}
         showToc={false}
         onShowTocChange={onShowTocChange}
         rspressMode={false}
@@ -60,7 +65,7 @@ describe("Toolbar menus", () => {
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
     expect(topLevel).toEqual([
-      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "Help",
+      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "AI", "Help",
     ]);
     const addAttachmentButton = [...container.querySelectorAll(".toolbar > button")]
       .find((button) => button.textContent === "Add Attachment") as HTMLButtonElement;
@@ -107,19 +112,39 @@ describe("Toolbar menus", () => {
     act(() => (diagramItems[0] as HTMLButtonElement).click());
     expect(onInsertDrawing).toHaveBeenCalledOnce();
 
+    const aiButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "AI") as HTMLButtonElement;
+    expect(aiButton.disabled).toBe(false);
+    act(() => aiButton.click());
+    const aiItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
+    expect(aiItems.map((button) => button.textContent)).toEqual(["Rewrite", "Summarize", "Proofread"]);
+    act(() => (aiItems[0] as HTMLButtonElement).click());
+    expect(noop).toHaveBeenCalled();
+
     const helpButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "Help") as HTMLButtonElement;
+    act(() => helpButton.click());
+    const helpItems = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'));
+    expect(helpItems.map((button) => button.textContent)).toEqual([
+      "AI Settings",
+      "About MaCa Editor",
+      "Third party licenses",
+    ]);
+    expect(container.querySelector('.toolbar-menu-items [role="separator"]')).not.toBeNull();
+    const aiSettingsButton = helpItems.find((button) => button.textContent === "AI Settings") as HTMLButtonElement;
+    act(() => aiSettingsButton.click());
+    expect(onAiSettings).toHaveBeenCalledOnce();
+    act(() => helpButton.click());
+    const aboutButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
+      .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
+    act(() => aboutButton.click());
+    expect(onAbout).toHaveBeenCalledOnce();
     act(() => helpButton.click());
     const licensesButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
       .find((button) => button.textContent === "Third party licenses") as HTMLButtonElement;
     expect(licensesButton).toBeInstanceOf(HTMLButtonElement);
     act(() => licensesButton.click());
     expect(onThirdPartyLicenses).toHaveBeenCalledOnce();
-    act(() => helpButton.click());
-    const aboutButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
-      .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
-    act(() => aboutButton.click());
-    expect(onAbout).toHaveBeenCalledOnce();
 
     expect(container.textContent).not.toContain("Rename");
     expect(container.textContent).not.toContain("Delete");
