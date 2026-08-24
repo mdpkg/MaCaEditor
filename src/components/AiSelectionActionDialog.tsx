@@ -15,6 +15,7 @@ interface Props {
   onApply: (mode: "replace" | "insert", result: string, snapshot: AiSelectionSnapshot) => void;
   onOpenAiSettings: () => void;
   onClose: () => void;
+  onRunningChange: (running: boolean) => void;
 }
 
 export function AiSelectionActionDialog({
@@ -23,6 +24,7 @@ export function AiSelectionActionDialog({
   onApply,
   onOpenAiSettings,
   onClose,
+  onRunningChange,
 }: Props) {
   const serviceRef = useRef<AiSelectionActionService | null>(null);
   if (!serviceRef.current) serviceRef.current = new AiSelectionActionService();
@@ -51,9 +53,11 @@ export function AiSelectionActionDialog({
       setState(service.getState());
       setResult(service.getResult());
       setErrorKind(service.getErrorKind());
+      onRunningChange(service.isRunning());
     });
+    onRunningChange(service.isRunning());
     return unsubscribe;
-  }, [service]);
+  }, [service, onRunningChange]);
 
   useEffect(() => {
     loadAiConfig()

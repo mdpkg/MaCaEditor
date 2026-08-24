@@ -1323,6 +1323,7 @@ export default function App() {
           onApply={handleAiApply}
           onOpenAiSettings={() => { setAiSettingsOpen(true); }}
           onClose={() => { setAiSelection(null); setAiSelectionRunning(false); }}
+          onRunningChange={setAiSelectionRunning}
         />
       )}
       {thirdPartyLicensesOpen && (

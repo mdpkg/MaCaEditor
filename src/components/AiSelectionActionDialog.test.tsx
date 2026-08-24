@@ -59,7 +59,7 @@ describe("AiSelectionActionDialog", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => {
-      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} />);
+      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     expect(container.textContent).toContain("AI is not configured");
     act(() => root.unmount());
@@ -71,7 +71,7 @@ describe("AiSelectionActionDialog", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => {
-      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} />);
+      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
       const generate = [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate");
@@ -98,7 +98,7 @@ describe("AiSelectionActionDialog", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => {
-      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={onApply} onOpenAiSettings={vi.fn()} onClose={vi.fn()} />);
+      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={onApply} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
@@ -120,7 +120,7 @@ describe("AiSelectionActionDialog", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => {
-      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} />);
+      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
@@ -134,13 +134,34 @@ describe("AiSelectionActionDialog", () => {
     act(() => root.unmount());
   });
 
+  test("reports running state changes to the parent", async () => {
+    startMock.mockImplementation(async () => "r1");
+    const onRunningChange = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={onRunningChange} />);
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
+    });
+    expect(onRunningChange).toHaveBeenCalledWith(true);
+    await act(async () => {
+      emit({ type: "delta", request_id: "r1", content: "XXX" });
+      emit({ type: "completed", request_id: "r1" });
+    });
+    expect(onRunningChange).toHaveBeenCalledWith(false);
+    act(() => root.unmount());
+  });
+
   test("shows error message on error state", async () => {
     startMock.mockImplementation(async () => "r1");
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => {
-      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} />);
+      root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
