@@ -16,6 +16,7 @@ export type AiChatState = {
 };
 export type AiChatAction =
   | { type: "submit"; requestId: string; messageId: string; assistantId: string; content: string }
+  | { type: "retry"; requestId: string; assistantId: string }
   | { type: "delta"; requestId: string; content: string }
   | { type: "completed" | "cancelled"; requestId: string }
   | { type: "error"; requestId: string; error: AiError }
@@ -36,6 +37,13 @@ export function reduceAiChat(state: AiChatState, action: AiChatAction): AiChatSt
       activeRequestId: action.requestId,
     };
   }
+  if (action.type === "retry") return {
+    messages: [
+      ...state.messages.filter((message) => message.status !== "failed"),
+      { id: action.assistantId, role: "assistant", content: "", status: "streaming", requestId: action.requestId },
+    ],
+    status: "running", activeRequestId: action.requestId,
+  };
   if (state.activeRequestId !== action.requestId || state.status !== "running") return state;
   const updateAssistant = (changes: Partial<AiChatMessage>) => state.messages.map((message) =>
     message.role === "assistant" && message.requestId === action.requestId

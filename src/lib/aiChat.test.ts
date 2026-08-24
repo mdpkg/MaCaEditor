@@ -46,6 +46,14 @@ describe("AI chat state", () => {
     state = reduceAiChat(state, { type: "clear" });
     expect(state).toEqual(createAiChatState());
   });
+
+  test("retry keeps one user message and replaces the failed assistant", () => {
+    let state = reduceAiChat(createAiChatState(), { type: "submit", requestId: "a", messageId: "u", assistantId: "x", content: "hello" });
+    state = reduceAiChat(state, { type: "error", requestId: "a", error: { kind: "Timeout", message: "" } });
+    state = reduceAiChat(state, { type: "retry", requestId: "b", assistantId: "y" });
+    expect(state.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(state.activeRequestId).toBe("b");
+  });
 });
 
 describe("AI chat input", () => {

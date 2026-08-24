@@ -33,14 +33,19 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
   const send = async (text = input) => {
     const question = text.trim();
     if (!question || state.status === "running" || !config || !isAiConfigured(config)) return;
+    const retrying = state.status === "error" && lastQuestionRef.current === question;
     const history = chatHistory(state.messages);
+    const lastHistory = history[history.length - 1];
+    if (retrying && lastHistory?.role === "User" && lastHistory.content === question) history.pop();
     lastQuestionRef.current = question;
     setInput(""); setInvokeError(null);
     let started = false;
     const onEvent = (event: AiStreamEvent) => {
       if (event.type === "started") {
         started = true; activeRef.current = event.request_id;
-        dispatch({ type: "submit", requestId: event.request_id, messageId: nextId(), assistantId: nextId(), content: question });
+        dispatch(retrying
+          ? { type: "retry", requestId: event.request_id, assistantId: nextId() }
+          : { type: "submit", requestId: event.request_id, messageId: nextId(), assistantId: nextId(), content: question });
       } else if (event.type === "delta") dispatch({ type: "delta", requestId: event.request_id, content: event.content });
       else if (event.type === "completed") { activeRef.current = undefined; dispatch({ type: "completed", requestId: event.request_id }); }
       else if (event.type === "cancelled") { activeRef.current = undefined; dispatch({ type: "cancelled", requestId: event.request_id }); }
