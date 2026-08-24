@@ -156,6 +156,7 @@ export default function App() {
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
+  const [editorSelection, setEditorSelection] = useState<AiSelectionSnapshot | null>(null);
   const notificationSequenceRef = useRef(0);
   const notificationTimersRef = useRef<number[]>([]);
   const documentRef = useRef<DocumentState | null>(null);
@@ -599,6 +600,7 @@ export default function App() {
 
   const handleSelectionChange = (selection: { from: number; to: number; text: string } | null) => {
     editorSelectionRef.current = selection;
+    setEditorSelection(selection);
   };
 
   const handleAiSelection = (task: AiTaskKind) => {
@@ -1114,7 +1116,7 @@ export default function App() {
         onAbout={() => setAboutOpen(true)}
         onAiSettings={() => setAiSettingsOpen(true)}
         onThirdPartyLicenses={() => setThirdPartyLicensesOpen(true)}
-        aiSelectionEnabled={displayIsMarkdown && mode === "split" && isSelectionValid(editorSelectionRef.current)}
+        aiSelectionEnabled={displayIsMarkdown && mode === "split" && isSelectionValid(editorSelection)}
         aiSelectionRunning={aiSelectionRunning}
         onAiSelection={handleAiSelection}
         showToc={showToc}
