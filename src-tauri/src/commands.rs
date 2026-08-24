@@ -398,6 +398,40 @@ pub async fn ai_stream(
     .map_err(|e| e.to_string())
 }
 
+/// 選択テキストを対象とした AI タスクを実行する Tauri コマンド。
+/// task 固有の prompt は Rust 側 PromptBuilder で組み立て、UI 層には置かない。
+#[tauri::command]
+pub async fn ai_selection_action(
+    state: tauri::State<'_, crate::ai::commands::AiStreamState>,
+    channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
+    base_url: String,
+    api_key: Option<String>,
+    _model: String,
+    task: crate::ai::prompt::AiTaskKind,
+    selected_text: String,
+    connect_timeout_seconds: Option<u64>,
+    request_timeout_seconds: Option<u64>,
+) -> Result<String, String> {
+    let request = crate::ai::prompt::build_request(task, &selected_text);
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
+        provider,
+        state.registry.clone(),
+    );
+    let sender = move |event: crate::ai::types::AiStreamEvent| {
+        let _ = channel.send(event);
+    };
+    crate::ai::commands::run_ai_stream(
+        &coordinator,
+        sender,
+        request,
+        connect_timeout_seconds,
+        request_timeout_seconds,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// request ID を指定して実行中の AI ストリームをキャンセルする Tauri コマンド。
 /// 存在しない ID は idempotent に成功扱いする。
 #[tauri::command]
