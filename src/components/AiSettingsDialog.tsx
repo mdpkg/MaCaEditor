@@ -120,14 +120,16 @@ export function AiSettingsDialog({ onClose }: Props) {
         </label>
         <label>
           API Key
-          <input
-            type={showKey ? "text" : "password"}
-            value={config.api_key ?? ""}
-            onChange={(event) => update({ api_key: event.target.value })}
-          />
-          <button type="button" onClick={() => setShowKey((v) => !v)}>
-            {showKey ? "Hide" : "Show"}
-          </button>
+          <div className="ai-field-row">
+            <input
+              type={showKey ? "text" : "password"}
+              value={config.api_key ?? ""}
+              onChange={(event) => update({ api_key: event.target.value })}
+            />
+            <button type="button" onClick={() => setShowKey((v) => !v)}>
+              {showKey ? "Hide" : "Show"}
+            </button>
+          </div>
         </label>
         <label>
           Model
