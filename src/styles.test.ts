@@ -86,6 +86,25 @@ describe("diagram editor preview cursor", () => {
   });
 });
 
+describe("AI diagram edit dialog layout", () => {
+  it("stacks its content vertically and provides a large instruction area", () => {
+    const dialogStart = styles.indexOf(".ai-diagram-edit-dialog {");
+    const dialogBlock = dialogStart >= 0
+      ? styles.slice(dialogStart, styles.indexOf("}", dialogStart))
+      : "";
+    const textareaStart = styles.indexOf(".ai-diagram-edit-instruction > textarea {");
+    const textareaBlock = textareaStart >= 0
+      ? styles.slice(textareaStart, styles.indexOf("}", textareaStart))
+      : "";
+
+    expect(dialogBlock).toContain("flex-direction: column");
+    expect(dialogBlock).toContain("width: min(760px, 100%)");
+    expect(textareaBlock).toContain("width: 100%");
+    expect(textareaBlock).toContain("min-height: 160px");
+    expect(textareaBlock).toContain("resize: vertical");
+  });
+});
+
 describe("drawing sidebar layout", () => {
   it("splits the drawing sidebar between the file tree and properties", () => {
     const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");

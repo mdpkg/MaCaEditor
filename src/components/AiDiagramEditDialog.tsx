@@ -45,9 +45,9 @@ export function AiDiagramEditDialog({ format, path, currentSource, onApply, onCl
   const error = stream.errorKind ? aiErrorMessage(stream.errorKind as AiErrorKind) : null;
 
   return <div className="about-dialog-backdrop" onPointerDown={() => void close()}>
-    <section className="about-dialog ai-result-dialog ai-diagram-dialog" role="dialog" aria-modal="true" aria-label="AI Edit Diagram" onPointerDown={(e) => e.stopPropagation()}>
+    <section className="about-dialog ai-result-dialog ai-diagram-dialog ai-diagram-edit-dialog" role="dialog" aria-modal="true" aria-label="AI Edit Diagram" onPointerDown={(e) => e.stopPropagation()}>
       <h2>AI Edit {format === "plantuml" ? "PlantUML" : "Mermaid"}</h2>
-      <label>Instruction<textarea aria-label="Diagram edit instruction" value={instruction} disabled={stream.status === "running"} onChange={(e) => setInstruction(e.target.value)} /></label>
+      <label className="ai-diagram-edit-instruction">Instruction<textarea aria-label="Diagram edit instruction" value={instruction} disabled={stream.status === "running"} onChange={(e) => setInstruction(e.target.value)} /></label>
       {!configured && <p className="ai-status ai-status-error">AI is not configured. <button onClick={onOpenAiSettings}>Open AI Settings</button></p>}
       {(stream.status === "idle" || stream.status === "error" || stream.status === "cancelled") && <><div className="about-dialog-actions"><button disabled={!configured || !instruction.trim()} onClick={() => void run()}>{stream.status === "idle" ? "Generate Changes" : "Retry"}</button><button onClick={() => void close()}>Cancel</button></div>{stream.status === "error" && <p className="ai-status ai-status-error">{error}</p>}{stream.status === "cancelled" && <p className="ai-status ai-status-error">Cancelled</p>}</>}
       {stream.status === "running" && <><p className="ai-status ai-status-testing">Generating…</p><pre className="ai-result-preview">{stream.result}</pre><div className="about-dialog-actions"><button onClick={() => void service.cancel()}>Cancel request</button><button onClick={() => void close()}>Close</button></div></>}
