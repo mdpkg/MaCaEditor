@@ -42,6 +42,32 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test("reports selection changes", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onSelectionChange = vi.fn();
+
+    act(() => root.render(
+      <CodeEditor value="hello world" onChange={vi.fn()} onSelectionChange={onSelectionChange} />,
+    ));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const view = EditorView.findFromDOM(editorElement)!;
+    act(() => {
+      view.dispatch({ selection: { anchor: 0, head: 5 } });
+    });
+    expect(onSelectionChange).toHaveBeenCalled();
+    const lastCall = onSelectionChange.mock.calls.at(-1)?.[0];
+    expect(lastCall).toMatchObject({ from: 0, to: 5, text: "hello" });
+
+    act(() => {
+      view.dispatch({ selection: { anchor: 3 } });
+    });
+    expect(onSelectionChange.mock.calls.at(-1)?.[0]).toBeNull();
+
+    act(() => root.unmount());
+  });
+
   test(":w saves while Vim mode is enabled", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

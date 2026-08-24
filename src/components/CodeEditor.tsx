@@ -7,6 +7,7 @@ interface Props {
   value: string;
   onChange: (value: string) => void;
   onCursorChange?: (position: number) => void;
+  onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onSave?: () => void | Promise<void>;
   vimMode?: boolean;
   language?: "markdown" | "plain";
@@ -28,16 +29,19 @@ export function CodeEditor({
   language = "plain",
   className = "",
   ariaLabel,
+  onSelectionChange,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
+  const onSelectionChangeRef = useRef(onSelectionChange);
   const onSaveRef = useRef(onSave);
   valueRef.current = value;
   onChangeRef.current = onChange;
   onCursorChangeRef.current = onCursorChange;
+  onSelectionChangeRef.current = onSelectionChange;
   onSaveRef.current = onSave;
 
   useEffect(() => {
@@ -52,6 +56,11 @@ export function CodeEditor({
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
         if (update.docChanged || update.selectionSet) {
           onCursorChangeRef.current?.(update.state.selection.main.head);
+          const sel = update.state.selection.main;
+          const text = update.state.doc.sliceString(sel.from, sel.to);
+          onSelectionChangeRef.current?.(
+            sel.from === sel.to ? null : { from: sel.from, to: sel.to, text },
+          );
         }
       }),
       EditorView.theme({
