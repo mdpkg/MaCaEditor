@@ -7,9 +7,7 @@ import { AboutDialog } from "./components/AboutDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { AiChatPanel } from "./components/AiChatPanel";
-import { AiDiagramDialog } from "./components/AiDiagramDialog";
 import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
-import type { GeneratedDiagram } from "./lib/aiDiagram";
 import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
@@ -157,9 +155,8 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
-  const [aiSelection, setAiSelection] = useState<{ task: Exclude<AiTaskKind, "GenerateDiagram">; snapshot: AiSelectionSnapshot } | null>(null);
+  const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
-  const [aiDiagram, setAiDiagram] = useState<{ markdown: string; sourceLabel: "Selected text" | "Current document"; path: string; content: string; cursor: number | null } | null>(null);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
@@ -544,7 +541,6 @@ export default function App() {
 
   const handleEditMarkdown = (path: string) => {
     if (!/\.(md|markdown)$/i.test(path)) return;
-    setAiDiagram(null);
     setAiDiagramEdit(null);
     editorCursorRef.current = null;
     setSelectedPath(path);
@@ -552,7 +548,6 @@ export default function App() {
   };
 
   const handleSelect = (path: string) => {
-    setAiDiagram(null);
     setAiDiagramEdit(null);
     editorCursorRef.current = null;
     setTableEdit(null);
@@ -618,7 +613,6 @@ export default function App() {
 
   const handleAiSelection = (task: AiTaskKind) => {
     const selection = editorSelectionRef.current;
-    if (task === "GenerateDiagram") { handleAiDiagram(); return; }
     if (!isSelectionValid(selection)) {
       setError("テキストを選択してください。");
       setStatus("Error");
@@ -630,32 +624,7 @@ export default function App() {
       setStatus("Error");
       return;
     }
-    setAiSelection({ task: task as Exclude<AiTaskKind, "GenerateDiagram">, snapshot: sel });
-  };
-
-  const handleAiDiagram = () => {
-    if (!displayFile || !displayIsMarkdown) return;
-    const selection = editorSelectionRef.current;
-    setAiDiagram({ markdown: isSelectionValid(selection) ? selection!.text : displayContent,
-      sourceLabel: isSelectionValid(selection) ? "Selected text" : "Current document",
-      path: displayFile.path, content: displayContent, cursor: editorCursorRef.current });
-  };
-
-  const handleAiDiagramConfirm = (diagram: GeneratedDiagram, svg: string) => {
-    if (!doc || !aiDiagram) return;
-    const current = doc.files.find((file) => file.path === aiDiagram.path)?.content ?? "";
-    if (selectedPath !== aiDiagram.path || current !== aiDiagram.content) {
-      setError("The document changed while the diagram was being generated. Choose the insertion position again.");
-      setStatus("Error"); return;
-    }
-    const added = diagram.format === "plantuml"
-      ? addPlantUmlToDocument(doc, diagram.source, svg, "PlantUML", { markdownPath: aiDiagram.path, cursor: aiDiagram.cursor })
-      : addMermaidToDocument(doc, diagram.source, svg, "Mermaid", { markdownPath: aiDiagram.path, cursor: aiDiagram.cursor });
-    setDoc(added.state); setSelectedPath(added.sourcePath);
-    setPlantUmlPath(diagram.format === "plantuml" ? added.sourcePath : null);
-    setMermaidPath(diagram.format === "mermaid" ? added.sourcePath : null);
-    setMode(diagram.format === "plantuml" ? "plantuml" : "mermaid");
-    setAiDiagram(null); setStatus(`Inserted AI ${diagram.format === "plantuml" ? "PlantUML" : "Mermaid"}`);
+    setAiSelection({ task, snapshot: sel });
   };
 
   const handleAiApply = (mode: "replace" | "insert", result: string, snapshot: AiSelectionSnapshot) => {
@@ -1172,8 +1141,6 @@ export default function App() {
         aiSelectionEnabled={displayIsMarkdown && mode === "split" && isSelectionValid(editorSelection)}
         aiSelectionRunning={aiSelectionRunning}
         onAiSelection={handleAiSelection}
-        aiDiagramEnabled={displayIsMarkdown && mode === "split"}
-        onAiDiagram={handleAiDiagram}
         aiChatOpen={aiChatOpen}
         aiChatEnabled={displayIsMarkdown}
         onToggleAiChat={() => setAiChatOpen((open) => !open)}
@@ -1398,8 +1365,6 @@ export default function App() {
           onRunningChange={setAiSelectionRunning}
         />
       )}
-      {aiDiagram && <AiDiagramDialog markdown={aiDiagram.markdown} sourceLabel={aiDiagram.sourceLabel}
-        onConfirm={handleAiDiagramConfirm} onOpenAiSettings={() => setAiSettingsOpen(true)} onClose={() => setAiDiagram(null)} />}
       {aiDiagramEdit && (() => {
         const source = doc?.files.find((file) => file.path === aiDiagramEdit.path)?.content ?? "";
         return <AiDiagramEditDialog key={aiDiagramEdit.path} format={aiDiagramEdit.format} path={aiDiagramEdit.path}

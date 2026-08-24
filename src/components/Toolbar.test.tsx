@@ -117,7 +117,7 @@ describe("Toolbar menus", () => {
     expect(aiButton.disabled).toBe(false);
     act(() => aiButton.click());
     const aiItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
-    expect(aiItems.map((button) => button.textContent)).toEqual(["Rewrite", "Summarize", "Proofread", "Generate Diagram"]);
+    expect(aiItems.map((button) => button.textContent)).toEqual(["Rewrite", "Summarize", "Proofread"]);
     act(() => (aiItems[0] as HTMLButtonElement).click());
     expect(noop).toHaveBeenCalled();
 

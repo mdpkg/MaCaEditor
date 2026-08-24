@@ -121,18 +121,6 @@ export function cancelAiRequest(requestId: string): Promise<boolean> {
   return invoke("cancel_ai_request", { requestId });
 }
 
-export function startAiDiagramGeneration(options: {
-  baseUrl: string; apiKey: string | null; model: string; format: "plantuml" | "mermaid";
-  intent: "auto" | "sequence" | "flowchart"; markdown: string;
-  connectTimeoutSeconds?: number | null; requestTimeoutSeconds?: number | null;
-}, onEvent: (event: AiStreamEvent) => void): Promise<string> {
-  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
-  return invoke("ai_generate_diagram", { channel, baseUrl: options.baseUrl, apiKey: options.apiKey,
-    model: options.model, format: options.format, intent: options.intent, markdown: options.markdown,
-    connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
-    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null });
-}
-
 export function startAiDiagramEdit(options: {
   baseUrl: string; apiKey: string | null; model: string; format: "plantuml" | "mermaid";
   currentSource: string; instruction: string;

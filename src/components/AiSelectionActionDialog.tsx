@@ -10,7 +10,7 @@ import { AiSelectionActionService } from "../lib/aiSelectionAction";
 import { loadAiConfig } from "../lib/tauri";
 
 interface Props {
-  task: Exclude<AiTaskKind, "GenerateDiagram">;
+  task: AiTaskKind;
   snapshot: AiSelectionSnapshot;
   onApply: (mode: "replace" | "insert", result: string, snapshot: AiSelectionSnapshot) => void;
   onOpenAiSettings: () => void;

@@ -60,7 +60,7 @@ export class AiSelectionActionService {
 
   async run(
     config: AiConfig,
-    task: Exclude<AiTaskKind, "GenerateDiagram">,
+    task: AiTaskKind,
     snapshot: AiSelectionSnapshot,
   ): Promise<void> {
     if (this.isRunning()) return;

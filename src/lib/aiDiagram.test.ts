@@ -1,17 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { normalizeDiagramSource, normalizeEditedDiagramSource } from "./aiDiagram";
+import { normalizeEditedDiagramSource } from "./aiDiagram";
 
-describe("normalizeDiagramSource", () => {
-  test("keeps plain PlantUML", () => expect(normalizeDiagramSource("@startuml\nA->B\n@enduml", "plantuml")).toBe("@startuml\nA->B\n@enduml"));
-  test.each(["plantuml", "puml"])("removes a complete %s fence", (lang) => expect(normalizeDiagramSource(`\`\`\`${lang}\n@startuml\nA->B\n@enduml\n\`\`\``, "plantuml")).toBe("@startuml\nA->B\n@enduml"));
-  test("removes a complete Mermaid fence", () => expect(normalizeDiagramSource("\`\`\`mermaid\nflowchart TD\nA-->B\n\`\`\`", "mermaid")).toBe("flowchart TD\nA-->B"));
-  test("does not repair explanatory text", () => expect(normalizeDiagramSource("Here is the diagram:\n@startuml\n@enduml", "plantuml")).toContain("Here is"));
-  test("keeps Phase 4-only repair behavior out of Phase 3 generation", () => {
-    expect(normalizeDiagramSource("```less\n@startumlactor A@enduml\n```", "plantuml"))
-      .toContain("```less");
-    expect(normalizeDiagramSource("@startuml\\nA -> B\\n@enduml", "plantuml"))
-      .toContain("\\n");
-  });
+describe("normalizeEditedDiagramSource", () => {
   test("removes a fence even when the closing fence has no preceding newline", () =>
     expect(normalizeEditedDiagramSource("```plantuml\n@startuml\nA->B\n@enduml```", "plantuml"))
       .toBe("@startuml\nA->B\n@enduml"));

@@ -464,23 +464,6 @@ pub async fn ai_document_chat(
 }
 
 #[tauri::command]
-pub async fn ai_generate_diagram(
-    state: tauri::State<'_, crate::ai::commands::AiStreamState>,
-    channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
-    base_url: String, api_key: Option<String>, model: String,
-    format: crate::ai::prompt::DiagramFormat,
-    intent: crate::ai::prompt::DiagramIntent,
-    markdown: String,
-    connect_timeout_seconds: Option<u64>, request_timeout_seconds: Option<u64>,
-) -> Result<String, String> {
-    let request = crate::ai::prompt::build_diagram_request(format, intent, &markdown);
-    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
-    let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(provider, state.registry.clone());
-    crate::ai::commands::run_ai_stream(&coordinator, move |event| { let _ = channel.send(event); }, request,
-        connect_timeout_seconds, request_timeout_seconds).await.map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub async fn ai_edit_diagram(
     state: tauri::State<'_, crate::ai::commands::AiStreamState>,
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
