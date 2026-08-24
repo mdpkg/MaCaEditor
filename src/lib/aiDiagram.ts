@@ -6,11 +6,38 @@ export type DiagramIntent = "auto" | "sequence" | "flowchart";
 export type GeneratedDiagram = { format: DiagramFormat; source: string; intent: DiagramIntent };
 
 export function normalizeDiagramSource(value: string, format: DiagramFormat): string {
-  const trimmed = value.trim();
+  let normalized = value.trim();
+  if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("{") && normalized.endsWith("}"))) {
+    try {
+      const parsed: unknown = JSON.parse(normalized);
+      if (typeof parsed === "string") normalized = parsed;
+      else if (typeof parsed === "object" && parsed !== null) {
+        const candidate = parsed as { format?: unknown; source?: unknown };
+        if (typeof candidate.source === "string" &&
+            (candidate.format === undefined || candidate.format === format)) {
+          normalized = candidate.source;
+        }
+      }
+    } catch {
+      // JSON 全体として解釈できない応答は、過剰に修復せず renderer へ渡す。
+    }
+  }
+  normalized = normalized.replace(/\r\n?|\u2028|\u2029/g, "\n").trim();
   const language = format === "plantuml" ? "(?:plantuml|puml)" : "mermaid";
   const fence = "`".repeat(3);
-  const match = trimmed.match(new RegExp(`^${fence}${language}\\s*\\n([\\s\\S]*?)\\n${fence}$`, "i"));
-  return (match ? match[1] : trimmed).trim();
+  const match = normalized.match(new RegExp(`^${fence}(?:${language})?[ \\t]*(?:\\n)?([\\s\\S]*?)${fence}$`, "i"));
+  normalized = (match ? match[1] : normalized).trim();
+
+  if (!normalized.includes("\n") && /\\[rn]/.test(normalized)) {
+    const expanded = normalized.replace(/\\r\\n|\\n|\\r/g, "\n");
+    const isCompletePlantUml = /^@startuml(?:\n|\s)/i.test(expanded) && /(?:\n|\s)@enduml$/i.test(expanded);
+    const hasMermaidHeader = /^(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|C4\w*)\b/i.test(expanded);
+    if ((format === "plantuml" && isCompletePlantUml) || (format === "mermaid" && hasMermaidHeader)) {
+      normalized = expanded;
+    }
+  }
+  return normalized.trim();
 }
 
 export class AiDiagramGenerationService {
