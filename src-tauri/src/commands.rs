@@ -374,12 +374,12 @@ pub async fn ai_stream(
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
     base_url: String,
     api_key: Option<String>,
-    _model: String,
+    model: String,
     request: crate::ai::types::AiRequest,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
 ) -> Result<String, String> {
-    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
     let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
         provider,
         state.registry.clone(),
@@ -406,14 +406,14 @@ pub async fn ai_selection_action(
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
     base_url: String,
     api_key: Option<String>,
-    _model: String,
+    model: String,
     task: crate::ai::prompt::AiTaskKind,
     selected_text: String,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
 ) -> Result<String, String> {
     let request = crate::ai::prompt::build_request(task, &selected_text);
-    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
     let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
         provider,
         state.registry.clone(),
@@ -439,7 +439,7 @@ pub async fn ai_document_chat(
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
     base_url: String,
     api_key: Option<String>,
-    _model: String,
+    model: String,
     filename: String,
     current_document: String,
     history: Vec<crate::ai::types::AiMessage>,
@@ -450,7 +450,7 @@ pub async fn ai_document_chat(
     let request = crate::ai::prompt::build_document_chat_request(
         &filename, &current_document, &history, &question,
     );
-    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
     let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
         provider, state.registry.clone(),
     );
