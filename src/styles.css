@@ -1166,6 +1166,52 @@ body {
   margin-top: 24px;
 }
 
+/* AI Settings: 各項目を縦に並べる */
+.about-dialog label {
+  display: block;
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+
+.about-dialog label > input,
+.about-dialog label > select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.about-dialog label > input[type="number"] {
+  width: 100%;
+}
+
+.ai-field-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ai-field-row > input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.ai-field-row > button {
+  flex: 0 0 auto;
+  min-width: 64px;
+}
+
 .ai-status {
   display: flex;
   align-items: center;
