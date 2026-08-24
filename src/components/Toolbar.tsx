@@ -26,6 +26,9 @@ interface Props {
   onAbout: () => void;
   onAiSettings: () => void;
   onThirdPartyLicenses: () => void;
+  aiSelectionEnabled: boolean;
+  aiSelectionRunning: boolean;
+  onAiSelection: (task: "Rewrite" | "Summarize" | "Proofread") => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
   rspressMode: boolean;
@@ -35,7 +38,7 @@ interface Props {
   canPrint: boolean;
 }
 
-type Menu = "file" | "diagram" | "help" | null;
+type Menu = "file" | "diagram" | "ai" | "help" | null;
 
 export function Toolbar({
   dirty,
@@ -63,6 +66,9 @@ export function Toolbar({
   onAbout,
   onAiSettings,
   onThirdPartyLicenses,
+  aiSelectionEnabled,
+  aiSelectionRunning,
+  onAiSelection,
   showToc,
   onShowTocChange,
   rspressMode,
@@ -145,6 +151,23 @@ export function Toolbar({
       <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
       <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
       <button type="button" onClick={onAddAttachment} disabled={!hasDocument}>Add Attachment</button>
+      <div className="toolbar-menu">
+        <button
+          type="button"
+          className="toolbar-menu-trigger"
+          aria-haspopup="menu"
+          aria-expanded={openMenu === "ai"}
+          disabled={!aiSelectionEnabled || aiSelectionRunning}
+          onClick={() => setOpenMenu((current) => current === "ai" ? null : "ai")}
+        >AI</button>
+        {openMenu === "ai" && (
+          <div className="toolbar-menu-items" role="menu">
+            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Rewrite"))}>Rewrite</button>
+            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Summarize"))}>Summarize</button>
+            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Proofread"))}>Proofread</button>
+          </div>
+        )}
+      </div>
       <div className="toolbar-menu">
         <button
           type="button"

@@ -49,6 +49,9 @@ describe("Toolbar menus", () => {
         onAbout={onAbout}
         onAiSettings={onAiSettings}
         onThirdPartyLicenses={onThirdPartyLicenses}
+        aiSelectionEnabled={true}
+        aiSelectionRunning={false}
+        onAiSelection={noop}
         showToc={false}
         onShowTocChange={onShowTocChange}
         rspressMode={false}
@@ -62,7 +65,7 @@ describe("Toolbar menus", () => {
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
     expect(topLevel).toEqual([
-      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "Help",
+      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "AI", "Help",
     ]);
     const addAttachmentButton = [...container.querySelectorAll(".toolbar > button")]
       .find((button) => button.textContent === "Add Attachment") as HTMLButtonElement;
@@ -108,6 +111,15 @@ describe("Toolbar menus", () => {
     expect(diagramItems.map((button) => button.textContent)).toEqual(["SVG", "PlantUML", "Mermaid", "MathJax"]);
     act(() => (diagramItems[0] as HTMLButtonElement).click());
     expect(onInsertDrawing).toHaveBeenCalledOnce();
+
+    const aiButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "AI") as HTMLButtonElement;
+    expect(aiButton.disabled).toBe(false);
+    act(() => aiButton.click());
+    const aiItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
+    expect(aiItems.map((button) => button.textContent)).toEqual(["Rewrite", "Summarize", "Proofread"]);
+    act(() => (aiItems[0] as HTMLButtonElement).click());
+    expect(noop).toHaveBeenCalled();
 
     const helpButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "Help") as HTMLButtonElement;
