@@ -98,6 +98,7 @@ pub fn run() {
             commands::ai_selection_action,
             commands::ai_document_chat,
             commands::ai_generate_diagram,
+            commands::ai_edit_diagram,
             commands::cancel_ai_request,
         ])
         .run(tauri::generate_context!())
