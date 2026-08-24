@@ -29,6 +29,9 @@ interface Props {
   aiSelectionEnabled: boolean;
   aiSelectionRunning: boolean;
   onAiSelection: (task: "Rewrite" | "Summarize" | "Proofread") => void;
+  aiChatOpen?: boolean;
+  aiChatEnabled?: boolean;
+  onToggleAiChat?: () => void;
   showToc: boolean;
   onShowTocChange: (enabled: boolean) => void;
   rspressMode: boolean;
@@ -69,6 +72,9 @@ export function Toolbar({
   aiSelectionEnabled,
   aiSelectionRunning,
   onAiSelection,
+  aiChatOpen = false,
+  aiChatEnabled = false,
+  onToggleAiChat = () => {},
   showToc,
   onShowTocChange,
   rspressMode,
@@ -168,6 +174,7 @@ export function Toolbar({
           </div>
         )}
       </div>
+      <button type="button" aria-pressed={aiChatOpen} disabled={!aiChatEnabled} onClick={onToggleAiChat}>AI Chat</button>
       <div className="toolbar-menu">
         <button
           type="button"

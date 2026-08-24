@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { chatHistory, createAiChatState, reduceAiChat } from "./aiChat";
+import { canSendChat, chatHistory, createAiChatState, reduceAiChat, shouldSendChatKey } from "./aiChat";
 
 describe("AI chat state", () => {
   test("starts empty and appends a user plus one assistant placeholder", () => {
@@ -35,7 +35,7 @@ describe("AI chat state", () => {
     state = reduceAiChat(state, { type: "cancelled", requestId: "a" });
     state = reduceAiChat(state, { type: "submit", requestId: "b", messageId: "u2", assistantId: "x2", content: "two" });
     state = reduceAiChat(state, { type: "delta", requestId: "a", content: "OLD" });
-    expect(state.messages.at(-1)?.content).toBe("");
+    expect(state.messages[state.messages.length - 1]?.content).toBe("");
   });
 
   test("records errors separately and clear resets everything", () => {
@@ -45,5 +45,24 @@ describe("AI chat state", () => {
     expect(state.error?.kind).toBe("Timeout");
     state = reduceAiChat(state, { type: "clear" });
     expect(state).toEqual(createAiChatState());
+  });
+});
+
+describe("AI chat input", () => {
+  test.each(["", "   ", "\n\t"])("rejects empty input %j", (input) => {
+    expect(canSendChat(input, false, true, true)).toBe(false);
+  });
+  test.each(["hello", "日本語", "line 1\nline 2"])("accepts text %j", (input) => {
+    expect(canSendChat(input, false, true, true)).toBe(true);
+  });
+  test("disables send while running, without Markdown, or without configuration", () => {
+    expect(canSendChat("hi", true, true, true)).toBe(false);
+    expect(canSendChat("hi", false, false, true)).toBe(false);
+    expect(canSendChat("hi", false, true, false)).toBe(false);
+  });
+  test("Enter sends, while Shift+Enter and IME composition do not", () => {
+    expect(shouldSendChatKey("Enter", false, false)).toBe(true);
+    expect(shouldSendChatKey("Enter", true, false)).toBe(false);
+    expect(shouldSendChatKey("Enter", false, true)).toBe(false);
   });
 });

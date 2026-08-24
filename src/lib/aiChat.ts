@@ -53,9 +53,10 @@ export function reduceAiChat(state: AiChatState, action: AiChatAction): AiChatSt
   if (action.type === "cancelled") {
     return { messages: updateAssistant({ status: "cancelled" }), status: "idle" };
   }
-  return {
+  if (action.type === "error") return {
     messages: updateAssistant({ status: "failed" }), status: "error", error: action.error,
   };
+  return state;
 }
 
 /** API には user と正常完了した assistant のみを渡す。 */
@@ -64,4 +65,12 @@ export function chatHistory(messages: AiChatMessage[]): AiMessage[] {
     if (message.role === "assistant" && message.status !== "complete") return [];
     return [{ role: message.role === "user" ? "User" as const : "Assistant" as const, content: message.content }];
   });
+}
+
+export function canSendChat(input: string, running: boolean, hasMarkdown: boolean, configured: boolean): boolean {
+  return input.trim().length > 0 && !running && hasMarkdown && configured;
+}
+
+export function shouldSendChatKey(key: string, shiftKey: boolean, composing: boolean): boolean {
+  return key === "Enter" && !shiftKey && !composing;
 }
