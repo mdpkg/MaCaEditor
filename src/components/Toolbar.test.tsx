@@ -112,14 +112,14 @@ describe("Toolbar menus", () => {
     const helpButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "Help") as HTMLButtonElement;
     act(() => helpButton.click());
-    const licensesButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
-      .find((button) => button.textContent === "Third party licenses") as HTMLButtonElement;
-    expect(licensesButton).toBeInstanceOf(HTMLButtonElement);
-    act(() => licensesButton.click());
-    expect(onThirdPartyLicenses).toHaveBeenCalledOnce();
-    act(() => helpButton.click());
-    const aiSettingsButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
-      .find((button) => button.textContent === "AI Settings") as HTMLButtonElement;
+    const helpItems = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'));
+    expect(helpItems.map((button) => button.textContent)).toEqual([
+      "AI Settings",
+      "About MaCa Editor",
+      "Third party licenses",
+    ]);
+    expect(container.querySelector('.toolbar-menu-items [role="separator"]')).not.toBeNull();
+    const aiSettingsButton = helpItems.find((button) => button.textContent === "AI Settings") as HTMLButtonElement;
     act(() => aiSettingsButton.click());
     expect(onAiSettings).toHaveBeenCalledOnce();
     act(() => helpButton.click());
@@ -127,6 +127,12 @@ describe("Toolbar menus", () => {
       .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
     act(() => aboutButton.click());
     expect(onAbout).toHaveBeenCalledOnce();
+    act(() => helpButton.click());
+    const licensesButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
+      .find((button) => button.textContent === "Third party licenses") as HTMLButtonElement;
+    expect(licensesButton).toBeInstanceOf(HTMLButtonElement);
+    act(() => licensesButton.click());
+    expect(onThirdPartyLicenses).toHaveBeenCalledOnce();
 
     expect(container.textContent).not.toContain("Rename");
     expect(container.textContent).not.toContain("Delete");
