@@ -29,6 +29,8 @@ interface Props {
   aiSelectionEnabled: boolean;
   aiSelectionRunning: boolean;
   onAiSelection: (task: "Rewrite" | "Summarize" | "Proofread") => void;
+  aiDiagramEnabled?: boolean;
+  onAiDiagram?: () => void;
   aiChatOpen?: boolean;
   aiChatEnabled?: boolean;
   onToggleAiChat?: () => void;
@@ -72,6 +74,8 @@ export function Toolbar({
   aiSelectionEnabled,
   aiSelectionRunning,
   onAiSelection,
+  aiDiagramEnabled = false,
+  onAiDiagram = () => {},
   aiChatOpen = false,
   aiChatEnabled = false,
   onToggleAiChat = () => {},
@@ -163,7 +167,7 @@ export function Toolbar({
           className="toolbar-menu-trigger"
           aria-haspopup="menu"
           aria-expanded={openMenu === "ai"}
-          disabled={!aiSelectionEnabled || aiSelectionRunning}
+          disabled={(!aiSelectionEnabled && !aiDiagramEnabled) || aiSelectionRunning}
           onClick={() => setOpenMenu((current) => current === "ai" ? null : "ai")}
         >AI</button>
         {openMenu === "ai" && (
@@ -171,6 +175,7 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Rewrite"))}>Rewrite</button>
             <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Summarize"))}>Summarize</button>
             <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Proofread"))}>Proofread</button>
+            <button type="button" role="menuitem" disabled={!aiDiagramEnabled} onClick={() => run(onAiDiagram)}>Generate Diagram</button>
           </div>
         )}
       </div>

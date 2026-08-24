@@ -193,6 +193,7 @@ export function CodeEditor({
               <button type="button" onClick={() => run("Rewrite")}>Rewrite</button>
               <button type="button" onClick={() => run("Summarize")}>Summarize</button>
               <button type="button" onClick={() => run("Proofread")}>Proofread</button>
+              <button type="button" onClick={() => { closeMenu(); onAiSelectionRef.current?.("GenerateDiagram" as AiTaskKind); }}>Generate Diagram</button>
             </div>
           </div>
         </div>,

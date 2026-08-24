@@ -93,7 +93,7 @@ describe("CodeEditor", () => {
     const menu = document.querySelector(".editor-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     const buttons = [...menu.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread"]);
+    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread", "Generate Diagram"]);
 
     const rewrite = menu.querySelectorAll("button")[4] as HTMLButtonElement;
     act(() => rewrite.click());
@@ -123,7 +123,7 @@ describe("CodeEditor", () => {
     const menu = document.querySelector(".editor-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     const buttons = [...menu.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread"]);
+    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread", "Generate Diagram"]);
 
     act(() => root.unmount());
   });
@@ -148,7 +148,7 @@ describe("CodeEditor", () => {
     const menu = document.querySelector(".editor-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     const buttons = [...menu.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread"]);
+    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread", "Generate Diagram"]);
 
     act(() => root.unmount());
   });
