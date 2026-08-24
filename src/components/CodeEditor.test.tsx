@@ -57,13 +57,15 @@ describe("CodeEditor", () => {
       view.dispatch({ selection: { anchor: 0, head: 5 } });
     });
     expect(onSelectionChange).toHaveBeenCalled();
-    const lastCall = onSelectionChange.mock.calls.at(-1)?.[0];
+    const calls = onSelectionChange.mock.calls;
+    const lastCall = calls[calls.length - 1]?.[0];
     expect(lastCall).toMatchObject({ from: 0, to: 5, text: "hello" });
 
     act(() => {
       view.dispatch({ selection: { anchor: 3 } });
     });
-    expect(onSelectionChange.mock.calls.at(-1)?.[0]).toBeNull();
+    const calls2 = onSelectionChange.mock.calls;
+    expect(calls2[calls2.length - 1]?.[0]).toBeNull();
 
     act(() => root.unmount());
   });

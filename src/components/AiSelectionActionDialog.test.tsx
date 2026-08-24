@@ -36,7 +36,8 @@ const snapshot: AiSelectionSnapshot = { from: 4, to: 7, text: "BBB" };
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function emit(event: Parameters<Parameters<typeof startAiSelectionAction>[1]>[0]) {
-  const call = startMock.mock.calls.at(-1)!;
+  const calls = startMock.mock.calls;
+  const call = calls[calls.length - 1]!;
   const onEvent = call[1];
   onEvent(event);
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AiSelectionActionService } from "./aiSelectionAction";
 import type { AiConfig, AiStreamEvent } from "../types";
-import type { AiSelectionSnapshot, AiTaskKind } from "./aiSelection";
+import type { AiSelectionSnapshot } from "./aiSelection";
 
 vi.mock("./tauri", async () => {
   const actual = await vi.importActual<typeof import("./tauri")>("./tauri");
@@ -31,7 +31,8 @@ const config: AiConfig = {
 const snapshot: AiSelectionSnapshot = { from: 0, to: 3, text: "abc" };
 
 function emit(event: AiStreamEvent) {
-  const call = startMock.mock.calls.at(-1)!;
+  const calls = startMock.mock.calls;
+  const call = calls[calls.length - 1]!;
   const onEvent = call[1];
   onEvent(event);
 }
