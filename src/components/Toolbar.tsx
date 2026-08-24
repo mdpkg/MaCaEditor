@@ -144,8 +144,9 @@ export function Toolbar({
         >Help</button>
         {openMenu === "help" && (
           <div className="toolbar-menu-items" role="menu">
-            <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
             <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>AI Settings</button>
+            <div className="toolbar-menu-separator" role="separator" />
+            <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
             <button type="button" role="menuitem" onClick={() => run(onThirdPartyLicenses)}>Third party licenses</button>
           </div>
         )}
