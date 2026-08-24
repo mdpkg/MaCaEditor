@@ -5,6 +5,30 @@ export type DiagramFormat = "plantuml" | "mermaid";
 export type DiagramIntent = "auto" | "sequence" | "flowchart";
 export type GeneratedDiagram = { format: DiagramFormat; source: string; intent: DiagramIntent };
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function restoreCollapsedPlantUml(source: string): string {
+  if (!source.includes("@startuml") || !source.includes("@enduml")) return source;
+  let restored = source
+    .replace(/@startuml\s*/i, "@startuml\n")
+    .replace(/(?<!^)(?<!\n)(?=(?:actor|participant|database|entity|boundary|control|collections|queue|component|node|cloud|frame|folder|package|rectangle|storage)\s)/gim, "\n")
+    .replace(/(?<!^)(?<!\n)(?=(?:alt|else|elseif|end)\b)/gim, "\n")
+    .replace(/\s*@enduml\s*$/i, "\n@enduml");
+
+  const aliases = new Set<string>();
+  for (const line of restored.split("\n")) {
+    const declaration = line.match(/^\s*(?:actor|participant|database|entity|boundary|control|collections|queue|component|node|cloud|frame|folder|package|rectangle|storage)\s+(?:"[^"]+"\s+as\s+)?([A-Za-z_][\w.]*)/i);
+    if (declaration) aliases.add(declaration[1]);
+  }
+  for (const alias of aliases) {
+    const arrowStart = new RegExp(`(?<!^)(?<!\\n)(?=${escapeRegExp(alias)}\\s+(?:<?[-.ox]+[<>]?))`, "gm");
+    restored = restored.replace(arrowStart, "\n");
+  }
+  return restored.replace(/[ \t]+$/gm, "").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function normalizeDiagramSource(value: string, format: DiagramFormat): string {
   let normalized = value.trim();
   if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
@@ -26,7 +50,9 @@ export function normalizeDiagramSource(value: string, format: DiagramFormat): st
   normalized = normalized.replace(/\r\n?|\u2028|\u2029/g, "\n").trim();
   const language = format === "plantuml" ? "(?:plantuml|puml)" : "mermaid";
   const fence = "`".repeat(3);
-  const match = normalized.match(new RegExp(`^${fence}(?:${language})?[ \\t]*(?:\\n)?([\\s\\S]*?)${fence}$`, "i"));
+  const expectedFence = normalized.match(new RegExp(`^${fence}(?:${language})?[ \\t]*(?:\\n)?([\\s\\S]*?)${fence}$`, "i"));
+  const mislabeledFence = normalized.match(new RegExp(`^${fence}[A-Za-z0-9_-]+[ \\t]*\\n([\\s\\S]*?)${fence}$`, "i"));
+  const match = mislabeledFence ?? expectedFence;
   normalized = (match ? match[1] : normalized).trim();
 
   if (!normalized.includes("\n") && /\\[rn]/.test(normalized)) {
@@ -37,7 +63,7 @@ export function normalizeDiagramSource(value: string, format: DiagramFormat): st
       normalized = expanded;
     }
   }
-  return normalized.trim();
+  return (format === "plantuml" ? restoreCollapsedPlantUml(normalized) : normalized).trim();
 }
 
 export class AiDiagramGenerationService {

@@ -21,4 +21,25 @@ describe("normalizeDiagramSource", () => {
   test("restores escaped newlines in an otherwise plain complete source", () =>
     expect(normalizeDiagramSource("@startuml\\nA -> B\\n@enduml", "plantuml"))
       .toBe("@startuml\nA -> B\n@enduml"));
+  test("removes a mislabeled fence and restores collapsed PlantUML statement boundaries", () => {
+    const response = `\`\`\`less
+@startumlactor Clientparticipant "Security Filter Chain" as SFCparticipant "AuthenticationManager" as AMparticipant "AuthenticationProvider" as APparticipant "UserDetailsService" as UDSparticipant "PasswordEncoder" as PEparticipant "SecurityContext" as SCClient -> SFC: POST /login
+SFC -> SFC: Create TokenSFC -> AM: authenticate(token)
+AM -> AP: authenticate(token)
+AP -> UDS: loadUserByUsername(username)
+UDS --> AP: UserDetailsAP -> PE: matches(rawPassword, encodedPassword)
+PE --> AP: true/falsealt Authentication Success AP --> AM: authenticated
+else Authentication Failure AP --> AM: AuthenticationException AM --> SFC: AuthenticationException
+end@enduml
+\`\`\``;
+    const normalized = normalizeDiagramSource(response, "plantuml");
+    expect(normalized).not.toContain("```");
+    expect(normalized).toContain("@startuml\nactor Client\nparticipant \"Security Filter Chain\" as SFC");
+    expect(normalized).toContain("participant \"SecurityContext\" as SC\nClient -> SFC: POST /login");
+    expect(normalized).toContain("SFC -> SFC: Create Token\nSFC -> AM: authenticate(token)");
+    expect(normalized).toContain("UDS --> AP: UserDetails\nAP -> PE: matches(rawPassword, encodedPassword)");
+    expect(normalized).toContain("PE --> AP: true/false\nalt Authentication Success\nAP --> AM: authenticated");
+    expect(normalized).toContain("else Authentication Failure\nAP --> AM: AuthenticationException\nAM --> SFC: AuthenticationException");
+    expect(normalized).toContain("end\n@enduml");
+  });
 });
