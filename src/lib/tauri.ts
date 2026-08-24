@@ -120,3 +120,31 @@ export function startAiStream(
 export function cancelAiRequest(requestId: string): Promise<boolean> {
   return invoke("cancel_ai_request", { requestId });
 }
+
+export type AiTaskKind = "Rewrite" | "Summarize" | "Proofread";
+
+/** 選択テキストを対象とした AI タスクを実行する。戻り値は request ID。 */
+export function startAiSelectionAction(
+  options: {
+    baseUrl: string;
+    apiKey: string | null;
+    model: string;
+    task: AiTaskKind;
+    selectedText: string;
+    connectTimeoutSeconds?: number | null;
+    requestTimeoutSeconds?: number | null;
+  },
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<string> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_selection_action", {
+    channel,
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    model: options.model,
+    task: options.task,
+    selectedText: options.selectedText,
+    connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
+    requestTimeoutSeconds: options.requestTimeoutSeconds ?? null,
+  });
+}
