@@ -38,7 +38,7 @@ export function replaceSelection(
 /// 元 selection の直後が本文なら、結果と文字列が連結されないよう改行を調整する。
 export function insertBelow(
   content: string,
-  from: number,
+  _from: number,
   to: number,
   result: string,
 ): AiApplyResult {

@@ -5,7 +5,7 @@ import {
   startAiSelectionAction,
 } from "./tauri";
 import type { AiSelectionSnapshot, AiTaskKind } from "./aiSelection";
-import { aiErrorMessage } from "./aiSelection";
+import { aiErrorMessage, type AiErrorKind } from "./aiSelection";
 
 /// ストリーミングの状態。
 export type AiStreamState =
@@ -21,7 +21,7 @@ export class AiSelectionActionService {
   private state: AiStreamState = "idle";
   private requestId: string | null = null;
   private result = "";
-  private errorKind: AiStreamEvent["error"]["kind"] | null = null;
+  private errorKind: AiErrorKind | null = null;
   private listeners = new Set<(state: AiStreamState) => void>();
 
   getState(): AiStreamState {
@@ -32,7 +32,7 @@ export class AiSelectionActionService {
     return this.result;
   }
 
-  getErrorKind(): AiStreamEvent["error"]["kind"] | null {
+  getErrorKind(): AiErrorKind | null {
     return this.errorKind;
   }
 

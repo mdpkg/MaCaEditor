@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AiConfig, AiStreamEvent } from "../types";
+import type { AiConfig } from "../types";
 import {
   aiErrorMessage,
   isAiConfigured,

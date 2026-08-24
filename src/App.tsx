@@ -5,6 +5,7 @@ import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { AboutDialog } from "./components/AboutDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
+import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -49,6 +50,8 @@ import {
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
 import type { FileInfo, ImportedFile, ImportedImage } from "./types";
+import { isSelectionValid, isEntirelyInsideCodeBlock, type AiSelectionSnapshot, type AiTaskKind } from "./lib/aiSelection";
+import { applyAiResult } from "./lib/aiApply";
 import {
   insertMarkdownBlock,
   insertMarkdownImages,
@@ -148,8 +151,11 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
+  const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
+  const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
+  const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
   const notificationSequenceRef = useRef(0);
   const notificationTimersRef = useRef<number[]>([]);
   const documentRef = useRef<DocumentState | null>(null);
@@ -589,6 +595,43 @@ export default function App() {
   const handleContentChange = (content: string) => {
     if (!doc || !selectedPath) return;
     setDoc(updateFileContent(doc, selectedPath, content));
+  };
+
+  const handleSelectionChange = (selection: { from: number; to: number; text: string } | null) => {
+    editorSelectionRef.current = selection;
+  };
+
+  const handleAiSelection = (task: AiTaskKind) => {
+    const selection = editorSelectionRef.current;
+    if (!isSelectionValid(selection)) {
+      setError("テキストを選択してください。");
+      setStatus("Error");
+      return;
+    }
+    const sel = selection as AiSelectionSnapshot;
+    if (isEntirelyInsideCodeBlock(displayContent, sel.from, sel.to)) {
+      setError("選択範囲がコードブロック内のため AI Action を実行できません。");
+      setStatus("Error");
+      return;
+    }
+    setAiSelection({ task, snapshot: sel });
+  };
+
+  const handleAiApply = (mode: "replace" | "insert", result: string, snapshot: AiSelectionSnapshot) => {
+    if (!doc || !selectedPath) return;
+    const file = doc.files.find((f) => f.path === selectedPath);
+    const content = file?.is_text ? file.content ?? "" : "";
+    const applied = applyAiResult(content, snapshot, result, mode);
+    if (!applied.ok) {
+      setError("The document has changed since this AI request started. Please select the text again.");
+      setStatus("Error");
+      return;
+    }
+    setDoc(updateFileContent(doc, selectedPath, applied.result.content));
+    setAiSelection(null);
+    setAiSelectionRunning(false);
+    setStatus(`AI ${mode === "replace" ? "Replace" : "Insert"} applied`);
+    setError(null);
   };
 
   const handleInsertDrawing = () => {
@@ -1071,6 +1114,9 @@ export default function App() {
         onAbout={() => setAboutOpen(true)}
         onAiSettings={() => setAiSettingsOpen(true)}
         onThirdPartyLicenses={() => setThirdPartyLicensesOpen(true)}
+        aiSelectionEnabled={displayIsMarkdown && mode === "split" && isSelectionValid(editorSelectionRef.current)}
+        aiSelectionRunning={aiSelectionRunning}
+        onAiSelection={handleAiSelection}
         showToc={showToc}
         onShowTocChange={setShowToc}
         rspressMode={rspressMode}
@@ -1217,6 +1263,7 @@ export default function App() {
                     value={displayContent}
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
+                    onSelectionChange={handleSelectionChange}
                     vimMode={vimMode}
                     onSave={handleSave}
                   />
@@ -1268,6 +1315,15 @@ export default function App() {
       )}
       {aiSettingsOpen && (
         <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} />
+      )}
+      {aiSelection && (
+        <AiSelectionActionDialog
+          task={aiSelection.task}
+          snapshot={aiSelection.snapshot}
+          onApply={handleAiApply}
+          onOpenAiSettings={() => { setAiSettingsOpen(true); }}
+          onClose={() => { setAiSelection(null); setAiSelectionRunning(false); }}
+        />
       )}
       {thirdPartyLicensesOpen && (
         <ThirdPartyLicensesDialog

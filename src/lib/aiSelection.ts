@@ -51,7 +51,20 @@ export function isAiConfigured(config: AiConfig): boolean {
 
 /// エラー種別をユーザー向けのメッセージへ変換する。
 /// raw Rust error や内部型名をそのまま表示しない。
-export function aiErrorMessage(kind: AiStreamEvent["error"]["kind"]): string {
+export type AiErrorKind =
+  | "InvalidConfiguration"
+  | "ConnectionFailed"
+  | "AuthenticationFailed"
+  | "PermissionDenied"
+  | "ModelNotFound"
+  | "RateLimited"
+  | "Timeout"
+  | "ServerError"
+  | "InvalidResponse"
+  | "Cancelled"
+  | "Unknown";
+
+export function aiErrorMessage(kind: AiErrorKind): string {
   switch (kind) {
     case "InvalidConfiguration":
       return "AI configuration is invalid.";
