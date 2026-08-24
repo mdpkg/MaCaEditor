@@ -56,7 +56,7 @@ export function PlantUmlEditor({
   return (
     <div className="plantuml-editor">
       <div className="plantuml-source-pane">
-        <div className="plantuml-pane-title">PlantUML {onAiEdit && <button type="button" onClick={onAiEdit}>AI Edit</button>}</div>
+        <div className="plantuml-pane-title">PlantUML {onAiEdit && <button type="button" onClick={onAiEdit}>AI Generate</button>}</div>
         <CodeEditor
           className="plantuml-source"
           value={source}

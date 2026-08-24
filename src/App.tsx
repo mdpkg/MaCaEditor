@@ -764,12 +764,12 @@ export default function App() {
     const currentSource = doc.files.find((file) => file.path === currentPath)?.content ?? "";
     const applied = applyDiagramEdit(currentPath ?? "", currentSource, snapshot, updatedSource);
     if (!applied.ok) {
-      setError("The diagram changed while the AI edit was running. Run AI Edit again using the latest source.");
+      setError("The diagram changed while AI generation was running. Run AI Generate again using the latest source.");
       setStatus("Error"); return;
     }
     if (aiDiagramEdit.format === "plantuml") handlePlantUmlSourceChange(applied.source);
     else handleMermaidSourceChange(applied.source);
-    setAiDiagramEdit(null); setStatus("AI diagram edit applied"); setError(null);
+    setAiDiagramEdit(null); setStatus("AI-generated diagram applied"); setError(null);
   };
 
   const handleInsertMathJax = () => {

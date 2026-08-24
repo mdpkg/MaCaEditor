@@ -86,7 +86,7 @@ describe("diagram editor preview cursor", () => {
   });
 });
 
-describe("AI diagram edit dialog layout", () => {
+describe("AI diagram generation dialog layout", () => {
   it("stacks its content vertically and provides a large instruction area", () => {
     const dialogStart = styles.indexOf(".ai-diagram-edit-dialog {");
     const dialogBlock = dialogStart >= 0

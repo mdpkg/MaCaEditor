@@ -49,7 +49,7 @@ export function MermaidEditor({
   return (
     <div className="mermaid-editor">
       <div className="mermaid-source-pane">
-        <div className="diagram-pane-title">Mermaid {onAiEdit && <button type="button" onClick={onAiEdit}>AI Edit</button>}</div>
+        <div className="diagram-pane-title">Mermaid {onAiEdit && <button type="button" onClick={onAiEdit}>AI Generate</button>}</div>
         <CodeEditor
           className="mermaid-source"
           value={source}
