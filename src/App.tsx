@@ -541,12 +541,14 @@ export default function App() {
 
   const handleEditMarkdown = (path: string) => {
     if (!/\.(md|markdown)$/i.test(path)) return;
+    setAiDiagram(null);
     editorCursorRef.current = null;
     setSelectedPath(path);
     setMode("split");
   };
 
   const handleSelect = (path: string) => {
+    setAiDiagram(null);
     editorCursorRef.current = null;
     setTableEdit(null);
     setSelectedPath(path);
