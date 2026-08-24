@@ -7,6 +7,8 @@ import { AboutDialog } from "./components/AboutDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { AiChatPanel } from "./components/AiChatPanel";
+import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
+import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
@@ -155,6 +157,7 @@ export default function App() {
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
+  const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
@@ -538,12 +541,14 @@ export default function App() {
 
   const handleEditMarkdown = (path: string) => {
     if (!/\.(md|markdown)$/i.test(path)) return;
+    setAiDiagramEdit(null);
     editorCursorRef.current = null;
     setSelectedPath(path);
     setMode("split");
   };
 
   const handleSelect = (path: string) => {
+    setAiDiagramEdit(null);
     editorCursorRef.current = null;
     setTableEdit(null);
     setSelectedPath(path);
@@ -752,6 +757,20 @@ export default function App() {
       : current);
     setStatus("Mermaid preview updated");
   }, [mermaidPath]);
+
+  const handleAiDiagramEditApply = (updatedSource: string, snapshot: { path: string; source: string }) => {
+    if (!doc || !aiDiagramEdit) return;
+    const currentPath = aiDiagramEdit.format === "plantuml" ? plantUmlPath : mermaidPath;
+    const currentSource = doc.files.find((file) => file.path === currentPath)?.content ?? "";
+    const applied = applyDiagramEdit(currentPath ?? "", currentSource, snapshot, updatedSource);
+    if (!applied.ok) {
+      setError("The diagram changed while AI generation was running. Run AI Generate again using the latest source.");
+      setStatus("Error"); return;
+    }
+    if (aiDiagramEdit.format === "plantuml") handlePlantUmlSourceChange(applied.source);
+    else handleMermaidSourceChange(applied.source);
+    setAiDiagramEdit(null); setStatus("AI-generated diagram applied"); setError(null);
+  };
 
   const handleInsertMathJax = () => {
     if (!doc) return;
@@ -1188,6 +1207,7 @@ export default function App() {
                 onRendered={handlePlantUmlRendered}
                 vimMode={vimMode}
                 onSave={handleSave}
+                onAiEdit={() => setAiDiagramEdit({ format: "plantuml", path: plantUmlPath })}
               />
             ) : null;
           })()}
@@ -1206,6 +1226,7 @@ export default function App() {
                 onRendered={handleMermaidRendered}
                 vimMode={vimMode}
                 onSave={handleSave}
+                onAiEdit={() => setAiDiagramEdit({ format: "mermaid", path: mermaidPath })}
               />
             ) : null;
           })()}
@@ -1344,6 +1365,12 @@ export default function App() {
           onRunningChange={setAiSelectionRunning}
         />
       )}
+      {aiDiagramEdit && (() => {
+        const source = doc?.files.find((file) => file.path === aiDiagramEdit.path)?.content ?? "";
+        return <AiDiagramEditDialog key={aiDiagramEdit.path} format={aiDiagramEdit.format} path={aiDiagramEdit.path}
+          currentSource={source} onApply={handleAiDiagramEditApply} onOpenAiSettings={() => setAiSettingsOpen(true)}
+          onClose={() => setAiDiagramEdit(null)} />;
+      })()}
       {thirdPartyLicensesOpen && (
         <ThirdPartyLicensesDialog
           text={thirdPartyLicenses}

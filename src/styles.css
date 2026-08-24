@@ -1264,6 +1264,50 @@ body {
   width: 100%;
 }
 
+.ai-diagram-edit-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(760px, 100%);
+  max-height: min(860px, calc(100vh - 48px));
+  overflow: auto;
+}
+
+.ai-diagram-edit-dialog h2,
+.ai-diagram-edit-dialog .about-dialog-actions,
+.ai-diagram-edit-dialog .ai-status {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.ai-diagram-edit-instruction {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0 !important;
+}
+
+.ai-diagram-edit-instruction > textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 160px;
+  padding: 10px 12px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.ai-diagram-edit-dialog .ai-result-original,
+.ai-diagram-edit-dialog .ai-result-preview,
+.ai-diagram-edit-dialog .plantuml-preview {
+  width: 100%;
+  margin: 0;
+}
+
 .ai-field-row {
   display: flex;
   gap: 8px;

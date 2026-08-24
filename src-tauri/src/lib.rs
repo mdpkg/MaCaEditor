@@ -97,6 +97,7 @@ pub fn run() {
             commands::ai_stream,
             commands::ai_selection_action,
             commands::ai_document_chat,
+            commands::ai_edit_diagram,
             commands::cancel_ai_request,
         ])
         .run(tauri::generate_context!())
