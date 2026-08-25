@@ -80,7 +80,12 @@ export function MermaidEditor({
         )}
       </div>
       {previewOpen && (
-        <SvgPreviewOverlay svg={sanitizedSvg} label="Mermaidダイアグラム" onClose={() => setPreviewOpen(false)} />
+        <SvgPreviewOverlay
+          svg={sanitizedSvg}
+          label="Mermaidダイアグラム"
+          whiteBackground
+          onClose={() => setPreviewOpen(false)}
+        />
       )}
     </div>
   );

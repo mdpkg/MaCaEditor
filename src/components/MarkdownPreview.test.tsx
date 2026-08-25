@@ -726,4 +726,32 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
     vi.useRealTimers();
   });
+
+  test.each([
+    ["PlantUML", "plantuml", "diagrams/sequence.puml", "diagrams/sequence.svg"],
+    ["Mermaid", "mermaid", "diagrams/flow.mmd", "diagrams/flow.svg"],
+  ])("uses a white image background when a %s preview is enlarged", (_label, type, source, rendered) => {
+    vi.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={`![diagram](${rendered})`}
+        baseDir=""
+        files={[{
+          path: rendered, is_text: true,
+          content: '<svg><text>diagram</text></svg>', base64: null,
+        }]}
+        manifest={{ resources: [{ type, source, rendered }] }}
+      />,
+    ));
+
+    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(document.body.querySelector("[role='dialog'] .preview-media-white-background")).not.toBeNull();
+    act(() => root.unmount());
+    vi.useRealTimers();
+  });
 });

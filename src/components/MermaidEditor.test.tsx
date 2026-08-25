@@ -64,6 +64,7 @@ describe("MermaidEditor", () => {
     act(() => (container.querySelector(".mermaid-preview") as HTMLDivElement).click());
     expect(document.body.querySelector('[role="dialog"] .drawing-image text')?.textContent)
       .toBe("rendered");
+    expect(document.body.querySelector("[role='dialog'] .preview-media-white-background")).not.toBeNull();
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     act(() => root.unmount());

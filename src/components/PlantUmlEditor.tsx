@@ -89,7 +89,12 @@ export function PlantUmlEditor({
         )}
       </div>
       {previewOpen && (
-        <SvgPreviewOverlay svg={sanitizedSvg} label="PlantUMLダイアグラム" onClose={() => setPreviewOpen(false)} />
+        <SvgPreviewOverlay
+          svg={sanitizedSvg}
+          label="PlantUMLダイアグラム"
+          whiteBackground
+          onClose={() => setPreviewOpen(false)}
+        />
       )}
     </div>
   );

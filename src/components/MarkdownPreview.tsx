@@ -279,7 +279,7 @@ export function MarkdownPreview({
             onEdit: sourcePath && editDiagram
               ? () => editDiagram(sourcePath)
               : undefined,
-            whiteBackground: mathJaxResource !== undefined,
+            whiteBackground: plantUmlResource !== undefined || mermaidResource !== undefined || mathJaxResource !== undefined,
           })}
           onDoubleClick={() => {
             cancelDiagramClick();
