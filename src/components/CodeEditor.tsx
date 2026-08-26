@@ -116,11 +116,27 @@ export function CodeEditor({
       parent: hostRef.current,
     });
     viewRef.current = view;
+    const preserveScrollOnUndo = (event: KeyboardEvent) => {
+      const undoOrRedo = (event.ctrlKey || event.metaKey) &&
+        (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y");
+      if (!undoOrRedo) return;
+      const { scrollTop, scrollLeft } = view.scrollDOM;
+      requestAnimationFrame(() => {
+        view.scrollDOM.scrollTop = scrollTop;
+        view.scrollDOM.scrollLeft = scrollLeft;
+        requestAnimationFrame(() => {
+          view.scrollDOM.scrollTop = scrollTop;
+          view.scrollDOM.scrollLeft = scrollLeft;
+        });
+      });
+    };
+    view.dom.addEventListener("keydown", preserveScrollOnUndo, true);
     const vimEditor = vimMode ? getCM(view) : null;
     if (vimEditor) {
       vimSaveHandlers.set(vimEditor, () => { void onSaveRef.current?.(); });
     }
     return () => {
+      view.dom.removeEventListener("keydown", preserveScrollOnUndo, true);
       if (vimEditor) vimSaveHandlers.delete(vimEditor);
       view.destroy();
       viewRef.current = null;

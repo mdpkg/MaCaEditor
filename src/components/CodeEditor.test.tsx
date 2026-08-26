@@ -13,6 +13,29 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("preserves the editor scroll position across undo", () => {
+    const restoreFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      restoreFrames.push(callback); return restoreFrames.length;
+    });
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value={"line\n".repeat(100)} onChange={vi.fn()} />));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const scroller = editorElement.querySelector(".cm-scroller") as HTMLElement;
+    scroller.scrollTop = 240;
+    act(() => editorElement.querySelector(".cm-content")!.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+    })));
+    scroller.scrollTop = 0;
+    act(() => {
+      while (restoreFrames.length > 0) restoreFrames.shift()?.(0);
+    });
+    expect(scroller.scrollTop).toBe(240);
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+
   test("reports a package file dropped at the editor position", () => {
     const onPackagePathDrop = vi.fn();
     const container = document.createElement("div"); document.body.appendChild(container);
