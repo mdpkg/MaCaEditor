@@ -63,6 +63,11 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
       if (obj.type === "autoShape" && !isAutoShapePreset(obj.preset)) {
         throw new DrawingError(`unknown auto shape preset: ${obj.preset}`);
       }
+      if (obj.type === "connector" && obj.curveOffset && (
+        !Number.isFinite(obj.curveOffset.x) || !Number.isFinite(obj.curveOffset.y)
+      )) {
+        throw new DrawingError(`connector "${obj.id}" curve offset is invalid`);
+      }
       if (obj.type === "group") {
         if (!Array.isArray(obj.members)) {
           throw new DrawingError(`group "${obj.id}" members must be an array`);

@@ -23,6 +23,7 @@ import {
   type AlignKind,
   type History,
   updateConnectorEnds,
+  updateConnectorCurveOffset,
   updateAutoShapeAdjustment,
   updateAutoShapeEnds,
   updateObjectOpacity,
@@ -147,7 +148,7 @@ export function DrawingEditor({
     y: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "rotate" | "arcAdjust" | "calloutAdjust" | "braceAdjust" | "create" | "canvasResize" | "marquee";
+    type: "move" | "resize" | "rotate" | "curveAdjust" | "arcAdjust" | "calloutAdjust" | "braceAdjust" | "create" | "canvasResize" | "marquee";
     id?: string;
     ids?: string[];
     startX: number;
@@ -310,6 +311,19 @@ export function DrawingEditor({
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const curveObjectId = (e.target as SVGElement).dataset.curveAdjust;
+    if (curveObjectId) {
+      setSelectedIds([curveObjectId]);
+      setDragging({
+        type: "curveAdjust",
+        id: curveObjectId,
+        startX: x,
+        startY: y,
+        before: doc,
+      });
+      dragPreviewRef.current = doc;
+      return;
+    }
     const braceObjectId = (e.target as SVGElement).dataset.braceTail;
     if (braceObjectId) {
       setSelectedIds([braceObjectId]);
@@ -584,6 +598,24 @@ export function DrawingEditor({
       return;
     }
 
+    if (dragging.type === "curveAdjust" && dragging.id && dragging.before) {
+      const object = findObjectById(dragging.before.objects, dragging.id);
+      if (!object || object.type !== "connector" || !object.curve) return;
+      const geometry = connectorGeometry(object, dragging.before.objects);
+      if (!geometry) return;
+      const midpoint = {
+        x: (geometry.from.x + geometry.to.x) / 2,
+        y: (geometry.from.y + geometry.to.y) / 2,
+      };
+      const next = updateConnectorCurveOffset(dragging.before, object.id, {
+        x: x - midpoint.x,
+        y: y - midpoint.y,
+      });
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "calloutAdjust" && dragging.id && dragging.before) {
       const object = findObjectById(dragging.before.objects, dragging.id);
       if (!object || object.type !== "autoShape" || object.preset !== "callout") return;
@@ -661,7 +693,7 @@ export function DrawingEditor({
       setRedoStack([]);
       onChange(after);
       onDirty(after);
-    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust" || dragging?.type === "braceAdjust") && dragging.before) {
+    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "curveAdjust" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust" || dragging?.type === "braceAdjust") && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -1086,11 +1118,23 @@ export function DrawingEditor({
                   />;
                 }
                 if (geometry.c1 && geometry.c2) {
-                  return <path
-                    key={id}
-                    d={`M ${geometry.from.x} ${geometry.from.y} C ${geometry.c1.x} ${geometry.c1.y} ${geometry.c2.x} ${geometry.c2.y} ${geometry.to.x} ${geometry.to.y}`}
-                    {...selectionProps}
-                  />;
+                  return <g key={id}>
+                    <path
+                      d={`M ${geometry.from.x} ${geometry.from.y} C ${geometry.c1.x} ${geometry.c1.y} ${geometry.c2.x} ${geometry.c2.y} ${geometry.to.x} ${geometry.to.y}`}
+                      {...selectionProps}
+                    />
+                    {geometry.curveHandle && <circle
+                      className="curve-connector-adjust-handle"
+                      data-curve-adjust={id}
+                      aria-label="Curve connector adjustment handle"
+                      cx={geometry.curveHandle.x}
+                      cy={geometry.curveHandle.y}
+                      r={7 / zoom}
+                      fill="#ffc000"
+                      stroke="#7f6000"
+                      strokeWidth={2 / zoom}
+                    />}
+                  </g>;
                 }
                 return <line
                   key={id}
