@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FileInfo } from "../types";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
-
-const PACKAGE_PATH_DRAG_TYPE = "application/x-maca-package-path";
+import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
 
 interface Props {
   files: FileInfo[];

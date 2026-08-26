@@ -64,6 +64,7 @@ import {
   insertMarkdownImages,
   insertMarkdownLinks,
   isMarkdownPath,
+  packageFileMarkdownLink,
 } from "./lib/markdown";
 import { isSaveShortcut } from "./lib/shortcuts";
 import {
@@ -1167,6 +1168,21 @@ export default function App() {
       : ""
     : entrypointDir();
 
+  const handlePackagePathDrop = (path: string, position: number) => {
+    if (!doc || !displayFile || !displayIsMarkdown || displayFile.content === null) return;
+    try {
+      const link = packageFileMarkdownLink(displayFile.path, path, doc.files, doc.manifest);
+      const inserted = insertMarkdownBlock(displayFile.content, position, link);
+      setDoc(updateFileContent(doc, displayFile.path, inserted.content));
+      editorCursorRef.current = inserted.cursor;
+      setStatus(`Inserted link to ${path}`);
+      setError(null);
+    } catch (reason) {
+      setError(String(reason));
+      setStatus("Error");
+    }
+  };
+
   useEffect(() => {
     const area = documentAreaRef.current;
     if (!area) return;
@@ -1402,6 +1418,7 @@ export default function App() {
                     onAiSelection={handleAiSelection}
                     vimMode={vimMode}
                     onSave={handleSave}
+                    onPackagePathDrop={handlePackagePathDrop}
                   />
                   <MarkdownPreview
                     markdown={displayContent}

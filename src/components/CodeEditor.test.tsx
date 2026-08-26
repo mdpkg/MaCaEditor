@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CodeEditor } from "./CodeEditor";
 import { EditorView } from "codemirror";
 import { getCM, Vim, type CodeMirrorV } from "@replit/codemirror-vim";
+import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,6 +13,26 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("reports a package file dropped at the editor position", () => {
+    const onPackagePathDrop = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="hello" onChange={vi.fn()}
+      onPackagePathDrop={onPackagePathDrop} />));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const view = EditorView.findFromDOM(editorElement)!;
+    vi.spyOn(view, "posAtCoords").mockReturnValue(2);
+    const dataTransfer = {
+      files: [], dropEffect: "none", effectAllowed: "all",
+      setData: vi.fn(), getData: (type: string) => type === PACKAGE_PATH_DRAG_TYPE ? "docs/guide.md" : "",
+    };
+    const drop = new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 });
+    Object.defineProperty(drop, "dataTransfer", { value: dataTransfer });
+    act(() => editorElement.querySelector(".cm-content")!.dispatchEvent(drop));
+    expect(onPackagePathDrop).toHaveBeenCalledWith("docs/guide.md", 2);
+    act(() => root.unmount());
+  });
+
   test("uses standard mode by default and can enable Vim mode", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

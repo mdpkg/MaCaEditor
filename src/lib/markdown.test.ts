@@ -4,6 +4,7 @@ import {
   insertMarkdownImages,
   insertMarkdownLinks,
   isMarkdownPath,
+  packageFileMarkdownLink,
   relativePackagePath,
   resolvePackagePath,
 } from "./markdown";
@@ -86,6 +87,39 @@ describe("Markdown image insertion", () => {
     expect(result.content).toBe(
       "![スクリーンショット 2022](<images/スクリーンショット 2022.png>)",
     );
+  });
+});
+
+describe("package file drop links", () => {
+  const files = [
+    { path: "guide.md", is_text: true, content: "", base64: null },
+    { path: "docs/images/photo.png", is_text: false, content: null, base64: "AAAA" },
+    { path: "diagrams/flow.puml", is_text: true, content: "", base64: null },
+    { path: "diagrams/flow.svg", is_text: true, content: "<svg/>", base64: null },
+    { path: "docs/attachments/spec.pdf", is_text: false, content: null, base64: "AAAA" },
+    { path: "docs/attachments/sample.png", is_text: false, content: null, base64: "AAAA" },
+  ];
+  const manifest = { resources: [
+    { type: "plantuml", source: "diagrams/flow.puml", rendered: "diagrams/flow.svg" },
+  ] };
+
+  test("creates a normal link for Markdown", () => {
+    expect(packageFileMarkdownLink("docs/index.md", "guide.md", files, manifest))
+      .toBe("[guide.md](../guide.md)");
+  });
+
+  test("creates image links for images and diagram sources", () => {
+    expect(packageFileMarkdownLink("docs/index.md", "docs/images/photo.png", files, manifest))
+      .toBe("![photo](images/photo.png)");
+    expect(packageFileMarkdownLink("docs/index.md", "diagrams/flow.puml", files, manifest))
+      .toBe("![flow](../diagrams/flow.svg)");
+  });
+
+  test("creates a normal link for attachments", () => {
+    expect(packageFileMarkdownLink("docs/index.md", "docs/attachments/spec.pdf", files, manifest))
+      .toBe("[spec.pdf](attachments/spec.pdf)");
+    expect(packageFileMarkdownLink("docs/index.md", "docs/attachments/sample.png", files, manifest))
+      .toBe("[sample.png](attachments/sample.png)");
   });
 });
 

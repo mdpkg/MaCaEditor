@@ -4,6 +4,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import type { AiTaskKind } from "../lib/aiSelection";
+import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
 
 interface Props {
   value: string;
@@ -16,6 +17,7 @@ interface Props {
   className?: string;
   ariaLabel?: string;
   onAiSelection?: (task: AiTaskKind) => void;
+  onPackagePathDrop?: (path: string, position: number) => void;
 }
 
 const vimSaveHandlers = new WeakMap<object, () => void>();
@@ -34,6 +36,7 @@ export function CodeEditor({
   ariaLabel,
   onSelectionChange,
   onAiSelection,
+  onPackagePathDrop,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -43,6 +46,7 @@ export function CodeEditor({
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onAiSelectionRef = useRef(onAiSelection);
   const onSaveRef = useRef(onSave);
+  const onPackagePathDropRef = useRef(onPackagePathDrop);
   const [contextMenu, setContextMenu] = useState<{ from: number; to: number; text: string; hasSelection: boolean; x: number; y: number } | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -50,6 +54,7 @@ export function CodeEditor({
   onSelectionChangeRef.current = onSelectionChange;
   onAiSelectionRef.current = onAiSelection;
   onSaveRef.current = onSave;
+  onPackagePathDropRef.current = onPackagePathDrop;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -71,6 +76,21 @@ export function CodeEditor({
         }
       }),
       EditorView.domEventHandlers({
+        dragover: (event) => {
+          if (!event.dataTransfer?.types.includes(PACKAGE_PATH_DRAG_TYPE)) return false;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "link";
+          return true;
+        },
+        drop: (event, view) => {
+          const path = event.dataTransfer?.getData(PACKAGE_PATH_DRAG_TYPE) ?? "";
+          if (!path || !onPackagePathDropRef.current) return false;
+          event.preventDefault();
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
+            ?? view.state.selection.main.head;
+          onPackagePathDropRef.current(path, position);
+          return true;
+        },
         contextmenu: (event, view) => {
           event.preventDefault?.();
           const sel = view.state.selection.main;
