@@ -795,7 +795,7 @@ export function DrawingEditor({
       }
     }
     const hit = hitTest(x, y);
-    if (!hit || !isTextShapeType(hit.type)) return;
+    if (!hit || (!isTextShapeType(hit.type) && hit.type !== "text")) return;
     setSelectedIds([hit.id]);
     setTextFocusRequest((request) => request + 1);
   };

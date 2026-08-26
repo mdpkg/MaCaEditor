@@ -434,11 +434,11 @@ export function updateShapeText(
 ): DrawingDocument {
   return {
     ...doc,
-    objects: doc.objects.map((object) =>
-      object.id === id && ["rectangle", "roundedRectangle", "ellipse", "file", "user", "autoShape"].includes(object.type)
-        ? { ...object, text }
-        : object,
-    ),
+    objects: doc.objects.map((object) => mapObjectById(object, id, (current) =>
+      ["rectangle", "roundedRectangle", "ellipse", "file", "user", "autoShape", "text"].includes(current.type)
+        ? { ...current, text } as DrawingObject
+        : current,
+    )),
   };
 }
 

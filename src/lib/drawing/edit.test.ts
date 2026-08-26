@@ -443,6 +443,17 @@ describe("updateShapeText", () => {
     },
   );
 
+  test("writes text into a standalone text object", () => {
+    const text: DrawingObject = {
+      id: "text-1", type: "text", x: 100, y: 100, width: 100, height: 20,
+      rotation: 0, zIndex: 1, text: "Text", style: { fontSize: 16 },
+    };
+
+    const updated = updateShapeText(doc([text]), "text-1", "Changed");
+
+    expect(updated.objects[0]).toMatchObject({ text: "Changed" });
+  });
+
   test("does not add text to a line", () => {
     const line: DrawingObject = {
       id: "line", type: "line", x: 0, y: 0, x2: 100, y2: 100,
