@@ -603,6 +603,7 @@ describe("MarkdownPreview", () => {
     expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     expect(document.body.querySelector('[role="dialog"] .drawing-image svg')).not.toBeNull();
+    expect(document.body.querySelector('[role="dialog"] .preview-media-white-background')).not.toBeNull();
 
     act(() => root.unmount());
     vi.useRealTimers();
