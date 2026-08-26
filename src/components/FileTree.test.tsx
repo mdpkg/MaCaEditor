@@ -10,6 +10,48 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("moves a package file into a folder by drag and drop", () => {
+    const onDropPath = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[
+        { path: "guide.md", is_text: true, content: "", base64: null },
+        { path: "docs/index.md", is_text: true, content: "", base64: null },
+        { path: "archive/index.md", is_text: true, content: "", base64: null },
+      ]}
+      selectedPath="guide.md" onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+      onDropPath={onDropPath} />));
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      files: [], dropEffect: "none", effectAllowed: "all",
+      setData: (type: string, value: string) => values.set(type, value),
+      getData: (type: string) => values.get(type) ?? "",
+    };
+    const guide = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    const docs = [...container.querySelectorAll(".tree-dir")]
+      .find((item) => item.textContent?.trim().endsWith("docs")) as HTMLDivElement;
+    const dragStart = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(dragStart, "dataTransfer", { value: dataTransfer });
+    act(() => guide.dispatchEvent(dragStart));
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: dataTransfer });
+    act(() => docs.dispatchEvent(drop));
+    expect(onDropPath).toHaveBeenCalledWith("guide.md", "docs/guide.md");
+    const archive = [...container.querySelectorAll(".tree-dir")]
+      .find((item) => item.textContent?.trim().endsWith("archive")) as HTMLDivElement;
+    const folderDragStart = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(folderDragStart, "dataTransfer", { value: dataTransfer });
+    act(() => docs.dispatchEvent(folderDragStart));
+    const folderDrop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(folderDrop, "dataTransfer", { value: dataTransfer });
+    act(() => archive.dispatchEvent(folderDrop));
+    expect(onDropPath).toHaveBeenCalledWith("docs", "archive/docs");
+    act(() => root.unmount());
+  });
+
   test("shows transient empty directories", () => {
     const container = document.createElement("div"); document.body.appendChild(container);
     const root = createRoot(container);

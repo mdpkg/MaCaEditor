@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import type { FileInfo } from "../types";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 
+const PACKAGE_PATH_DRAG_TYPE = "application/x-maca-package-path";
+
 interface Props {
   files: FileInfo[];
   directories?: string[];
@@ -21,6 +23,7 @@ interface Props {
   onSetEntrypoint?: (path: string) => void;
   onAddMarkdown?: (contextPath: string) => void;
   onAddFolder?: (contextPath: string) => void;
+  onDropPath?: (sourcePath: string, destinationPath: string) => void;
 }
 
 function TreeItem({
@@ -32,6 +35,7 @@ function TreeItem({
   onDropImages,
   onContextMenu,
   imageDropDirectory,
+  onDropPath,
 }: {
   node: TreeNode;
   selectedPath: string | null;
@@ -41,6 +45,7 @@ function TreeItem({
   onDropImages: (files: File[]) => void;
   onContextMenu: (event: React.MouseEvent, path: string) => void;
   imageDropDirectory: string;
+  onDropPath?: (sourcePath: string, destinationPath: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
@@ -57,6 +62,11 @@ function TreeItem({
           onEditMarkdown?.(node.path);
         }}
         onContextMenu={(event) => onContextMenu(event, node.path)}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
+        }}
       >
         {node.name}
       </div>
@@ -70,16 +80,33 @@ function TreeItem({
         style={{ paddingLeft: depth * 12 + 8 }}
         onClick={() => setOpen((o) => !o)}
         onContextMenu={(event) => onContextMenu(event, node.path)}
+        draggable
+        onDragStart={(event) => {
+          event.stopPropagation();
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
+        }}
         onDragOver={(event) => {
-          if (node.path !== imageDropDirectory) return;
+          if (!onDropPath && node.path !== imageDropDirectory) return;
           event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(event) => {
+          const sourcePath = event.dataTransfer.getData(PACKAGE_PATH_DRAG_TYPE);
+          if (sourcePath && onDropPath) {
+            event.preventDefault();
+            event.stopPropagation();
+            setDragOver(false);
+            const name = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+            onDropPath(sourcePath, `${node.path}/${name}`);
+            return;
+          }
           if (node.path !== imageDropDirectory) return;
           event.preventDefault();
+          event.stopPropagation();
           setDragOver(false);
           onDropImages(Array.from(event.dataTransfer.files));
         }}
@@ -98,6 +125,7 @@ function TreeItem({
             onDropImages={onDropImages}
             onContextMenu={onContextMenu}
             imageDropDirectory={imageDropDirectory}
+            onDropPath={onDropPath}
           />
         ))}
     </div>
@@ -109,6 +137,7 @@ export function FileTree({
   canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
   onAddMarkdown, onAddFolder,
+  onDropPath,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
@@ -132,7 +161,16 @@ export function FileTree({
   };
 
   return (
-    <div className="file-tree">
+    <div className="file-tree"
+      onDragOver={(event) => { if (onDropPath) event.preventDefault(); }}
+      onDrop={(event) => {
+        const sourcePath = event.dataTransfer.getData(PACKAGE_PATH_DRAG_TYPE);
+        if (!sourcePath || !onDropPath) return;
+        event.preventDefault();
+        const name = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+        onDropPath(sourcePath, name);
+      }}
+    >
       {tree.map((node) => (
         <TreeItem
           key={node.path}
@@ -144,6 +182,7 @@ export function FileTree({
           onDropImages={onDropImages}
           onContextMenu={openContextMenu}
           imageDropDirectory={imageDropDirectory}
+          onDropPath={onDropPath}
         />
       ))}
       {contextMenu && createPortal(

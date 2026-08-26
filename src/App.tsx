@@ -979,15 +979,28 @@ export default function App() {
     }
   };
 
-  const handleMove = (path: string) => {
+  const applyMove = (path: string, destination: string) => {
     if (!doc) return;
-    const destination = window.prompt("Destination path", path);
-    if (!destination || destination === path) return;
+    if (destination === path) return;
     try {
       const moved = movePath(doc, path, destination);
-      setDoc(moved); setSelectedPath(destination); setMode("preview");
+      const mapPath = (current: string | null) => current === path
+        ? destination
+        : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
+      setDoc(moved);
+      setSelectedPath((current) => mapPath(current));
+      setDrawingPath((current) => mapPath(current));
+      setPlantUmlPath((current) => mapPath(current));
+      setMermaidPath((current) => mapPath(current));
+      setMathJaxPath((current) => mapPath(current));
       setStatus(`Moved to ${destination}; Markdown links were updated`); setError(null);
     } catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleMove = (path: string) => {
+    const destination = window.prompt("Destination path", path);
+    if (!destination) return;
+    applyMove(path, destination);
   };
 
   const contextDirectory = (contextPath?: string): string => {
@@ -1254,6 +1267,7 @@ export default function App() {
                   }}
                   onAddMarkdown={handleAddMarkdown}
                   onAddFolder={handleAddFolder}
+                  onDropPath={applyMove}
                 />
               </div>
             )}
