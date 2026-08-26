@@ -91,6 +91,28 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test("preserves scroll when a controlled update inserts dropped content", () => {
+    const restoreFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      restoreFrames.push(callback); return restoreFrames.length;
+    });
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value={"line\n".repeat(100)} onChange={vi.fn()} />));
+    const scroller = container.querySelector(".cm-scroller") as HTMLElement;
+    scroller.scrollTop = 320;
+    scroller.scrollLeft = 24;
+    act(() => root.render(<CodeEditor value={`[link](target.md)\n${"line\n".repeat(100)}`}
+      onChange={vi.fn()} />));
+    scroller.scrollTop = 0;
+    scroller.scrollLeft = 0;
+    act(() => { while (restoreFrames.length > 0) restoreFrames.shift()?.(0); });
+    expect(scroller.scrollTop).toBe(320);
+    expect(scroller.scrollLeft).toBe(24);
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+
   test("reports selection changes", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

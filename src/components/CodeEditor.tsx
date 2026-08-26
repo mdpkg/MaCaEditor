@@ -25,6 +25,18 @@ Vim.defineEx("write", "w", (editor) => {
   vimSaveHandlers.get(editor)?.();
 });
 
+function preserveScrollPosition(view: EditorView, scrollTop: number, scrollLeft: number) {
+  const restore = () => {
+    view.scrollDOM.scrollTop = scrollTop;
+    view.scrollDOM.scrollLeft = scrollLeft;
+  };
+  restore();
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
+  });
+}
+
 export function CodeEditor({
   value,
   onChange,
@@ -121,14 +133,7 @@ export function CodeEditor({
         (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y");
       if (!undoOrRedo) return;
       const { scrollTop, scrollLeft } = view.scrollDOM;
-      requestAnimationFrame(() => {
-        view.scrollDOM.scrollTop = scrollTop;
-        view.scrollDOM.scrollLeft = scrollLeft;
-        requestAnimationFrame(() => {
-          view.scrollDOM.scrollTop = scrollTop;
-          view.scrollDOM.scrollLeft = scrollLeft;
-        });
-      });
+      preserveScrollPosition(view, scrollTop, scrollLeft);
     };
     view.dom.addEventListener("keydown", preserveScrollOnUndo, true);
     const vimEditor = vimMode ? getCM(view) : null;
@@ -147,10 +152,12 @@ export function CodeEditor({
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === value) return;
     const head = Math.min(view.state.selection.main.head, value.length);
+    const { scrollTop, scrollLeft } = view.scrollDOM;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
       selection: { anchor: head },
     });
+    preserveScrollPosition(view, scrollTop, scrollLeft);
   }, [value]);
 
   useEffect(() => {
