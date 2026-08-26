@@ -216,6 +216,20 @@ describe("svg renderer", () => {
     );
     expect(svg).toContain("<text");
     expect(svg).toContain("Hello");
+    expect(svg).toContain('y="100"');
+    expect(svg).toContain('dominant-baseline="hanging"');
+  });
+
+  test("renders standalone text line breaks and blank lines", () => {
+    const svg = renderSvg(doc([{
+      id: "t1", type: "text", x: 100, y: 100, width: 120, height: 60,
+      rotation: 0, zIndex: 1, text: "First\n\nThird & line",
+      style: { fontSize: 16, color: "#333" },
+    }]));
+
+    expect(svg).toContain('<tspan x="100" dy="0em">First</tspan>');
+    expect(svg).toContain('<tspan x="100" dy="1.2em"></tspan>');
+    expect(svg).toContain('<tspan x="100" dy="1.2em">Third &amp; line</tspan>');
   });
 
   test("aligns shape text to the left and top", () => {

@@ -219,7 +219,13 @@ function renderText(obj: TextObject): string {
   const anchor =
     align === "center" ? "middle" : align === "right" ? "end" : "start";
   const x = align === "center" ? obj.x + obj.width / 2 : align === "right" ? obj.x + obj.width : obj.x;
-  return `<text x="${x}" y="${obj.y}" font-size="${fontSize}" font-family="${escapeXml(fontFamily)}" fill="${escapeXml(color)}" text-anchor="${anchor}"${bold}${italic}>${escapeXml(obj.text)}</text>`;
+  const lines = obj.text.replace(/\r\n?/g, "\n").split("\n");
+  const content = lines.length === 1
+    ? escapeXml(obj.text)
+    : lines.map((line, index) =>
+      `<tspan x="${x}" dy="${index === 0 ? 0 : 1.2}em">${escapeXml(line)}</tspan>`,
+    ).join("");
+  return `<text x="${x}" y="${obj.y}" font-size="${fontSize}" font-family="${escapeXml(fontFamily)}" fill="${escapeXml(color)}" text-anchor="${anchor}" dominant-baseline="hanging"${bold}${italic}>${content}</text>`;
 }
 
 function renderLine(obj: LineObject): string {

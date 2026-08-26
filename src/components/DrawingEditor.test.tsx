@@ -1366,4 +1366,54 @@ describe("DrawingEditor", () => {
     act(() => root.unmount());
     prompt.mockRestore();
   });
+
+  test("aligns and edits a standalone text object's bounding box", async () => {
+    const onDirty = vi.fn();
+    const textDoc: DrawingDocument = {
+      ...initial,
+      objects: [{
+        id: "text-1", type: "text", x: 100, y: 100, width: 100, height: 20,
+        rotation: 0, zIndex: 1, text: "Text", style: { fontSize: 16, color: "#000000" },
+      }],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(textDoc);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 110, 110)));
+    expect(container.querySelector(".selection-box rect")?.getAttribute("y")).toBe("96");
+    expect(container.querySelector('svg text')?.getAttribute("dominant-baseline")).toBe("hanging");
+
+    const textarea = container.querySelector(".inspector-row textarea") as HTMLTextAreaElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      setter?.call(textarea, "Changed text");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect((onDirty.mock.lastCall?.[0] as DrawingDocument).objects[0]).toMatchObject({
+      text: "Changed text",
+    });
+
+    await act(async () => {
+      canvas.dispatchEvent(new MouseEvent("dblclick", {
+        bubbles: true, clientX: 110, clientY: 110,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(document.activeElement?.tagName).toBe("TEXTAREA");
+    act(() => root.unmount());
+  });
 });
