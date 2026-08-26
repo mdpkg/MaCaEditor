@@ -19,6 +19,8 @@ interface Props {
   onMove?: (path: string) => void;
   canSetEntrypoint?: (path: string) => boolean;
   onSetEntrypoint?: (path: string) => void;
+  onAddMarkdown?: (contextPath: string) => void;
+  onAddFolder?: (contextPath: string) => void;
 }
 
 function TreeItem({
@@ -106,6 +108,7 @@ export function FileTree({
   files, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages, imageDropDirectory = "images",
   canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
+  onAddMarkdown, onAddFolder,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
@@ -123,9 +126,8 @@ export function FileTree({
   }, [contextMenu]);
 
   const openContextMenu = (event: React.MouseEvent, path: string) => {
-    if (!canRename(path) && !canDelete(path) && !canMove(path) && !canSetEntrypoint(path)) return;
+    if (!onAddMarkdown && !onAddFolder && !canRename(path) && !canDelete(path) && !canMove(path) && !canSetEntrypoint(path)) return;
     event.preventDefault();
-    onSelect(path);
     setContextMenu({ path, x: event.clientX, y: event.clientY });
   };
 
@@ -151,6 +153,18 @@ export function FileTree({
           onPointerDown={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
+          {onAddMarkdown && (
+            <button type="button" onClick={() => {
+              onAddMarkdown(contextMenu.path);
+              setContextMenu(null);
+            }}>Add Markdown</button>
+          )}
+          {onAddFolder && (
+            <button type="button" onClick={() => {
+              onAddFolder(contextMenu.path);
+              setContextMenu(null);
+            }}>Add Folder</button>
+          )}
           {canRename(contextMenu.path) && (
             <button type="button" onClick={() => {
               onRename(contextMenu.path);

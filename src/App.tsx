@@ -990,9 +990,19 @@ export default function App() {
     } catch (reason) { setError(String(reason)); setStatus("Error"); }
   };
 
-  const handleAddMarkdown = () => {
+  const contextDirectory = (contextPath?: string): string => {
+    if (!doc || !contextPath) return "";
+    const isDirectory = doc.directories?.includes(contextPath) === true ||
+      (!doc.files.some((file) => file.path === contextPath) &&
+        doc.files.some((file) => file.path.startsWith(`${contextPath}/`)));
+    if (isDirectory) return contextPath;
+    return contextPath.includes("/") ? contextPath.slice(0, contextPath.lastIndexOf("/")) : "";
+  };
+
+  const handleAddMarkdown = (contextPath?: string) => {
     if (!doc) return;
-    const requested = window.prompt("Markdown path", "untitled.md");
+    const directory = contextDirectory(contextPath);
+    const requested = window.prompt("Markdown path", `${directory ? `${directory}/` : ""}untitled.md`);
     if (!requested) return;
     try {
       const next = addMarkdown(doc, requested, `# ${requested.slice(requested.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "")}\n`);
@@ -1001,9 +1011,10 @@ export default function App() {
     } catch (reason) { setError(String(reason)); setStatus("Error"); }
   };
 
-  const handleAddFolder = () => {
+  const handleAddFolder = (contextPath?: string) => {
     if (!doc) return;
-    const requested = window.prompt("Folder path (empty folders are not saved)", "folder");
+    const directory = contextDirectory(contextPath);
+    const requested = window.prompt("Folder path (empty folders are not saved)", `${directory ? `${directory}/` : ""}folder`);
     if (!requested) return;
     try { setDoc(addDirectory(doc, requested)); setStatus(`Added ${requested}; empty folders are not saved`); setError(null); }
     catch (reason) { setError(String(reason)); setStatus("Error"); }
@@ -1241,6 +1252,8 @@ export default function App() {
                     try { setDoc(setEntrypoint(doc, path)); setStatus(`Entrypoint set to ${path}`); setError(null); }
                     catch (reason) { setError(String(reason)); setStatus("Error"); }
                   }}
+                  onAddMarkdown={handleAddMarkdown}
+                  onAddFolder={handleAddFolder}
                 />
               </div>
             )}

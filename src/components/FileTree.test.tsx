@@ -107,7 +107,7 @@ describe("FileTree", () => {
       bubbles: true, cancelable: true, clientX: 40, clientY: 50,
     })));
 
-    expect(onSelect).toHaveBeenCalledWith("images/photo.png");
+    expect(onSelect).not.toHaveBeenCalled();
     const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
     expect(menu.style.left).toBe("40px");
     expect(menu.style.top).toBe("50px");
@@ -195,6 +195,29 @@ describe("FileTree", () => {
     act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])
       .find((button) => button.textContent === "Set as entrypoint")!.click());
     expect(onSetEntrypoint).toHaveBeenCalledWith("guide.md");
+    act(() => root.unmount());
+  });
+
+  test("offers add actions without changing the current selection", () => {
+    const onSelect = vi.fn(); const onAddMarkdown = vi.fn(); const onAddFolder = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[{ path: "docs/guide.md", is_text: true, content: "", base64: null }]}
+      selectedPath="docs/guide.md" onSelect={onSelect} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+      onAddMarkdown={onAddMarkdown} onAddFolder={onAddFolder} />));
+    const docs = [...container.querySelectorAll(".tree-dir")]
+      .find((item) => item.textContent?.trim().endsWith("docs")) as HTMLDivElement;
+    act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    expect(onSelect).not.toHaveBeenCalled();
+    const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
+    expect(buttons.map((button) => button.textContent)).toEqual(["Add Markdown", "Add Folder"]);
+    act(() => buttons[0].click());
+    expect(onAddMarkdown).toHaveBeenCalledWith("docs");
+    act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])[1].click());
+    expect(onAddFolder).toHaveBeenCalledWith("docs");
     act(() => root.unmount());
   });
 });
