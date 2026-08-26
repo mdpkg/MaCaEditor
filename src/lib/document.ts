@@ -13,6 +13,8 @@ export interface DocumentState {
   originalPaths: string[];
   entrypoint: string;
   files: FileInfo[];
+  /** Empty directories exist only for the current editing session. */
+  directories?: string[];
   manifest: Record<string, unknown>;
   dirty: boolean;
   folderSnapshot?: string;
@@ -26,9 +28,114 @@ export function createDocumentState(info: PackageInfo, origin: DocumentOrigin | 
     originalPaths: info.files.map((file) => file.path),
     entrypoint: info.entrypoint,
     files: info.files,
+    directories: inferDirectories(info.files.map((file) => file.path)),
     manifest: info.manifest,
     dirty: false,
   };
+}
+
+function inferDirectories(paths: string[]): string[] {
+  const directories = new Set<string>();
+  for (const path of paths) {
+    const segments = path.split("/");
+    for (let index = 1; index < segments.length; index += 1) {
+      directories.add(segments.slice(0, index).join("/"));
+    }
+  }
+  return [...directories].sort();
+}
+
+function validateNewPackagePath(path: string): string {
+  const normalized = path.normalize("NFC").replace(/\\/g, "/");
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) {
+    throw new Error("A relative package path is required");
+  }
+  const segments = normalized.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === ".." ||
+    /[<>:"|?*\u0000-\u001f]/.test(segment))) {
+    throw new Error(`Invalid package path: ${path}`);
+  }
+  return normalized;
+}
+
+function pathExists(state: DocumentState, path: string): boolean {
+  const key = path.toLowerCase();
+  return state.files.some((file) => file.path.toLowerCase() === key) ||
+    (state.directories ?? inferDirectories(state.files.map((file) => file.path)))
+      .some((directory) => directory.toLowerCase() === key);
+}
+
+export function addDirectory(state: DocumentState, requestedPath: string): DocumentState {
+  const path = validateNewPackagePath(requestedPath);
+  if (pathExists(state, path)) throw new Error(`Path already exists: ${path}`);
+  const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
+  return { ...state, dirty: true, directories: [...new Set([...currentDirectories, ...inferDirectories([`${path}/x`])])].sort() };
+}
+
+export function addMarkdown(state: DocumentState, requestedPath: string, content = ""): DocumentState {
+  const path = validateNewPackagePath(requestedPath);
+  if (!/\.(md|markdown)$/i.test(path)) throw new Error("Markdown files must use .md or .markdown");
+  if (pathExists(state, path)) throw new Error(`Path already exists: ${path}`);
+  const files = [...state.files, { path, is_text: true, content, base64: null }];
+  return { ...state, dirty: true, files, directories: inferDirectories(files.map((file) => file.path)) };
+}
+
+function replacePathPrefix(path: string, from: string, to: string): string {
+  return path === from ? to : path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
+}
+
+export function movePath(state: DocumentState, requestedFrom: string, requestedTo: string): DocumentState {
+  const from = validateNewPackagePath(requestedFrom);
+  const to = validateNewPackagePath(requestedTo);
+  if (to === from || to.startsWith(`${from}/`)) throw new Error("A path cannot be moved into itself");
+  const affectedFiles = state.files.filter((file) => file.path === from || file.path.startsWith(`${from}/`));
+  const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
+  const affectedDirectories = currentDirectories.filter((directory) => directory === from || directory.startsWith(`${from}/`));
+  if (affectedFiles.length === 0 && affectedDirectories.length === 0) throw new Error(`Path not found: ${from}`);
+  const unaffected = new Set(state.files.filter((file) => !affectedFiles.includes(file)).map((file) => file.path.toLowerCase()));
+  for (const file of affectedFiles) {
+    const next = replacePathPrefix(file.path, from, to).toLowerCase();
+    if (unaffected.has(next)) throw new Error(`Path already exists: ${next}`);
+  }
+  const entrypoint = replacePathPrefix(state.entrypoint, from, to);
+  const resources = Array.isArray(state.manifest.resources)
+    ? state.manifest.resources.map((item) => {
+        if (typeof item !== "object" || item === null) return item;
+        const resource = item as Record<string, unknown>;
+        return {
+          ...resource,
+          source: typeof resource.source === "string" ? replacePathPrefix(resource.source, from, to) : resource.source,
+          rendered: typeof resource.rendered === "string" ? replacePathPrefix(resource.rendered, from, to) : resource.rendered,
+        };
+      })
+    : state.manifest.resources;
+  const files = state.files.map((file) => ({ ...file, path: replacePathPrefix(file.path, from, to) }));
+  const transientDirectories = currentDirectories.map((directory) => replacePathPrefix(directory, from, to));
+  return {
+    ...state, dirty: true, entrypoint, files,
+    directories: [...new Set([...inferDirectories(files.map((file) => file.path)), ...transientDirectories])].sort(),
+    manifest: { ...state.manifest, entrypoint, resources },
+  };
+}
+
+export function deletePath(state: DocumentState, requestedPath: string): DocumentState {
+  const path = validateNewPackagePath(requestedPath);
+  const removes = (candidate: string) => candidate === path || candidate.startsWith(`${path}/`);
+  if (removes(state.entrypoint)) throw new Error("Select another entrypoint before deleting the current entrypoint");
+  const files = state.files.filter((file) => !removes(file.path));
+  const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
+  const directories = currentDirectories.filter((directory) => !removes(directory));
+  if (files.length === state.files.length && directories.length === currentDirectories.length) {
+    throw new Error(`Path not found: ${path}`);
+  }
+  const resources = Array.isArray(state.manifest.resources)
+    ? state.manifest.resources.filter((item) => {
+        if (typeof item !== "object" || item === null) return true;
+        const resource = item as { source?: string; rendered?: string };
+        return !removes(resource.source ?? "") && !removes(resource.rendered ?? "");
+      })
+    : state.manifest.resources;
+  return { ...state, dirty: true, files, directories, manifest: { ...state.manifest, resources } };
 }
 
 export function createFolderDocumentState(info: PackageInfo, path: string): DocumentState {
