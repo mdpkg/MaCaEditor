@@ -10,6 +10,45 @@ afterEach(() => {
 });
 
 describe("MarkdownPreview", () => {
+  test("restores and reports the Markdown scroll ratio", () => {
+    let restoreFrame: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      restoreFrame = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const onScrollRatioChange = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="# Document"
+        baseDir=""
+        files={[]}
+        scrollRestoreKey="README.md"
+        initialScrollRatio={0.75}
+        onScrollRatioChange={onScrollRatioChange}
+      />,
+    ));
+    const preview = container.querySelector(".markdown-preview") as HTMLDivElement;
+    Object.defineProperties(preview, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 200 },
+    });
+
+    act(() => restoreFrame?.(0));
+    expect(preview.scrollTop).toBe(600);
+    expect(onScrollRatioChange).toHaveBeenLastCalledWith(0.75);
+
+    preview.scrollTop = 400;
+    act(() => preview.dispatchEvent(new Event("scroll")));
+    expect(onScrollRatioChange).toHaveBeenLastCalledWith(0.5);
+
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+
   test("renders package attachments as download links", () => {
     const onDownloadAttachment = vi.fn();
     const container = document.createElement("div");

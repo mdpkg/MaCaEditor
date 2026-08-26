@@ -161,6 +161,8 @@ export default function App() {
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
+  const markdownScrollRatiosRef = useRef(new Map<string, number>());
+  const documentAreaRef = useRef<HTMLElement>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
   const [editorSelection, setEditorSelection] = useState<AiSelectionSnapshot | null>(null);
   const notificationSequenceRef = useRef(0);
@@ -1110,6 +1112,32 @@ export default function App() {
       : ""
     : entrypointDir();
 
+  useEffect(() => {
+    const area = documentAreaRef.current;
+    if (!area) return;
+    if (mode !== "preview") {
+      area.scrollTop = 0;
+      return;
+    }
+    if (!displayFile || !displayIsMarkdown) return;
+    const frame = requestAnimationFrame(() => {
+      const maximum = Math.max(0, area.scrollHeight - area.clientHeight);
+      area.scrollTop = maximum * (markdownScrollRatiosRef.current.get(displayFile.path) ?? 0);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mode, displayFile?.path, displayIsMarkdown, showToc]);
+
+  const handleDocumentAreaScroll = () => {
+    if (mode !== "preview" || !displayFile || !displayIsMarkdown) return;
+    const area = documentAreaRef.current;
+    if (!area) return;
+    const maximum = Math.max(0, area.scrollHeight - area.clientHeight);
+    markdownScrollRatiosRef.current.set(
+      displayFile.path,
+      maximum > 0 ? area.scrollTop / maximum : 0,
+    );
+  };
+
   return (
     <div className="app-shell">
       <Toolbar
@@ -1175,7 +1203,11 @@ export default function App() {
             )}
           </aside>
         )}
-        <main className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}>
+        <main
+          ref={documentAreaRef}
+          className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}
+          onScroll={handleDocumentAreaScroll}
+        >
           <Suspense fallback={<div className="empty-state">Loading…</div>}>
           {!doc && (
             <div className="empty-state">
@@ -1299,6 +1331,9 @@ export default function App() {
                   />
                   <MarkdownPreview
                     markdown={displayContent}
+                    scrollRestoreKey={displayFile.path}
+                    initialScrollRatio={markdownScrollRatiosRef.current.get(displayFile.path) ?? 0}
+                    onScrollRatioChange={(ratio) => markdownScrollRatiosRef.current.set(displayFile.path, ratio)}
                     showToc={showToc && displayIsMarkdown}
                     rspressMode={rspressMode}
                     baseDir={displayBaseDir}

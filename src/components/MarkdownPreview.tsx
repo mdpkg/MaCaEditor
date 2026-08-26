@@ -33,6 +33,9 @@ interface Props {
   onDownloadAttachment?: (file: FileInfo) => void;
   showToc?: boolean;
   rspressMode?: boolean;
+  scrollRestoreKey?: string;
+  initialScrollRatio?: number;
+  onScrollRatioChange?: (ratio: number) => void;
 }
 
 type PreviewMedia =
@@ -102,12 +105,16 @@ export function MarkdownPreview({
   onDownloadAttachment,
   showToc = false,
   rspressMode = false,
+  scrollRestoreKey,
+  initialScrollRatio = 0,
+  onScrollRatioChange,
 }: Props) {
   const tocPrefixLength = showToc ? "## 目次\n\n".length : 0;
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
   const diagramClickTimer = useRef<number | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const mediaDrag = useRef<{
     startX: number;
     startY: number;
@@ -136,6 +143,25 @@ export function MarkdownPreview({
   };
 
   useEffect(() => () => cancelDiagramClick(), []);
+
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    const frame = requestAnimationFrame(() => {
+      const maximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
+      preview.scrollTop = maximum * Math.max(0, Math.min(1, initialScrollRatio));
+      // Let the split view synchronize its editor after the preview is restored.
+      preview.dispatchEvent(new Event("scroll"));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollRestoreKey]);
+
+  const reportScrollRatio = () => {
+    const preview = previewRef.current;
+    if (!preview || !onScrollRatioChange) return;
+    const maximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
+    onScrollRatioChange(maximum > 0 ? preview.scrollTop / maximum : 0);
+  };
 
   useEffect(() => {
     if (!previewMedia) return;
@@ -353,7 +379,7 @@ export function MarkdownPreview({
   ];
 
   return <>
-    <div className="markdown-preview">
+    <div ref={previewRef} className="markdown-preview" onScroll={reportScrollRatio}>
       <ReactMarkdown
         components={components}
         remarkPlugins={remarkPlugins}
