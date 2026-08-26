@@ -125,6 +125,8 @@ export interface ConnectorObject extends BaseObject {
   to: { objectId: string };
   /** true の場合は曲線コネクタとして描画する。 */
   curve?: boolean;
+  /** 曲線の中央調整ハンドルの、両端の中点からの相対位置。 */
+  curveOffset?: { x: number; y: number };
   /** true の場合は水平・垂直のカギ線コネクタとして描画する。 */
   elbow?: boolean;
   startMarker?: ConnectorEndMarker;

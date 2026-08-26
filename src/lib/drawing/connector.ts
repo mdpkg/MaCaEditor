@@ -2,7 +2,14 @@ import type { ConnectorObject, DrawingObject } from "./model";
 
 export interface Point { x: number; y: number }
 interface ConnectionSite { point: Point; outward: Point }
-export interface ConnectorGeometry { from: Point; to: Point; c1?: Point; c2?: Point; points?: Point[] }
+export interface ConnectorGeometry {
+  from: Point;
+  to: Point;
+  c1?: Point;
+  c2?: Point;
+  curveHandle?: Point;
+  points?: Point[];
+}
 
 function center(object: DrawingObject): Point {
   return { x: object.x + object.width / 2, y: object.y + object.height / 2 };
@@ -98,16 +105,44 @@ export function connectorGeometry(connector: ConnectorObject, objects: DrawingOb
     return { ...geometry, points: [geometry.from, corner, geometry.to] };
   }
   if (!connector.curve) return geometry;
+  if (connector.curveOffset) {
+    const midpoint = {
+      x: (geometry.from.x + geometry.to.x) / 2,
+      y: (geometry.from.y + geometry.to.y) / 2,
+    };
+    const curveHandle = {
+      x: midpoint.x + connector.curveOffset.x,
+      y: midpoint.y + connector.curveOffset.y,
+    };
+    // A quadratic curve passing through curveHandle at t=0.5, converted to cubic controls.
+    const quadraticControl = {
+      x: 2 * curveHandle.x - midpoint.x,
+      y: 2 * curveHandle.y - midpoint.y,
+    };
+    return {
+      ...geometry,
+      c1: {
+        x: geometry.from.x + 2 / 3 * (quadraticControl.x - geometry.from.x),
+        y: geometry.from.y + 2 / 3 * (quadraticControl.y - geometry.from.y),
+      },
+      c2: {
+        x: geometry.to.x + 2 / 3 * (quadraticControl.x - geometry.to.x),
+        y: geometry.to.y + 2 / 3 * (quadraticControl.y - geometry.to.y),
+      },
+      curveHandle,
+    };
+  }
   const dx = geometry.to.x - geometry.from.x;
   const dy = geometry.to.y - geometry.from.y;
   const handle = Math.min(120, Math.max(40, Math.max(Math.abs(dx), Math.abs(dy)) * 0.5));
   const sourceDistance = Math.max(Math.hypot(dx, dy), 0.001);
   const towardSource = { x: -dx / sourceDistance, y: -dy / sourceDistance };
-  return {
+  const curved = {
     ...geometry,
     c1: { x: geometry.from.x + fromSite.outward.x * handle, y: geometry.from.y + fromSite.outward.y * handle },
     c2: { x: geometry.to.x + towardSource.x * handle, y: geometry.to.y + towardSource.y * handle },
   };
+  return { ...curved, curveHandle: cubicPoint(curved, 0.5) };
 }
 
 function distanceToSegment(point: Point, start: Point, end: Point): number {

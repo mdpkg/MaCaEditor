@@ -43,6 +43,14 @@ describe("connector hit testing", () => {
     expect(tail.x * towardSource.x + tail.y * towardSource.y).toBeGreaterThan(0);
   });
 
+  it("passes an adjusted curve through the central handle", () => {
+    const adjusted = { ...connector(true), curveOffset: { x: -20, y: 80 } };
+    const geometry = connectorGeometry(adjusted, shapes)!;
+
+    expect(geometry.curveHandle).toEqual({ x: 180, y: 205 });
+    expect(isPointOnConnector(geometry, 180, 205, 0.01)).toBe(true);
+  });
+
   it("creates an orthogonal route and hit-tests every elbow segment", () => {
     const geometry = connectorGeometry(connector(false, true), shapes)!;
 

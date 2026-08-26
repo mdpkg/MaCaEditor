@@ -61,6 +61,22 @@ export function updateConnectorEnds(
   };
 }
 
+export function updateConnectorCurveOffset(
+  doc: DrawingDocument,
+  id: string,
+  offset: { x: number; y: number },
+): DrawingDocument {
+  if (!Number.isFinite(offset.x) || !Number.isFinite(offset.y)) return doc;
+  return {
+    ...doc,
+    objects: doc.objects.map((object) => mapObjectById(object, id, (current) =>
+      current.type === "connector" && current.curve
+        ? { ...current, curveOffset: offset }
+        : current,
+    )),
+  };
+}
+
 export function updateObjectRotation(
   doc: DrawingDocument,
   id: string,

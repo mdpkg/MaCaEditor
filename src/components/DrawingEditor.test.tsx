@@ -684,6 +684,53 @@ describe("DrawingEditor", () => {
     act(() => root.unmount());
   });
 
+  test("adjusts a curved connector with one central yellow handle", () => {
+    const onDirty = vi.fn();
+    const starting: DrawingDocument = {
+      ...initial,
+      objects: [
+        { ...initial.objects[0], id: "a", x: 0, y: 0, width: 100, height: 50 },
+        { ...initial.objects[0], id: "b", x: 300, y: 200, width: 100, height: 50, zIndex: 2 },
+        {
+          id: "curve-1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+          rotation: 0, zIndex: 3, from: { objectId: "a" }, to: { objectId: "b" },
+          curve: true, style: { stroke: "#000000", strokeWidth: 1 },
+        },
+      ],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [doc, setDoc] = useState(starting);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 211, 98)));
+    const handle = container.querySelector(".curve-connector-adjust-handle") as SVGCircleElement;
+    expect(handle).not.toBeNull();
+    expect(handle.getAttribute("fill")).toBe("#ffc000");
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerdown", 211, 98)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 200, 250)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 200, 250)));
+
+    const changed = onDirty.mock.lastCall?.[0] as DrawingDocument;
+    expect(changed.objects[2]).toMatchObject({ curveOffset: { x: 0, y: 125 } });
+    act(() => root.unmount());
+  });
+
   test("groups selected shapes and ungroups the selected group", () => {
     const onDirty = vi.fn();
     const second = {

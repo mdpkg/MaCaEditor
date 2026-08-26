@@ -1620,6 +1620,10 @@ body {
   cursor: grab;
 }
 
+.curve-connector-adjust-handle {
+  cursor: move;
+}
+
 .canvas-resize-handle {
   fill: transparent;
   stroke: none;
