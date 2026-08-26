@@ -962,7 +962,7 @@ export default function App() {
   const handleRename = (path: string | null = selectedPath) => {
     if (!doc || !path || !isRenameablePath(path)) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
-    const requested = window.prompt("New name (Markdown links will not be updated)", fileName);
+    const requested = window.prompt("New name", fileName);
     if (requested === null || requested.trim() === "" || requested === fileName) return;
     const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     const destination = parent ? `${parent}/${requested}` : requested;
@@ -971,7 +971,7 @@ export default function App() {
       setDoc(renamed);
       setSelectedPath(destination);
       setMode("preview");
-      setStatus(`Renamed to ${destination}; Markdown links were not updated`);
+      setStatus(`Renamed to ${destination}; Markdown links were updated`);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -981,12 +981,12 @@ export default function App() {
 
   const handleMove = (path: string) => {
     if (!doc) return;
-    const destination = window.prompt("Destination path (Markdown links will not be updated)", path);
+    const destination = window.prompt("Destination path", path);
     if (!destination || destination === path) return;
     try {
       const moved = movePath(doc, path, destination);
       setDoc(moved); setSelectedPath(destination); setMode("preview");
-      setStatus(`Moved to ${destination}; Markdown links were not updated`); setError(null);
+      setStatus(`Moved to ${destination}; Markdown links were updated`); setError(null);
     } catch (reason) { setError(String(reason)); setStatus("Error"); }
   };
 

@@ -105,6 +105,32 @@ function replacePathPrefix(path: string, from: string, to: string): string {
   return path === from ? to : path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
 }
 
+function rewriteMarkdownLinksForMove(
+  content: string,
+  oldMarkdownPath: string,
+  newMarkdownPath: string,
+  from: string,
+  to: string,
+): string {
+  return content.replace(/(!?\[[^\]]*\]\()(<[^>]*>|[^)\s]+)(\))/g, (match, start, rawTarget, end) => {
+    const target = markdownDestination(rawTarget);
+    if (target.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return match;
+    const parts = target.match(/^([^?#]*)([?#].*)?$/);
+    if (!parts || !parts[1]) return match;
+    let decodedPath: string;
+    try { decodedPath = decodeURIComponent(parts[1]); } catch { decodedPath = parts[1]; }
+    const oldBaseDir = oldMarkdownPath.includes("/")
+      ? oldMarkdownPath.slice(0, oldMarkdownPath.lastIndexOf("/"))
+      : "";
+    const resolved = resolvePackagePath(oldBaseDir, decodedPath);
+    if (!resolved) return match;
+    const movedTarget = replacePathPrefix(resolved, from, to);
+    if (oldMarkdownPath === newMarkdownPath && resolved === movedTarget) return match;
+    const relative = relativePackagePath(newMarkdownPath, movedTarget);
+    return `${start}${formattedMarkdownDestination(relative + (parts[2] ?? ""))}${end}`;
+  });
+}
+
 export function movePath(state: DocumentState, requestedFrom: string, requestedTo: string): DocumentState {
   const from = validateNewPackagePath(requestedFrom);
   const to = validateNewPackagePath(requestedTo);
@@ -132,7 +158,13 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
         };
       })
     : state.manifest.resources;
-  const files = state.files.map((file) => ({ ...file, path: replacePathPrefix(file.path, from, to) }));
+  const files = state.files.map((file) => {
+    const nextPath = replacePathPrefix(file.path, from, to);
+    const content = file.is_text && file.content !== null && /\.(md|markdown)$/i.test(file.path)
+      ? rewriteMarkdownLinksForMove(file.content, file.path, nextPath, from, to)
+      : file.content;
+    return { ...file, path: nextPath, content };
+  });
   const transientDirectories = currentDirectories.map((directory) => replacePathPrefix(directory, from, to));
   return {
     ...state, dirty: true, entrypoint, files,

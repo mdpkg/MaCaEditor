@@ -81,7 +81,7 @@ describe("document structure", () => {
     expect(() => movePath(current, "one", "two")).toThrow(/exists/i);
   });
 
-  test("moves a folder without rewriting markdown links but updates manifest paths", () => {
+  test("moves a folder and rewrites markdown links while updating manifest paths", () => {
     const current = createDocumentState({
       manifest: {
         format: "mdpkg", version: "2.0", entrypoint: "docs/start.md",
@@ -99,6 +99,28 @@ describe("document structure", () => {
     expect(moved.manifest.entrypoint).toBe("guide/start.md");
     expect((moved.manifest.resources as Array<{ source: string }>)[0].source).toBe("guide/diagrams/a.puml");
     expect(moved.files.find((file) => file.path === "guide/start.md")?.content).toBe("![A](diagrams/a.svg)");
+  });
+
+  test("updates links when only their target is moved", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "guide.md", "[Notes](docs/notes.md)");
+    const withTarget = addMarkdown(current, "docs/notes.md", "# Notes");
+    const moved = movePath(withTarget, "docs/notes.md", "reference/notes.md");
+    expect(moved.files.find((file) => file.path === "guide.md")?.content).toBe("[Notes](reference/notes.md)");
+  });
+
+  test("recalculates relative links when the markdown file itself is moved", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "docs/guide.md", "[Home](../README.md)");
+    const moved = movePath(current, "docs/guide.md", "guides/nested/guide.md");
+    expect(moved.files.find((file) => file.path === "guides/nested/guide.md")?.content)
+      .toBe("[Home](../../README.md)");
+  });
+
+  test("does not rewrite external URLs or document anchors", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "docs/guide.md",
+      "[Web](https://example.com) [Section](#section)");
+    const moved = movePath(current, "docs/guide.md", "guide.md");
+    expect(moved.files.find((file) => file.path === "guide.md")?.content)
+      .toBe("[Web](https://example.com) [Section](#section)");
   });
 
   test("requires another entrypoint before deleting the current one", () => {
