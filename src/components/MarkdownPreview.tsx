@@ -103,6 +103,7 @@ export function MarkdownPreview({
   showToc = false,
   rspressMode = false,
 }: Props) {
+  const tocPrefixLength = showToc ? "## 目次\n\n".length : 0;
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
@@ -201,7 +202,6 @@ export function MarkdownPreview({
       const Tag = `h${level}` as const;
       return [Tag, ({ node, ...props }: ComponentProps<typeof Tag> & { node?: { position?: { start: { offset?: number } } } }) => {
         const previewOffset = node?.position?.start.offset;
-        const tocPrefixLength = showToc ? "## 目次\n\n".length : 0;
         const sourceOffset = previewOffset === undefined || previewOffset < tocPrefixLength
           ? undefined
           : previewOffset - tocPrefixLength;
@@ -209,8 +209,14 @@ export function MarkdownPreview({
       }];
     })),
     table({ node, ...props }) {
-      const start = node?.position?.start.offset;
-      const end = node?.position?.end.offset;
+      const previewStart = node?.position?.start.offset;
+      const previewEnd = node?.position?.end.offset;
+      const start = previewStart === undefined || previewStart < tocPrefixLength
+        ? undefined
+        : previewStart - tocPrefixLength;
+      const end = previewEnd === undefined || previewEnd < tocPrefixLength
+        ? undefined
+        : previewEnd - tocPrefixLength;
       return <table
         {...props}
         className={onEditTable ? "editable-markdown-table" : undefined}

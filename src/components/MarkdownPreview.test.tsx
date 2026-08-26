@@ -301,6 +301,37 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test("reports the original source range for a Japanese table when TOC is shown", () => {
+    const onEditTable = vi.fn();
+    const table = [
+      "| 用語 | 説明 |",
+      "|---|---|",
+      "| 認証（Authentication） | 「誰であるか」を確認する処理。ログインできるかどうか |",
+      "| 認可（Authorization） | 「何を許可するか」を決める処理。アクセスできるかどうか |",
+      "| UserDetailsService | ユーザー名から認証対象ユーザーを取得する処理を切り出したインタフェース |",
+      "| DelegatingPasswordEncoder | プレフィックスを見て適切なパスワードエンコーダーを選ぶ仕組み |",
+    ].join("\n");
+    const markdown = `# Spring Security\n\n${table}\n\nAfter`;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={markdown}
+        baseDir=""
+        files={[]}
+        showToc
+        onEditTable={onEditTable}
+      />,
+    ));
+
+    act(() => (container.querySelector("table") as HTMLTableElement).click());
+
+    const start = markdown.indexOf(table);
+    expect(onEditTable).toHaveBeenCalledWith(start, start + table.length);
+    act(() => root.unmount());
+  });
+
   test("resolves package images and reports a missing image", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
