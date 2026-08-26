@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
 import {
   addDirectory, addMarkdown, createDocumentState, createFolderDocumentState, deletePath,
-  movePath, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent,
+  markSaved, movePath, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent,
 } from "./document";
 
 const info: PackageInfo = {
@@ -48,6 +48,10 @@ describe("document state", () => {
     expect(req.files.length).toBe(2);
     expect(req.manifest.version).toBe("2.0");
     expect(req.manifest.entrypoint).toBe("README.md");
+  });
+
+  test("keeps the in-memory manifest at v2 after saving a v1 document", () => {
+    expect(markSaved(createDocumentState(info, "test.mdpkg")).manifest.version).toBe("2.0");
   });
 });
 

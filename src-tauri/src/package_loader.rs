@@ -35,22 +35,26 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
         zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(LoadError::NotZip)?;
 
     // まずエントリ名をすべて検証してから読み込む
-    let mut names: Vec<String> = Vec::new();
+    let mut entries: Vec<(usize, String)> = Vec::new();
     for i in 0..archive.len() {
         let entry = archive.by_index(i).map_err(LoadError::NotZip)?;
         let name = entry.name().to_string();
-        validate_package_path(&name).map_err(|e| match e {
+        let path_to_validate = name.trim_end_matches('/');
+        validate_package_path(path_to_validate).map_err(|e| match e {
             PathError::Empty | PathError::InvalidSegment | PathError::OutsidePackage => {
                 LoadError::UnsafePath(name.clone())
             }
         })?;
-        names.push(name);
+        if !entry.is_dir() {
+            entries.push((i, name));
+        }
     }
 
     // manifest.json を取得
-    let manifest_index = names
+    let manifest_index = entries
         .iter()
-        .position(|n| n.replace('\\', "/") == "manifest.json")
+        .find(|(_, name)| name.replace('\\', "/") == "manifest.json")
+        .map(|(index, _)| *index)
         .ok_or(LoadError::MissingManifest)?;
 
     let mut manifest_bytes = Vec::new();
@@ -77,11 +81,11 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
     // manifest.json は manifest として別途保持するため files には含めない
     // （write_package は manifest.json を常に書き込むため、含めると重複してしまう）
     let mut files: Vec<PackageFile> = Vec::new();
-    for (i, name) in names.iter().enumerate() {
+    for (i, name) in &entries {
         if name.replace('\\', "/") == "manifest.json" {
             continue;
         }
-        let mut entry = archive.by_index(i).map_err(LoadError::NotZip)?;
+        let mut entry = archive.by_index(*i).map_err(LoadError::NotZip)?;
         let mut content = Vec::new();
         entry
             .read_to_end(&mut content)
@@ -285,5 +289,21 @@ mod tests {
             tex_file.text_content(),
             Some(r"\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}")
         );
+    }
+
+    #[test]
+    fn ignores_empty_zip_directories() {
+        let manifest = br#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md"}"#;
+        let mut buf = Vec::new();
+        let mut writer = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        writer.add_directory("empty/", FullFileOptions::default()).unwrap();
+        writer.start_file("manifest.json", FullFileOptions::default()).unwrap();
+        writer.write_all(manifest).unwrap();
+        writer.start_file("index.md", FullFileOptions::default()).unwrap();
+        writer.write_all(b"# Index").unwrap();
+        writer.finish().unwrap();
+        let loaded = load_package(&buf).unwrap();
+        assert_eq!(loaded.files.len(), 1);
+        assert_eq!(loaded.files[0].path, "index.md");
     }
 }

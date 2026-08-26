@@ -10,6 +10,7 @@ interface Props {
   onSelect: (path: string) => void;
   onEditMarkdown?: (path: string) => void;
   onDropImages: (files: File[]) => void;
+  imageDropDirectory?: string;
   canRename: (path: string) => boolean;
   onRename: (path: string) => void;
   canDelete: (path: string) => boolean;
@@ -28,6 +29,7 @@ function TreeItem({
   depth,
   onDropImages,
   onContextMenu,
+  imageDropDirectory,
 }: {
   node: TreeNode;
   selectedPath: string | null;
@@ -36,6 +38,7 @@ function TreeItem({
   depth: number;
   onDropImages: (files: File[]) => void;
   onContextMenu: (event: React.MouseEvent, path: string) => void;
+  imageDropDirectory: string;
 }) {
   const [open, setOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
@@ -66,14 +69,14 @@ function TreeItem({
         onClick={() => setOpen((o) => !o)}
         onContextMenu={(event) => onContextMenu(event, node.path)}
         onDragOver={(event) => {
-          if (node.path !== "images") return;
+          if (node.path !== imageDropDirectory) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(event) => {
-          if (node.path !== "images") return;
+          if (node.path !== imageDropDirectory) return;
           event.preventDefault();
           setDragOver(false);
           onDropImages(Array.from(event.dataTransfer.files));
@@ -92,6 +95,7 @@ function TreeItem({
             depth={depth + 1}
             onDropImages={onDropImages}
             onContextMenu={onContextMenu}
+            imageDropDirectory={imageDropDirectory}
           />
         ))}
     </div>
@@ -99,7 +103,7 @@ function TreeItem({
 }
 
 export function FileTree({
-  files, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages,
+  files, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages, imageDropDirectory = "images",
   canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
 }: Props) {
@@ -137,6 +141,7 @@ export function FileTree({
           depth={0}
           onDropImages={onDropImages}
           onContextMenu={openContextMenu}
+          imageDropDirectory={imageDropDirectory}
         />
       ))}
       {contextMenu && createPortal(

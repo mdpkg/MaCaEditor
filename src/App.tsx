@@ -1225,6 +1225,10 @@ export default function App() {
                   onSelect={handleSelect}
                   onEditMarkdown={handleEditMarkdown}
                   onDropImages={handleDropImages}
+                  imageDropDirectory={resourceDirectoryForMarkdown(
+                    selectedFile && /\.(md|markdown)$/i.test(selectedFile.path) ? selectedFile.path : doc?.entrypoint ?? "index.md",
+                    "images",
+                  )}
                   canRename={isRenameablePath}
                   onRename={handleRename}
                   canDelete={(path) => doc !== null && !(doc.entrypoint === path || doc.entrypoint.startsWith(`${path}/`))}

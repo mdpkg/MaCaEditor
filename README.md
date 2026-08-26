@@ -98,7 +98,9 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 ステータスバーには現在の`Package`/`Folder`モードが表示されます。FolderモードではOSのfilesystem notificationを使って外部エディタによる変更を検知し、未保存の編集がなければ自動的に再読込します。dirty状態で外部変更を検知した場合はローカル編集を上書きせず警告し、競合を解消するためフォルダを開き直すまでSaveを停止します。
 
-新しいFolderモードのDocumentを始める場合は、**File** → **Start with New Empty Folder**を選びます。親フォルダを選択して新規フォルダ名を入力すると、そのフォルダに`manifest.json`とentrypointの`README.md`が生成され、すぐに編集を開始できます。入力した名前のフォルダが既に存在する場合はエラーとなり、上書きされません。
+新しいFolderモードのDocumentを始める場合は、**File** → **Start with New Empty Folder**を選びます。親フォルダを選択して新規フォルダ名を入力すると、そのフォルダにMDPKG v2の`manifest.json`とentrypointの`index.md`が生成され、すぐに編集を開始できます。入力した名前のフォルダが既に存在する場合はエラーとなり、上書きされません。
+
+MDPKG v1は引き続き読み込めます。v1 Documentを保存すると、既存のentrypointを維持したままmanifestのversionが`2.0`へ更新されます。
 
 ### 新しい `.mdpkg` を作成する
 
@@ -106,13 +108,15 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 2. Markdownを編集し、必要に応じて画像や図を追加します。
 3. **File** メニューの **Save** または **Save As** で保存先を指定します。
 
+**File** → **Add Markdown...**および**Add Folder...**で階層を追加できます。ファイルツリーのコンテキストメニューではファイルとフォルダのrename、移動、削除、およびMarkdownのentrypoint指定を行えます。これらの構造変更では既存Markdown内のリンクは自動更新されません。空フォルダは保存されません。
+
 ### 画像を追加する
 
 1. Markdownの挿入位置へカーソルを置きます。
 2. **Add Image** を押して画像を選択します。
 3. 画像のリンクがカーソル位置へ挿入されます。カーソル位置がない場合はMarkdownの末尾へ挿入されます。
 
-ファイルツリーの `images` フォルダへ画像をドラッグ＆ドロップして追加することもできます。
+画像、図、添付ファイルは、リンクを挿入するMarkdownと同じディレクトリ内の`images`、`diagrams`、`attachments`へ保存されます。ファイルツリーでは、現在のMarkdownに対応する`images`フォルダへ画像をドラッグ＆ドロップして追加することもできます。
 
 ### 添付ファイルを追加する
 

@@ -45,6 +45,11 @@ describe("resolvePackagePath", () => {
     expect(resolvePackagePath("", "/etc/passwd")).toBeNull();
   });
 
+  test.each(["file:///etc/passwd", "file:///C:/private.txt", "C:/private.txt"])(
+    "rejects local file reference %s",
+    (target) => expect(resolvePackagePath("docs", target)).toBeNull(),
+  );
+
   test("accepts leading dot slash", () => {
     expect(resolvePackagePath("", "./images/a.png")).toBe("images/a.png");
   });

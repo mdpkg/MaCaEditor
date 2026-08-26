@@ -13,6 +13,8 @@ pub enum ValidationError {
     EntrypointNotFound(String),
     #[error("entrypoint \"{0}\" escapes the package")]
     EntrypointEscapes(String),
+    #[error("entrypoint \"{0}\" is not a Markdown document")]
+    EntrypointNotMarkdown(String),
     #[error("resource path \"{0}\" escapes the package")]
     ResourceEscapes(String),
 }
@@ -27,6 +29,10 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), ValidationError> {
     }
     if manifest.entrypoint.is_empty() {
         return Err(ValidationError::MissingEntrypoint);
+    }
+    let entrypoint = manifest.entrypoint.to_ascii_lowercase();
+    if !entrypoint.ends_with(".md") && !entrypoint.ends_with(".markdown") {
+        return Err(ValidationError::EntrypointNotMarkdown(manifest.entrypoint.clone()));
     }
     Ok(())
 }
@@ -151,5 +157,11 @@ mod tests {
         let m = manifest("mdpkg", "1.0", "README.md");
         let files = vec!["README.md".to_string(), "manifest.json".to_string()];
         assert!(validate_entrypoint_exists(&m, &files).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_non_markdown_entrypoint() {
+        let m = manifest("mdpkg", "2.0", "index.txt");
+        assert!(matches!(validate_manifest(&m), Err(ValidationError::EntrypointNotMarkdown(_))));
     }
 }

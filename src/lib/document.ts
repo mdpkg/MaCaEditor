@@ -442,10 +442,11 @@ export function toFolderSaveRequest(state: DocumentState): FolderSaveRequest {
 }
 
 export function markSaved(state: DocumentState): DocumentState {
+  const savedState = { ...state, manifest: { ...state.manifest, version: "2.0" } };
   return {
-    ...state,
+    ...savedState,
     dirty: false,
     originalPaths: state.files.map((file) => file.path),
-    folderSnapshot: state.origin.kind === "folder" ? folderDocumentFingerprint(state) : state.folderSnapshot,
+    folderSnapshot: state.origin.kind === "folder" ? folderDocumentFingerprint(savedState) : state.folderSnapshot,
   };
 }

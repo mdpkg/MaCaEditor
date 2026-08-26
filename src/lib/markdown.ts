@@ -8,7 +8,7 @@ export function isMarkdownPath(path: string): boolean {
  */
 export function resolvePackagePath(baseDir: string, target: string): string | null {
   const normalizedTarget = target.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (normalizedTarget.startsWith("/")) {
+  if (normalizedTarget.startsWith("/") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalizedTarget)) {
     return null;
   }
   const resolved = baseDir === "" ? [] : baseDir.split("/");
