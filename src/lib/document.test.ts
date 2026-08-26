@@ -70,6 +70,17 @@ describe("document structure", () => {
     expect(toSaveRequest(withFolder).files.every((file) => file.path !== "guides/")).toBe(true);
   });
 
+  test("rejects file-directory collisions", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "guides.md", "# File");
+    expect(() => addMarkdown(current, "guides.md/start.md", "# Start")).toThrow(/exists/i);
+    expect(() => addDirectory(current, "guides.md/drafts")).toThrow(/exists/i);
+  });
+
+  test("does not merge a move into an existing directory", () => {
+    const current = addDirectory(addDirectory(createDocumentState(info, "test.mdpkg"), "one"), "two");
+    expect(() => movePath(current, "one", "two")).toThrow(/exists/i);
+  });
+
   test("moves a folder without rewriting markdown links but updates manifest paths", () => {
     const current = createDocumentState({
       manifest: {

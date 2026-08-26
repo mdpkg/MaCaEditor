@@ -65,8 +65,19 @@ function pathExists(state: DocumentState, path: string): boolean {
       .some((directory) => directory.toLowerCase() === key);
 }
 
+function assertNoFileAncestor(state: DocumentState, path: string): void {
+  const segments = path.split("/");
+  for (let index = 1; index < segments.length; index += 1) {
+    const ancestor = segments.slice(0, index).join("/").toLowerCase();
+    if (state.files.some((file) => file.path.toLowerCase() === ancestor)) {
+      throw new Error(`Path already exists as a file: ${segments.slice(0, index).join("/")}`);
+    }
+  }
+}
+
 export function addDirectory(state: DocumentState, requestedPath: string): DocumentState {
   const path = validateNewPackagePath(requestedPath);
+  assertNoFileAncestor(state, path);
   if (pathExists(state, path)) throw new Error(`Path already exists: ${path}`);
   const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
   return { ...state, dirty: true, directories: [...new Set([...currentDirectories, ...inferDirectories([`${path}/x`])])].sort() };
@@ -74,6 +85,7 @@ export function addDirectory(state: DocumentState, requestedPath: string): Docum
 
 export function addMarkdown(state: DocumentState, requestedPath: string, content = ""): DocumentState {
   const path = validateNewPackagePath(requestedPath);
+  assertNoFileAncestor(state, path);
   if (!/\.(md|markdown)$/i.test(path)) throw new Error("Markdown files must use .md or .markdown");
   if (pathExists(state, path)) throw new Error(`Path already exists: ${path}`);
   const files = [...state.files, { path, is_text: true, content, base64: null }];
@@ -97,6 +109,8 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
   const from = validateNewPackagePath(requestedFrom);
   const to = validateNewPackagePath(requestedTo);
   if (to === from || to.startsWith(`${from}/`)) throw new Error("A path cannot be moved into itself");
+  if (pathExists(state, to)) throw new Error(`Path already exists: ${to}`);
+  assertNoFileAncestor(state, to);
   const affectedFiles = state.files.filter((file) => file.path === from || file.path.startsWith(`${from}/`));
   const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
   const affectedDirectories = currentDirectories.filter((directory) => directory === from || directory.startsWith(`${from}/`));
