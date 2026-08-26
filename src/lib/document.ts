@@ -80,6 +80,15 @@ export function addMarkdown(state: DocumentState, requestedPath: string, content
   return { ...state, dirty: true, files, directories: inferDirectories(files.map((file) => file.path)) };
 }
 
+export function setEntrypoint(state: DocumentState, requestedPath: string): DocumentState {
+  const path = validateNewPackagePath(requestedPath);
+  const file = state.files.find((candidate) => candidate.path === path);
+  if (!file || !file.is_text || !/\.(md|markdown)$/i.test(path)) {
+    throw new Error("Entrypoint must be an existing Markdown file");
+  }
+  return { ...state, dirty: true, entrypoint: path, manifest: { ...state.manifest, entrypoint: path } };
+}
+
 function replacePathPrefix(path: string, from: string, to: string): string {
   return path === from ? to : path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
 }

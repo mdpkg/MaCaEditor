@@ -10,6 +10,17 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("shows transient empty directories", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree files={[]} directories={["guides/drafts"]} selectedPath={null}
+      onSelect={vi.fn()} onDropImages={vi.fn()} canRename={() => false} onRename={vi.fn()}
+      canDelete={() => false} onDelete={vi.fn()} />));
+    expect(container.textContent).toContain("guides");
+    expect(container.textContent).toContain("drafts");
+    act(() => root.unmount());
+  });
+
   test("shows the attachments directory even before a file is added", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -161,6 +172,29 @@ describe("FileTree", () => {
     act(() => rename.click());
     expect(onRename).toHaveBeenCalledWith("images/photo.png");
     expect(document.querySelector(".file-tree-context-menu")).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("offers move and entrypoint actions for markdown", () => {
+    const onMove = vi.fn(); const onSetEntrypoint = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[{ path: "guide.md", is_text: true, content: "", base64: null }]}
+      selectedPath={null} onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => true} onRename={vi.fn()} canDelete={() => true} onDelete={vi.fn()}
+      canMove={() => true} onMove={onMove} canSetEntrypoint={(path) => path === "guide.md"}
+      onSetEntrypoint={onSetEntrypoint} />));
+    const file = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    act(() => file.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
+    act(() => buttons.find((button) => button.textContent === "Move")!.click());
+    expect(onMove).toHaveBeenCalledWith("guide.md");
+    act(() => file.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])
+      .find((button) => button.textContent === "Set as entrypoint")!.click());
+    expect(onSetEntrypoint).toHaveBeenCalledWith("guide.md");
     act(() => root.unmount());
   });
 });

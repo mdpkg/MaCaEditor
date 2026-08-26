@@ -5,6 +5,7 @@ import { buildFileTree, type TreeNode } from "../lib/fileTree";
 
 interface Props {
   files: FileInfo[];
+  directories?: string[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
   onEditMarkdown?: (path: string) => void;
@@ -13,6 +14,10 @@ interface Props {
   onRename: (path: string) => void;
   canDelete: (path: string) => boolean;
   onDelete: (path: string) => void;
+  canMove?: (path: string) => boolean;
+  onMove?: (path: string) => void;
+  canSetEntrypoint?: (path: string) => boolean;
+  onSetEntrypoint?: (path: string) => void;
 }
 
 function TreeItem({
@@ -59,6 +64,7 @@ function TreeItem({
         className={`tree-item tree-dir ${dragOver ? "drop-target" : ""}`}
         style={{ paddingLeft: depth * 12 + 8 }}
         onClick={() => setOpen((o) => !o)}
+        onContextMenu={(event) => onContextMenu(event, node.path)}
         onDragOver={(event) => {
           if (node.path !== "images") return;
           event.preventDefault();
@@ -93,12 +99,13 @@ function TreeItem({
 }
 
 export function FileTree({
-  files, selectedPath, onSelect, onEditMarkdown, onDropImages,
-  canRename, onRename, canDelete, onDelete,
+  files, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages,
+  canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
+  canSetEntrypoint = () => false, onSetEntrypoint = () => {},
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
-  const tree = buildFileTree(paths, ["images", "attachments"]);
+  const tree = buildFileTree(paths, [...new Set(["images", "attachments", ...directories])]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -112,7 +119,7 @@ export function FileTree({
   }, [contextMenu]);
 
   const openContextMenu = (event: React.MouseEvent, path: string) => {
-    if (!canRename(path) && !canDelete(path)) return;
+    if (!canRename(path) && !canDelete(path) && !canMove(path) && !canSetEntrypoint(path)) return;
     event.preventDefault();
     onSelect(path);
     setContextMenu({ path, x: event.clientX, y: event.clientY });
@@ -144,6 +151,18 @@ export function FileTree({
               onRename(contextMenu.path);
               setContextMenu(null);
             }}>Rename</button>
+          )}
+          {canMove(contextMenu.path) && (
+            <button type="button" onClick={() => {
+              onMove(contextMenu.path);
+              setContextMenu(null);
+            }}>Move</button>
+          )}
+          {canSetEntrypoint(contextMenu.path) && (
+            <button type="button" onClick={() => {
+              onSetEntrypoint(contextMenu.path);
+              setContextMenu(null);
+            }}>Set as entrypoint</button>
           )}
           {canDelete(contextMenu.path) && (
             <button type="button" onClick={() => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
 import {
   addDirectory, addMarkdown, createDocumentState, createFolderDocumentState, deletePath,
-  movePath, resourceDirectoryForMarkdown, toFolderSaveRequest, toSaveRequest, updateFileContent,
+  movePath, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent,
 } from "./document";
 
 const info: PackageInfo = {
@@ -89,6 +89,13 @@ describe("document structure", () => {
   test("requires another entrypoint before deleting the current one", () => {
     const current = createDocumentState(info, "test.mdpkg");
     expect(() => deletePath(current, "README.md")).toThrow(/entrypoint/i);
+  });
+
+  test("sets an existing markdown file as entrypoint", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "guide.md", "# Guide");
+    const updated = setEntrypoint(current, "guide.md");
+    expect(updated.entrypoint).toBe("guide.md");
+    expect(updated.manifest.entrypoint).toBe("guide.md");
   });
 
   test("deletes a resource and its manifest record without rewriting markdown", () => {

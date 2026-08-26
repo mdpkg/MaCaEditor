@@ -105,6 +105,19 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test("opens a package markdown link inside the editor", () => {
+    const onNavigateMarkdown = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<MarkdownPreview markdown="[Guide](../guide.md)" baseDir="docs"
+      files={[{ path: "guide.md", is_text: true, content: "# Guide", base64: null }]}
+      onNavigateMarkdown={onNavigateMarkdown} />));
+    const link = container.querySelector("a") as HTMLAnchorElement;
+    act(() => link.click());
+    expect(onNavigateMarkdown).toHaveBeenCalledWith("guide.md");
+    act(() => root.unmount());
+  });
+
 
   test("shows a generated table of contents when enabled", () => {
     const container = document.createElement("div");

@@ -15,6 +15,8 @@ interface Props {
   onImport: () => void;
   onExport: () => void;
   onExportPackage?: () => void;
+  onAddMarkdown?: () => void;
+  onAddFolder?: () => void;
   documentKind?: "package" | "folder" | "untitled" | null;
   onInsertDrawing: () => void;
   onInsertPlantUml: () => void;
@@ -58,6 +60,8 @@ export function Toolbar({
   onImport,
   onExport,
   onExportPackage,
+  onAddMarkdown = () => {},
+  onAddFolder = () => {},
   documentKind,
   onInsertDrawing,
   onInsertPlantUml,
@@ -127,6 +131,9 @@ export function Toolbar({
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSave)}>Save</button>
             <button type="button" role="menuitem" disabled={!hasDocument || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
             <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>
+            <div className="toolbar-menu-separator" role="separator" />
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddMarkdown)}>Add Markdown...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddFolder)}>Add Folder...</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
             <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>Export Folder</button>

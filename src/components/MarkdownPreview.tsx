@@ -31,6 +31,7 @@ interface Props {
   onEditMathJax?: (sourcePath: string) => void;
   onEditTable?: (start: number, end: number) => void;
   onDownloadAttachment?: (file: FileInfo) => void;
+  onNavigateMarkdown?: (path: string) => void;
   showToc?: boolean;
   rspressMode?: boolean;
   scrollRestoreKey?: string;
@@ -103,6 +104,7 @@ export function MarkdownPreview({
   onEditMathJax,
   onEditTable,
   onDownloadAttachment,
+  onNavigateMarkdown,
   showToc = false,
   rspressMode = false,
   scrollRestoreKey,
@@ -346,8 +348,11 @@ export function MarkdownPreview({
     },
     a({ href = "", ...props }) {
       const packagePath = decodePackageUrl(href);
-      const attachment = files.find((file) =>
-        file.path === packagePath && file.path.startsWith("attachments/"));
+      const resolvedPath = files.some((file) => file.path === packagePath)
+        ? packagePath
+        : resolvePackagePath(baseDir, packagePath);
+      const attachment = files.find((file) => file.path === resolvedPath &&
+        /(^|\/)attachments\//.test(file.path));
       if (attachment) {
         const fileName = attachment.path.slice(attachment.path.lastIndexOf("/") + 1);
         return <a
@@ -361,6 +366,14 @@ export function MarkdownPreview({
             onDownloadAttachment(attachment);
           }}
         />;
+      }
+      const markdown = files.find((file) => file.path === resolvedPath && /\.(md|markdown)$/i.test(file.path));
+      if (markdown) {
+        return <a {...props} href={markdown.path} onClick={(event) => {
+          if (!onNavigateMarkdown) return;
+          event.preventDefault();
+          onNavigateMarkdown(markdown.path);
+        }} />;
       }
       return <a {...props} href={packageUrl(baseDir, href)} />;
     },

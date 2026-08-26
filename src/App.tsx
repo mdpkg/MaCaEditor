@@ -23,12 +23,14 @@ import {
   createDocumentState,
   createFolderDocumentState,
   addAttachment,
+  addDirectory,
   addImage,
-  deleteAsset,
+  addMarkdown,
+  deletePath,
   imageMediaType,
-  isDeletableAsset,
-  renameAsset,
+  movePath,
   resourceDirectoryForMarkdown,
+  setEntrypoint,
   toSaveRequest,
   updateFileContent,
 } from "./lib/document";
@@ -954,27 +956,22 @@ export default function App() {
   };
 
   const isRenameablePath = (path: string | null) => path !== null && (
-    /\.(png|jpe?g|gif|webp|bmp)$/i.test(path) ||
-    /^attachments\/[^/]+$/i.test(path) ||
-    doc?.manifest.resources instanceof Array && doc.manifest.resources.some((item) =>
-      typeof item === "object" && item !== null &&
-      ((item as { source?: string }).source === path || (item as { rendered?: string }).rendered === path))
+    doc?.files.some((file) => file.path === path) === true ||
+    doc?.directories?.includes(path) === true
   );
   const handleRename = (path: string | null = selectedPath) => {
     if (!doc || !path || !isRenameablePath(path)) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
-    const currentName = fileName.replace(/\.draw\.json$|\.[^.]+$/i, "");
-    const requested = window.prompt("New name", currentName);
-    if (requested === null || requested.trim() === "" || requested === currentName) return;
+    const requested = window.prompt("New name (Markdown links will not be updated)", fileName);
+    if (requested === null || requested.trim() === "" || requested === fileName) return;
+    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const destination = parent ? `${parent}/${requested}` : requested;
     try {
-      const renamed = renameAsset(doc, path, requested);
-      setDoc(renamed.state);
-      setSelectedPath(renamed.path);
-      if (drawingPath === path) setDrawingPath(renamed.path);
-      if (plantUmlPath === path) setPlantUmlPath(renamed.path);
-      if (mermaidPath === path) setMermaidPath(renamed.path);
-      if (mathJaxPath === path) setMathJaxPath(renamed.path);
-      setStatus(`Renamed to ${renamed.path}`);
+      const renamed = movePath(doc, path, destination);
+      setDoc(renamed);
+      setSelectedPath(destination);
+      setMode("preview");
+      setStatus(`Renamed to ${destination}; Markdown links were not updated`);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -982,12 +979,42 @@ export default function App() {
     }
   };
 
-  const handleDelete = (path: string | null = selectedPath) => {
-    if (!doc || !path || !isDeletableAsset(doc, path)) return;
-    const fileName = path.slice(path.lastIndexOf("/") + 1);
-    if (!window.confirm(`Delete ${fileName}?`)) return;
+  const handleMove = (path: string) => {
+    if (!doc) return;
+    const destination = window.prompt("Destination path (Markdown links will not be updated)", path);
+    if (!destination || destination === path) return;
     try {
-      const next = deleteAsset(doc, path);
+      const moved = movePath(doc, path, destination);
+      setDoc(moved); setSelectedPath(destination); setMode("preview");
+      setStatus(`Moved to ${destination}; Markdown links were not updated`); setError(null);
+    } catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleAddMarkdown = () => {
+    if (!doc) return;
+    const requested = window.prompt("Markdown path", "untitled.md");
+    if (!requested) return;
+    try {
+      const next = addMarkdown(doc, requested, `# ${requested.slice(requested.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "")}\n`);
+      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); setError(null);
+      setStatus(`Added ${requested}`);
+    } catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleAddFolder = () => {
+    if (!doc) return;
+    const requested = window.prompt("Folder path (empty folders are not saved)", "folder");
+    if (!requested) return;
+    try { setDoc(addDirectory(doc, requested)); setStatus(`Added ${requested}; empty folders are not saved`); setError(null); }
+    catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleDelete = (path: string | null = selectedPath) => {
+    if (!doc || !path) return;
+    const fileName = path.slice(path.lastIndexOf("/") + 1);
+    if (!window.confirm(`Delete ${fileName}? Markdown links will not be updated.`)) return;
+    try {
+      const next = deletePath(doc, path);
       setDoc(next);
       setSelectedPath(next.entrypoint);
       if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
@@ -1007,7 +1034,7 @@ export default function App() {
         setMathJaxPath(null);
         setMode("preview");
       }
-      setStatus(`Deleted ${fileName}`);
+      setStatus(`Deleted ${fileName}; Markdown links were not updated`);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -1159,6 +1186,8 @@ export default function App() {
         onImport={handleImport}
         onExport={handleExport}
         onExportPackage={handleExportPackage}
+        onAddMarkdown={handleAddMarkdown}
+        onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
@@ -1191,14 +1220,23 @@ export default function App() {
               <div className="sidebar-tree">
                 <FileTree
                   files={doc?.files ?? []}
+                  directories={doc?.directories}
                   selectedPath={selectedPath}
                   onSelect={handleSelect}
                   onEditMarkdown={handleEditMarkdown}
                   onDropImages={handleDropImages}
                   canRename={isRenameablePath}
                   onRename={handleRename}
-                  canDelete={(path) => doc !== null && isDeletableAsset(doc, path)}
+                  canDelete={(path) => doc !== null && !(doc.entrypoint === path || doc.entrypoint.startsWith(`${path}/`))}
                   onDelete={handleDelete}
+                  canMove={() => doc !== null}
+                  onMove={handleMove}
+                  canSetEntrypoint={(path) => path !== doc?.entrypoint && /\.(md|markdown)$/i.test(path)}
+                  onSetEntrypoint={(path) => {
+                    if (!doc) return;
+                    try { setDoc(setEntrypoint(doc, path)); setStatus(`Entrypoint set to ${path}`); setError(null); }
+                    catch (reason) { setError(String(reason)); setStatus("Error"); }
+                  }}
                 />
               </div>
             )}
@@ -1316,6 +1354,7 @@ export default function App() {
                     onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                     onDownloadAttachment={handleDownloadAttachment}
+                    onNavigateMarkdown={(path) => { setSelectedPath(path); setMode("preview"); }}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -1349,6 +1388,7 @@ export default function App() {
                     onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                     onDownloadAttachment={handleDownloadAttachment}
+                    onNavigateMarkdown={(path) => { setSelectedPath(path); setMode("preview"); }}
                   />
                 </SynchronizedScrollView>
               )}
