@@ -248,18 +248,26 @@ describe("FileTree", () => {
     act(() => root.render(<FileTree
       files={[{ path: "docs/guide.md", is_text: true, content: "", base64: null }]}
       selectedPath="docs/guide.md" onSelect={onSelect} onDropImages={vi.fn()}
-      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+      canRename={() => true} onRename={vi.fn()} canDelete={() => true} onDelete={vi.fn()}
+      canMove={() => true} onMove={vi.fn()}
       onAddMarkdown={onAddMarkdown} onAddFolder={onAddFolder} />));
     const docs = [...container.querySelectorAll(".tree-dir")]
       .find((item) => item.textContent?.trim().endsWith("docs")) as HTMLDivElement;
     act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     expect(onSelect).not.toHaveBeenCalled();
+    const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
     const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
-    expect(buttons.map((button) => button.textContent)).toEqual(["Add Markdown", "Add Folder"]);
-    act(() => buttons[0].click());
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "Rename", "Move", "Delete", "Add Markdown", "Add Folder",
+    ]);
+    expect([...menu.children].map((child) => child.textContent)).toEqual([
+      "Rename", "Move", "Delete", "", "Add Markdown", "Add Folder",
+    ]);
+    expect(menu.children[3].className).toBe("file-tree-context-menu-divider");
+    act(() => buttons[3].click());
     expect(onAddMarkdown).toHaveBeenCalledWith("docs");
     act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
-    act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])[1].click());
+    act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])[4].click());
     expect(onAddFolder).toHaveBeenCalledWith("docs");
     act(() => root.unmount());
   });

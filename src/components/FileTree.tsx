@@ -191,18 +191,6 @@ export function FileTree({
           onPointerDown={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          {onAddMarkdown && (
-            <button type="button" onClick={() => {
-              onAddMarkdown(contextMenu.path);
-              setContextMenu(null);
-            }}>Add Markdown</button>
-          )}
-          {onAddFolder && (
-            <button type="button" onClick={() => {
-              onAddFolder(contextMenu.path);
-              setContextMenu(null);
-            }}>Add Folder</button>
-          )}
           {canRename(contextMenu.path) && (
             <button type="button" onClick={() => {
               onRename(contextMenu.path);
@@ -226,6 +214,22 @@ export function FileTree({
               onDelete(contextMenu.path);
               setContextMenu(null);
             }}>Delete</button>
+          )}
+          {(onAddMarkdown || onAddFolder) && (
+            canRename(contextMenu.path) || canMove(contextMenu.path) ||
+            canSetEntrypoint(contextMenu.path) || canDelete(contextMenu.path)
+          ) && <div className="file-tree-context-menu-divider" />}
+          {onAddMarkdown && (
+            <button type="button" onClick={() => {
+              onAddMarkdown(contextMenu.path);
+              setContextMenu(null);
+            }}>Add Markdown</button>
+          )}
+          {onAddFolder && (
+            <button type="button" onClick={() => {
+              onAddFolder(contextMenu.path);
+              setContextMenu(null);
+            }}>Add Folder</button>
           )}
         </div>,
         document.body,
