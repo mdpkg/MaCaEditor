@@ -23,13 +23,18 @@ describe("CodeEditor", () => {
     const view = EditorView.findFromDOM(editorElement)!;
     vi.spyOn(view, "posAtCoords").mockReturnValue(2);
     const dataTransfer = {
-      files: [], dropEffect: "none", effectAllowed: "all",
+      files: [], types: [PACKAGE_PATH_DRAG_TYPE], dropEffect: "none", effectAllowed: "copyMove",
       setData: vi.fn(), getData: (type: string) => type === PACKAGE_PATH_DRAG_TYPE ? "docs/guide.md" : "",
     };
+    const content = editorElement.querySelector(".cm-content")!;
+    const dragOver = new MouseEvent("dragover", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 });
+    Object.defineProperty(dragOver, "dataTransfer", { value: dataTransfer });
+    act(() => content.dispatchEvent(dragOver));
     const drop = new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 });
     Object.defineProperty(drop, "dataTransfer", { value: dataTransfer });
-    act(() => editorElement.querySelector(".cm-content")!.dispatchEvent(drop));
+    act(() => content.dispatchEvent(drop));
     expect(onPackagePathDrop).toHaveBeenCalledWith("docs/guide.md", 2);
+    expect(dataTransfer.dropEffect).toBe("copy");
     act(() => root.unmount());
   });
 

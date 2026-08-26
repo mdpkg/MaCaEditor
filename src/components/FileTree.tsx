@@ -63,7 +63,7 @@ function TreeItem({
         onContextMenu={(event) => onContextMenu(event, node.path)}
         draggable
         onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.effectAllowed = "copyMove";
           event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
         }}
       >
@@ -82,7 +82,7 @@ function TreeItem({
         draggable
         onDragStart={(event) => {
           event.stopPropagation();
-          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.effectAllowed = "copyMove";
           event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
         }}
         onDragOver={(event) => {

@@ -36,6 +36,7 @@ describe("FileTree", () => {
     const dragStart = new Event("dragstart", { bubbles: true, cancelable: true });
     Object.defineProperty(dragStart, "dataTransfer", { value: dataTransfer });
     act(() => guide.dispatchEvent(dragStart));
+    expect(dataTransfer.effectAllowed).toBe("copyMove");
     const drop = new Event("drop", { bubbles: true, cancelable: true });
     Object.defineProperty(drop, "dataTransfer", { value: dataTransfer });
     act(() => docs.dispatchEvent(drop));

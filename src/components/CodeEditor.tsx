@@ -77,9 +77,9 @@ export function CodeEditor({
       }),
       EditorView.domEventHandlers({
         dragover: (event) => {
-          if (!event.dataTransfer?.types.includes(PACKAGE_PATH_DRAG_TYPE)) return false;
+          if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes(PACKAGE_PATH_DRAG_TYPE)) return false;
           event.preventDefault();
-          event.dataTransfer.dropEffect = "link";
+          event.dataTransfer.dropEffect = "copy";
           return true;
         },
         drop: (event, view) => {
