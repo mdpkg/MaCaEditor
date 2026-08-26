@@ -223,13 +223,13 @@ fn decode_base64(data: &str) -> Result<Vec<u8>, String> {
 pub fn create_new_package(path: String) -> Result<(), String> {
     let manifest_json = r#"{
         "format": "mdpkg",
-        "version": "1.0",
-        "entrypoint": "README.md",
+        "version": "2.0",
+        "entrypoint": "index.md",
         "title": "Untitled"
     }"#;
     let manifest = crate::manifest::Manifest::parse(manifest_json).map_err(|e| e.to_string())?;
     let files = vec![crate::package_file::PackageFile::new_text(
-        "README.md".to_string(),
+        "index.md".to_string(),
         "# Untitled".to_string(),
     )];
     let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
@@ -509,7 +509,8 @@ pub fn setup(app: &mut tauri::App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        export_folder, export_package, read_attachment, save_attachment, FileContent, SaveRequest,
+        create_new_package, export_folder, export_package, read_attachment, save_attachment,
+        FileContent, SaveRequest,
     };
     use std::path::PathBuf;
 
@@ -522,6 +523,17 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn creates_a_v2_package_with_index_entrypoint() {
+        let path = temporary_attachment_path().with_extension("mdpkg");
+        create_new_package(path.to_string_lossy().into_owned()).unwrap();
+        let loaded = crate::package_loader::load_package(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(loaded.manifest.version, "2.0");
+        assert_eq!(loaded.manifest.entrypoint, "index.md");
+        assert!(loaded.files.iter().any(|file| file.path == "index.md"));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

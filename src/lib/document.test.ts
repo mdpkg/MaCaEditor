@@ -43,5 +43,7 @@ describe("document state", () => {
     const req = toSaveRequest(state);
     expect(req.path).toBe("test.mdpkg");
     expect(req.files.length).toBe(2);
+    expect(req.manifest.version).toBe("2.0");
+    expect(req.manifest.entrypoint).toBe("README.md");
   });
 });

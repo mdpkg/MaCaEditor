@@ -53,20 +53,20 @@ pub fn create_empty_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     fs::create_dir(&root)?;
     let result = (|| {
         let manifest = Manifest::parse(
-            r#"{"format":"mdpkg","version":"1.0","entrypoint":"README.md","title":"Untitled"}"#,
+            r#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md","title":"Untitled"}"#,
         )
         .map_err(|e| FolderError::Invalid(e.to_string()))?;
         let manifest_json = serde_json::to_vec_pretty(&manifest)
             .map_err(|e| FolderError::Invalid(e.to_string()))?;
         atomic_save(&root.join("manifest.json"), &manifest_json)
             .map_err(|e| FolderError::Invalid(e.to_string()))?;
-        atomic_save(&root.join("README.md"), b"# Untitled\n")
+        atomic_save(&root.join("index.md"), b"# Untitled\n")
             .map_err(|e| FolderError::Invalid(e.to_string()))?;
         load_folder(&root)
     })();
     if result.is_err() {
         let _ = fs::remove_file(root.join("manifest.json"));
-        let _ = fs::remove_file(root.join("README.md"));
+        let _ = fs::remove_file(root.join("index.md"));
         let _ = fs::remove_dir(&root);
     }
     result
@@ -345,9 +345,10 @@ mod tests {
             created.root,
             fs::canonicalize(parent.join("my-document")).unwrap()
         );
-        assert_eq!(created.manifest.entrypoint, "README.md");
+        assert_eq!(created.manifest.version, "2.0");
+        assert_eq!(created.manifest.entrypoint, "index.md");
         assert_eq!(
-            fs::read_to_string(created.root.join("README.md")).unwrap(),
+            fs::read_to_string(created.root.join("index.md")).unwrap(),
             "# Untitled\n"
         );
         assert!(created.root.join("manifest.json").is_file());

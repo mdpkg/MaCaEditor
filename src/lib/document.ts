@@ -300,7 +300,7 @@ export function toSaveRequest(state: DocumentState): {
 } {
   return {
     path: state.path ?? "",
-    manifest: state.manifest,
+    manifest: { ...state.manifest, version: "2.0" },
     files: state.files.map((f) => ({
       path: f.path,
       is_text: f.is_text,
