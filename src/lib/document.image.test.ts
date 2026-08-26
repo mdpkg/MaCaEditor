@@ -28,6 +28,11 @@ describe("image assets", () => {
     expect(added.state.files[0].base64).toBe("data");
   });
 
+  it("adds an image beside a nested markdown document", () => {
+    const added = addImage(state(), "photo.png", "data", "guides/start.md");
+    expect(added.path).toBe("guides/images/photo.png");
+  });
+
   it("keeps duplicate names unique case-insensitively", () => {
     const added = addImage(state(["images/Photo.PNG", "images/photo-2.png"]), "photo.png", "data");
     expect(added.path).toBe("images/photo-3.png");

@@ -160,21 +160,31 @@ export function addImage(
   state: DocumentState,
   fileName: string,
   base64: string,
+  markdownPath = state.entrypoint,
 ): { state: DocumentState; path: string } {
-  return addBinaryAsset(state, "images", fileName, base64);
+  return addBinaryAsset(state, resourceDirectoryForMarkdown(markdownPath, "images"), fileName, base64);
 }
 
 export function addAttachment(
   state: DocumentState,
   fileName: string,
   base64: string,
+  markdownPath = state.entrypoint,
 ): { state: DocumentState; path: string } {
-  return addBinaryAsset(state, "attachments", fileName, base64);
+  return addBinaryAsset(state, resourceDirectoryForMarkdown(markdownPath, "attachments"), fileName, base64);
+}
+
+export function resourceDirectoryForMarkdown(
+  markdownPath: string,
+  resourceDirectory: "images" | "diagrams" | "attachments",
+): string {
+  const separator = markdownPath.lastIndexOf("/");
+  return separator < 0 ? resourceDirectory : `${markdownPath.slice(0, separator)}/${resourceDirectory}`;
 }
 
 function addBinaryAsset(
   state: DocumentState,
-  directory: "images" | "attachments",
+  directory: string,
   fileName: string,
   base64: string,
 ): { state: DocumentState; path: string } {

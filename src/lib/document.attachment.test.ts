@@ -32,6 +32,11 @@ describe("attachment assets", () => {
     });
   });
 
+  it("adds an attachment beside a nested markdown document", () => {
+    const added = addAttachment(state(), "notes.txt", "data", "guides/start.md");
+    expect(added.path).toBe("guides/attachments/notes.txt");
+  });
+
   it("keeps duplicate names unique case-insensitively", () => {
     const added = addAttachment(
       state(["attachments/Report.PDF", "attachments/report-2.pdf"]),

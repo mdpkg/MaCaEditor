@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
 import {
   addDirectory, addMarkdown, createDocumentState, createFolderDocumentState, deletePath,
-  movePath, toFolderSaveRequest, toSaveRequest, updateFileContent,
+  movePath, resourceDirectoryForMarkdown, toFolderSaveRequest, toSaveRequest, updateFileContent,
 } from "./document";
 
 const info: PackageInfo = {
@@ -52,6 +52,11 @@ describe("document state", () => {
 });
 
 describe("document structure", () => {
+  test("places resources beside the markdown that links to them", () => {
+    expect(resourceDirectoryForMarkdown("guides/start.md", "images")).toBe("guides/images");
+    expect(resourceDirectoryForMarkdown("index.md", "diagrams")).toBe("diagrams");
+  });
+
   test("adds transient folders and markdown files", () => {
     const current = createDocumentState(info, "test.mdpkg");
     const withFolder = addDirectory(current, "guides");

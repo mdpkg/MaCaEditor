@@ -28,6 +28,7 @@ import {
   imageMediaType,
   isDeletableAsset,
   renameAsset,
+  resourceDirectoryForMarkdown,
   toSaveRequest,
   updateFileContent,
 } from "./lib/document";
@@ -652,7 +653,7 @@ export default function App() {
       ? selectedFile
       : entrypointFile;
     const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
-    const baseDir = DEFAULT_DRAWING_DIR;
+    const baseDir = resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, DEFAULT_DRAWING_DIR);
     const empty: DrawingDocument = {
       format: "maca-drawing",
       version: "1.0",
@@ -686,6 +687,7 @@ export default function App() {
     try {
       const svg = await renderPlantUml(DEFAULT_PLANTUML_SOURCE);
       const added = addPlantUmlToDocument(doc, DEFAULT_PLANTUML_SOURCE, svg, "PlantUML", {
+        baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
         markdownPath: markdownFile?.path,
         cursor,
       });
@@ -728,6 +730,7 @@ export default function App() {
     try {
       const svg = await renderMermaid(DEFAULT_MERMAID_SOURCE);
       const added = addMermaidToDocument(doc, DEFAULT_MERMAID_SOURCE, svg, "Mermaid", {
+        baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
         markdownPath: markdownFile?.path,
         cursor,
       });
@@ -782,6 +785,7 @@ export default function App() {
     const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
     const placeholderSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"></svg>';
     const added = addMathJaxToDocument(doc, DEFAULT_MATHJAX_SOURCE, placeholderSvg, "MathJax", {
+      baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
       markdownPath: markdownFile?.path,
       cursor,
     });
@@ -820,7 +824,7 @@ export default function App() {
     let next = doc;
     const addedPaths: string[] = [];
     for (const image of images) {
-      const added = addImage(next, image.file_name, image.base64);
+      const added = addImage(next, image.file_name, image.base64, markdownFile?.path ?? doc.entrypoint);
       next = added.state;
       addedPaths.push(added.path);
     }
@@ -862,7 +866,7 @@ export default function App() {
     let next = doc;
     const addedPaths: string[] = [];
     for (const attachment of attachments) {
-      const added = addAttachment(next, attachment.file_name, attachment.base64);
+      const added = addAttachment(next, attachment.file_name, attachment.base64, markdownFile?.path ?? doc.entrypoint);
       next = added.state;
       addedPaths.push(added.path);
     }
