@@ -178,4 +178,40 @@ describe("document structure", () => {
     expect(deleted.manifest.resources).toEqual([]);
     expect(deleted.files.find((file) => file.path === "index.md")?.content).toBe("![A](diagrams/a.svg)");
   });
+
+  test("moves both files when one member of a resource pair is moved", () => {
+    const current = createDocumentState({
+      manifest: { format: "mdpkg", version: "2.0", entrypoint: "index.md", resources: [
+        { type: "plantuml", source: "diagrams/a.puml", rendered: "diagrams/a.svg" },
+      ] },
+      entrypoint: "index.md",
+      files: [
+        { path: "index.md", is_text: true, content: "![A](diagrams/a.svg)", base64: null },
+        { path: "diagrams/a.puml", is_text: true, content: "@startuml", base64: null },
+        { path: "diagrams/a.svg", is_text: true, content: "<svg/>", base64: null },
+      ],
+    }, "test.mdpkg");
+    const moved = movePath(current, "diagrams/a.puml", "architecture/a.puml");
+    expect(moved.files.map((file) => file.path)).toEqual([
+      "index.md", "architecture/a.puml", "architecture/a.svg",
+    ]);
+    expect(moved.files[0].content).toBe("![A](architecture/a.svg)");
+  });
+
+  test("deletes both files when one member of a resource pair is deleted", () => {
+    const current = createDocumentState({
+      manifest: { format: "mdpkg", version: "2.0", entrypoint: "index.md", resources: [
+        { type: "mermaid", source: "diagrams/a.mmd", rendered: "diagrams/a.svg" },
+      ] },
+      entrypoint: "index.md",
+      files: [
+        { path: "index.md", is_text: true, content: "![A](diagrams/a.svg)", base64: null },
+        { path: "diagrams/a.mmd", is_text: true, content: "flowchart LR", base64: null },
+        { path: "diagrams/a.svg", is_text: true, content: "<svg/>", base64: null },
+      ],
+    }, "test.mdpkg");
+    const deleted = deletePath(current, "diagrams/a.mmd");
+    expect(deleted.files.map((file) => file.path)).toEqual(["index.md"]);
+    expect(deleted.manifest.resources).toEqual([]);
+  });
 });

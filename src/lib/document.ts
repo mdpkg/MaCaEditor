@@ -110,8 +110,7 @@ function rewriteMarkdownLinksForMove(
   content: string,
   oldMarkdownPath: string,
   newMarkdownPath: string,
-  from: string,
-  to: string,
+  moveTarget: (path: string) => string,
 ): string {
   return rewriteMarkdownLinkDestinations(content, (target, link) => {
     if (target.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return null;
@@ -124,7 +123,7 @@ function rewriteMarkdownLinksForMove(
       : "";
     const resolved = resolvePackagePath(oldBaseDir, decodedPath);
     if (!resolved) return null;
-    const movedTarget = replacePathPrefix(resolved, from, to);
+    const movedTarget = moveTarget(resolved);
     if (oldMarkdownPath === newMarkdownPath && resolved === movedTarget) return null;
     const relative = relativePackagePath(newMarkdownPath, movedTarget);
     const replacement = relative + (parts[2] ?? "");
@@ -139,31 +138,45 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
   if (to === from || to.startsWith(`${from}/`)) throw new Error("A path cannot be moved into itself");
   if (pathExists(state, to)) throw new Error(`Path already exists: ${to}`);
   assertNoFileAncestor(state, to);
-  const affectedFiles = state.files.filter((file) => file.path === from || file.path.startsWith(`${from}/`));
+  const pairedMoves = new Map<string, string>();
+  const resourcesList = Array.isArray(state.manifest.resources) ? state.manifest.resources : [];
+  for (const item of resourcesList) {
+    if (typeof item !== "object" || item === null) continue;
+    const resource = item as { source?: unknown; rendered?: unknown };
+    if (typeof resource.source !== "string" || typeof resource.rendered !== "string") continue;
+    const partner = resource.source === from ? resource.rendered : resource.rendered === from ? resource.source : null;
+    if (!partner) continue;
+    const destinationDirectory = to.includes("/") ? to.slice(0, to.lastIndexOf("/")) : "";
+    const partnerName = partner.slice(partner.lastIndexOf("/") + 1);
+    pairedMoves.set(partner, destinationDirectory ? `${destinationDirectory}/${partnerName}` : partnerName);
+  }
+  const movedPath = (path: string) => pairedMoves.get(path) ?? replacePathPrefix(path, from, to);
+  const affectedFiles = state.files.filter((file) =>
+    file.path === from || file.path.startsWith(`${from}/`) || pairedMoves.has(file.path));
   const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
   const affectedDirectories = currentDirectories.filter((directory) => directory === from || directory.startsWith(`${from}/`));
   if (affectedFiles.length === 0 && affectedDirectories.length === 0) throw new Error(`Path not found: ${from}`);
   const unaffected = new Set(state.files.filter((file) => !affectedFiles.includes(file)).map((file) => file.path.toLowerCase()));
   for (const file of affectedFiles) {
-    const next = replacePathPrefix(file.path, from, to).toLowerCase();
+    const next = movedPath(file.path).toLowerCase();
     if (unaffected.has(next)) throw new Error(`Path already exists: ${next}`);
   }
-  const entrypoint = replacePathPrefix(state.entrypoint, from, to);
+  const entrypoint = movedPath(state.entrypoint);
   const resources = Array.isArray(state.manifest.resources)
     ? state.manifest.resources.map((item) => {
         if (typeof item !== "object" || item === null) return item;
         const resource = item as Record<string, unknown>;
         return {
           ...resource,
-          source: typeof resource.source === "string" ? replacePathPrefix(resource.source, from, to) : resource.source,
-          rendered: typeof resource.rendered === "string" ? replacePathPrefix(resource.rendered, from, to) : resource.rendered,
+          source: typeof resource.source === "string" ? movedPath(resource.source) : resource.source,
+          rendered: typeof resource.rendered === "string" ? movedPath(resource.rendered) : resource.rendered,
         };
       })
     : state.manifest.resources;
   const files = state.files.map((file) => {
-    const nextPath = replacePathPrefix(file.path, from, to);
+    const nextPath = movedPath(file.path);
     const content = file.is_text && file.content !== null && /\.(md|markdown)$/i.test(file.path)
-      ? rewriteMarkdownLinksForMove(file.content, file.path, nextPath, from, to)
+      ? rewriteMarkdownLinksForMove(file.content, file.path, nextPath, movedPath)
       : file.content;
     return { ...file, path: nextPath, content };
   });
@@ -177,7 +190,18 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
 
 export function deletePath(state: DocumentState, requestedPath: string): DocumentState {
   const path = validateNewPackagePath(requestedPath);
-  const removes = (candidate: string) => candidate === path || candidate.startsWith(`${path}/`);
+  const pairedPaths = new Set<string>();
+  if (Array.isArray(state.manifest.resources)) {
+    for (const item of state.manifest.resources) {
+      if (typeof item !== "object" || item === null) continue;
+      const resource = item as { source?: unknown; rendered?: unknown };
+      if (resource.source === path || resource.rendered === path) {
+        if (typeof resource.source === "string") pairedPaths.add(resource.source);
+        if (typeof resource.rendered === "string") pairedPaths.add(resource.rendered);
+      }
+    }
+  }
+  const removes = (candidate: string) => pairedPaths.has(candidate) || candidate === path || candidate.startsWith(`${path}/`);
   if (removes(state.entrypoint)) throw new Error("Select another entrypoint before deleting the current entrypoint");
   const files = state.files.filter((file) => !removes(file.path));
   const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
