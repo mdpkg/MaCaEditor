@@ -131,6 +131,26 @@ describe("manifest editor dialog layout", () => {
   });
 });
 
+describe("package search dialog layout", () => {
+  it("keeps long result lists inside the dialog", () => {
+    const dialogStart = styles.indexOf(".package-search-dialog {");
+    const dialogBlock = dialogStart >= 0
+      ? styles.slice(dialogStart, styles.indexOf("}", dialogStart))
+      : "";
+    const resultsStart = styles.indexOf(".package-search-results {");
+    const resultsBlock = resultsStart >= 0
+      ? styles.slice(resultsStart, styles.indexOf("}", resultsStart))
+      : "";
+
+    expect(dialogBlock).toContain("display: flex");
+    expect(dialogBlock).toContain("flex-direction: column");
+    expect(dialogBlock).toContain("box-sizing: border-box");
+    expect(dialogBlock).toContain("overflow: hidden");
+    expect(resultsBlock).toContain("min-height: 0");
+    expect(resultsBlock).toContain("overflow-y: auto");
+  });
+});
+
 describe("drawing sidebar layout", () => {
   it("splits the drawing sidebar between the file tree and properties", () => {
     const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");
