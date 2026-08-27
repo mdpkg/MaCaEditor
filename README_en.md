@@ -90,6 +90,12 @@ The window position and size are also saved when the application exits and resto
 
 Click **☰** at the left end of the toolbar to hide the file list and expand the editing area. Click it again to show the file list.
 
+### Editing an Existing Folder (Folder Mode)
+
+Choose **File** → **Open Folder...** to edit either an extracted mdpkg folder or an existing Markdown folder directly. If `manifest.json` is missing, MaCa Editor analyzes the Markdown files and their links and generates an MDPKG v2 manifest candidate. It chooses `index.md`, then `README.md`, then the first Markdown path as the entrypoint. Linked `.svg` and `.png` files are paired with same-name `.draw.json`, `.puml`, `.mmd`, `.tex`, or `.dot` diagram sources.
+
+Review and edit the inferred entrypoint and resources before opening the folder. Broken links, links outside the folder, and ambiguous diagram sources are shown as warnings. In Folder mode, `manifest.json` is written on the first save. **File** → **Import Folder** uses the same review flow and embeds the generated manifest in the new `.mdpkg` file.
+
 ### Creating a New `.mdpkg` File
 
 1. Click **New** from the **File** menu.
