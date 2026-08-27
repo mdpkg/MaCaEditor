@@ -165,7 +165,7 @@ Markdownエディタ上のパッケージ内リンクを`Ctrl`+クリック（ma
 
 ### manifestを編集する
 
-**File** → **Edit Manifest...**では、`description`と`resources`の`type`、`source`、`rendered`を編集できます。resourceにはパッケージ内に存在するファイルだけを指定できます。アプリが認識しないmanifestの追加フィールドは保存時にも維持されます。
+**File** → **Edit Manifest...**では、entrypoint、`description`と`resources`の`type`、`source`、`rendered`を編集できます。entrypointにはパッケージ内のMarkdown、resourceにはパッケージ内に存在するファイルだけを指定できます。アプリが認識しないmanifestの追加フィールドは保存時にも維持されます。
 
 manifestで関連付けられた図sourceとrenderedファイルは、片方を移動または削除するとペアで処理されます。sourceを編集したあとrenderedがまだ更新されていない場合は、パッケージ診断に警告が表示されます。
 

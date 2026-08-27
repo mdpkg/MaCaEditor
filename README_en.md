@@ -104,6 +104,8 @@ During manifest inference, `.git`, `.hg`, `.svn`, `.next`, `node_modules`, `targ
 2. Edit the Markdown and add images or diagrams as needed.
 3. Choose a destination using **Save** or **Save As** from the **File** menu.
 
+Use **File** → **Edit Manifest...** to change the entrypoint, description, and resource relationships. Only existing Markdown files can be selected as the entrypoint.
+
 ### Adding an Image
 
 1. Place the cursor at the desired insertion position in the Markdown.
