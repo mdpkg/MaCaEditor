@@ -1296,6 +1296,36 @@ body {
   margin-bottom: 6px;
 }
 
+.package-search-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+}
+
+.package-search-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.package-search-results {
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.package-search-results button {
+  display: flex;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  flex-direction: column;
+}
+
 /* AI Settings: 各項目を縦に並べる */
 .about-dialog label {
   display: block;

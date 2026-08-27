@@ -14,6 +14,7 @@ import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog"
 import { BacklinksDialog } from "./components/BacklinksDialog";
 import { ManifestEditorDialog } from "./components/ManifestEditorDialog";
 import { V1MigrationDialog } from "./components/V1MigrationDialog";
+import { PackageSearchDialog } from "./components/PackageSearchDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -172,6 +173,7 @@ export default function App() {
   const [navigationPosition, setNavigationPosition] = useState<number | null>(null);
   const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
   const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
+  const [packageSearchOpen, setPackageSearchOpen] = useState(false);
   const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
@@ -1291,6 +1293,7 @@ export default function App() {
         canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
         canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
         onEditManifest={() => setManifestEditorOpen(true)}
+        onSearchPackage={() => setPackageSearchOpen(true)}
         onAddMarkdown={handleAddMarkdown}
         onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
@@ -1625,6 +1628,15 @@ export default function App() {
           onOverwrite={() => { setV1MigrationOpen(false); void performSave(); }}
           onSaveAs={() => { setV1MigrationOpen(false); void performSaveAs(); }}
           onCancel={() => setV1MigrationOpen(false)} />
+      )}
+      {packageSearchOpen && doc && (
+        <PackageSearchDialog files={doc.files}
+          onNavigate={(path, offset) => {
+            setNavigationPosition(offset); setSelectedPath(path);
+            setMode(isMarkdownPath(path) ? "split" : "preview");
+            setPackageSearchOpen(false);
+          }}
+          onClose={() => setPackageSearchOpen(false)} />
       )}
       <StatusBar
         message={status}
