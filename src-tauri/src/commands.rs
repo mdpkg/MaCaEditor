@@ -17,6 +17,7 @@ pub struct PackageInfo {
     pub manifest: serde_json::Value,
     pub entrypoint: String,
     pub files: Vec<FileInfo>,
+    pub manifest_generated: bool,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -125,6 +126,7 @@ pub fn open_package(path: String) -> Result<PackageInfo, String> {
         manifest,
         entrypoint: loaded.manifest.entrypoint.clone(),
         files,
+        manifest_generated: false,
     })
 }
 
@@ -151,6 +153,7 @@ fn folder_package_info(
         entrypoint: loaded.manifest.entrypoint.clone(),
         manifest,
         files,
+        manifest_generated: loaded.manifest_was_generated,
     })
 }
 

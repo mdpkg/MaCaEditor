@@ -26,6 +26,7 @@ pub struct FolderDocument {
     pub root: PathBuf,
     pub manifest: Manifest,
     pub files: Vec<PackageFile>,
+    pub manifest_was_generated: bool,
 }
 
 pub fn create_empty_folder(path: &Path) -> Result<FolderDocument, FolderError> {
@@ -94,20 +95,44 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     if !root.is_dir() {
         return Err(FolderError::Invalid("selected path is not a folder".into()));
     }
-    let manifest_path = root.join("manifest.json");
-    if !manifest_path.is_file() {
-        return Err(FolderError::MissingManifest);
-    }
-    reject_link(&manifest_path)?;
-    let manifest_text = fs::read_to_string(&manifest_path)
-        .map_err(|e| FolderError::Invalid(format!("manifest.json cannot be read: {e}")))?;
-    let manifest =
-        Manifest::parse(&manifest_text).map_err(|e| FolderError::Invalid(e.to_string()))?;
-    validate_manifest(&manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
-    validate_paths(&manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
-
     let mut files = Vec::new();
     collect(&root, &root, &mut files)?;
+    let manifest_path = root.join("manifest.json");
+    let (manifest, manifest_was_generated) = if manifest_path.is_file() {
+        reject_link(&manifest_path)?;
+        let manifest_text = fs::read_to_string(&manifest_path)
+            .map_err(|e| FolderError::Invalid(format!("manifest.json cannot be read: {e}")))?;
+        (
+            Manifest::parse(&manifest_text).map_err(|e| FolderError::Invalid(e.to_string()))?,
+            false,
+        )
+    } else {
+        let mut markdown_paths = files
+            .iter()
+            .filter(|file| {
+                file.is_text()
+                    && (file.path.to_ascii_lowercase().ends_with(".md")
+                        || file.path.to_ascii_lowercase().ends_with(".markdown"))
+            })
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        markdown_paths.sort();
+        let entrypoint = markdown_paths
+            .iter()
+            .find(|path| path.as_str() == "index.md")
+            .or_else(|| markdown_paths.iter().find(|path| path.as_str() == "README.md"))
+            .or_else(|| markdown_paths.first())
+            .ok_or(FolderError::MissingManifest)?;
+        let json = serde_json::json!({
+            "format": "mdpkg", "version": "2.0", "entrypoint": entrypoint
+        });
+        (
+            Manifest::parse(&json.to_string()).map_err(|e| FolderError::Invalid(e.to_string()))?,
+            true,
+        )
+    };
+    validate_manifest(&manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
+    validate_paths(&manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
     let paths = files.iter().map(|f| f.path.clone()).collect::<Vec<_>>();
     validate_entrypoint_exists(&manifest, &paths)
         .map_err(|e| FolderError::Invalid(e.to_string()))?;
@@ -115,6 +140,7 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
         root,
         manifest,
         files,
+        manifest_was_generated,
     })
 }
 
@@ -312,12 +338,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_and_invalid_manifest() {
+    fn loads_a_markdown_folder_without_manifest_using_a_generated_v2_manifest() {
         let missing = temp("missing-manifest");
-        assert!(matches!(
-            load_folder(&missing),
-            Err(FolderError::MissingManifest)
-        ));
+        fs::write(missing.join("README.md"), "# Read me").unwrap();
+        fs::write(missing.join("index.md"), "# Index").unwrap();
+        let loaded = load_folder(&missing).unwrap();
+        assert!(loaded.manifest_was_generated);
+        assert_eq!(loaded.manifest.version, "2.0");
+        assert_eq!(loaded.manifest.entrypoint, "index.md");
+        fs::remove_dir_all(missing).unwrap();
+    }
+
+    #[test]
+    fn rejects_manifestless_folders_without_markdown_and_invalid_manifests() {
+        let missing = temp("missing-manifest-and-markdown");
+        assert!(load_folder(&missing).is_err());
         fs::remove_dir_all(missing).unwrap();
         let invalid = temp("invalid-manifest");
         fs::write(invalid.join("manifest.json"), "not json").unwrap();
