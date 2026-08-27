@@ -1246,6 +1246,38 @@ body {
   margin-top: 24px;
 }
 
+.package-diagnostics-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+}
+
+.package-diagnostics-list {
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.package-diagnostics-list button {
+  display: flex;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  flex-direction: column;
+}
+
+.package-diagnostics-list button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.package-diagnostics-list small {
+  opacity: 0.7;
+}
+
 /* AI Settings: 各項目を縦に並べる */
 .about-dialog label {
   display: block;

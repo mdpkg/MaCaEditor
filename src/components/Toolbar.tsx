@@ -15,6 +15,7 @@ interface Props {
   onImport: () => void;
   onExport: () => void;
   onExportPackage?: () => void;
+  onValidatePackage?: () => void;
   onAddMarkdown?: () => void;
   onAddFolder?: () => void;
   documentKind?: "package" | "folder" | "untitled" | null;
@@ -60,6 +61,7 @@ export function Toolbar({
   onImport,
   onExport,
   onExportPackage,
+  onValidatePackage = () => {},
   onAddMarkdown = () => {},
   onAddFolder = () => {},
   documentKind,
@@ -138,6 +140,8 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
             <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>Export Folder</button>
             <button type="button" role="menuitem" disabled={documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
+            <div className="toolbar-menu-separator" role="separator" />
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>Validate Package...</button>
           </div>
         )}
       </div>

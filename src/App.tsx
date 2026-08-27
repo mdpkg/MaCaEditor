@@ -10,6 +10,7 @@ import { AiChatPanel } from "./components/AiChatPanel";
 import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
 import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
+import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -107,6 +108,7 @@ import {
 } from "./lib/editorPreferences";
 import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
+import { diagnosePackage } from "./lib/packageDiagnostics";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -159,6 +161,7 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
+  const [packageDiagnosticsOpen, setPackageDiagnosticsOpen] = useState(false);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
@@ -1226,6 +1229,7 @@ export default function App() {
         onImport={handleImport}
         onExport={handleExport}
         onExportPackage={handleExportPackage}
+        onValidatePackage={() => setPackageDiagnosticsOpen(true)}
         onAddMarkdown={handleAddMarkdown}
         onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
@@ -1502,6 +1506,19 @@ export default function App() {
         <ThirdPartyLicensesDialog
           text={thirdPartyLicenses}
           onClose={() => setThirdPartyLicensesOpen(false)}
+        />
+      )}
+      {packageDiagnosticsOpen && doc && (
+        <PackageDiagnosticsDialog
+          diagnostics={diagnosePackage(doc)}
+          onNavigate={(path) => {
+            if (doc.files.some((file) => file.path === path)) {
+              setSelectedPath(path);
+              if (isMarkdownPath(path)) setMode("split");
+            }
+            setPackageDiagnosticsOpen(false);
+          }}
+          onClose={() => setPackageDiagnosticsOpen(false)}
         />
       )}
       <StatusBar
