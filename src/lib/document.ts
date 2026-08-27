@@ -112,8 +112,9 @@ export interface EditableManifestResource {
 
 export function updateManifestMetadata(
   state: DocumentState,
-  values: { description: string; resources: EditableManifestResource[] },
+  values: { entrypoint: string; description: string; resources: EditableManifestResource[] },
 ): DocumentState {
+  const withEntrypoint = setEntrypoint(state, values.entrypoint);
   for (const resource of values.resources) {
     if (!resource.type.trim() || !resource.source || !resource.rendered) {
       throw new Error("Resource type, source, and rendered are required");
@@ -124,11 +125,11 @@ export function updateManifestMetadata(
     }
   }
   const manifest: Record<string, unknown> = {
-    ...state.manifest, resources: values.resources.map((resource) => ({ ...resource })),
+    ...withEntrypoint.manifest, resources: values.resources.map((resource) => ({ ...resource })),
   };
   if (values.description.trim()) manifest.description = values.description.trim();
   else delete manifest.description;
-  return { ...state, dirty: true, manifest };
+  return { ...withEntrypoint, manifest };
 }
 
 function replacePathPrefix(path: string, from: string, to: string): string {

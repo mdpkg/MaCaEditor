@@ -1319,6 +1319,7 @@ body {
   display: flex;
   align-items: stretch;
   gap: 6px;
+  margin-bottom: 12px;
   flex-direction: column;
 }
 

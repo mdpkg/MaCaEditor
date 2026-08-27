@@ -3,10 +3,17 @@ import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
 import { ManifestEditorDialog } from "./ManifestEditorDialog";
 
-test("edits description and resource relationships", () => {
+test("edits entrypoint, description, and resource relationships", () => {
   const onSave = vi.fn(); const container = document.createElement("div"); const root = createRoot(container);
-  act(() => root.render(<ManifestEditorDialog manifest={{ description: "Old", resources: [] }}
-    files={["index.md", "diagrams/a.puml", "diagrams/a.svg"]} onSave={onSave} onClose={vi.fn()} />));
+  act(() => root.render(<ManifestEditorDialog manifest={{ entrypoint: "index.md", description: "Old", resources: [] }}
+    files={["index.md", "guide.markdown", "notes.txt", "diagrams/a.puml", "diagrams/a.svg"]}
+    onSave={onSave} onClose={vi.fn()} />));
+  const entrypoint = container.querySelector("select[aria-label='Entrypoint']") as HTMLSelectElement;
+  expect(Array.from(entrypoint.options).map((option) => option.value)).toEqual(["index.md", "guide.markdown"]);
+  act(() => {
+    entrypoint.value = "guide.markdown";
+    entrypoint.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   const description = container.querySelector("textarea[aria-label='Description']") as HTMLTextAreaElement;
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(description, "New");
@@ -19,7 +26,7 @@ test("edits description and resource relationships", () => {
     inputs[index].dispatchEvent(new Event("input", { bubbles: true }));
   }));
   act(() => (container.querySelector("button[data-action='save']") as HTMLButtonElement).click());
-  expect(onSave).toHaveBeenCalledWith({ description: "New", resources: [
+  expect(onSave).toHaveBeenCalledWith({ entrypoint: "guide.markdown", description: "New", resources: [
     { type: "plantuml", source: "diagrams/a.puml", rendered: "diagrams/a.svg" },
   ] });
   act(() => root.unmount());

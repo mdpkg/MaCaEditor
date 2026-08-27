@@ -4,11 +4,15 @@ import type { EditableManifestResource } from "../lib/document";
 interface Props {
   manifest: Record<string, unknown>;
   files: string[];
-  onSave: (values: { description: string; resources: EditableManifestResource[] }) => void;
+  onSave: (values: { entrypoint: string; description: string; resources: EditableManifestResource[] }) => void;
   onClose: () => void;
 }
 
 export function ManifestEditorDialog({ manifest, files, onSave, onClose }: Props) {
+  const markdownFiles = files.filter((path) => /\.(?:md|markdown)$/i.test(path));
+  const [entrypoint, setEntrypoint] = useState(
+    typeof manifest.entrypoint === "string" ? manifest.entrypoint : markdownFiles[0] ?? "",
+  );
   const [description, setDescription] = useState(typeof manifest.description === "string" ? manifest.description : "");
   const [resources, setResources] = useState<EditableManifestResource[]>(
     Array.isArray(manifest.resources) ? manifest.resources.flatMap((item) => {
@@ -30,6 +34,13 @@ export function ManifestEditorDialog({ manifest, files, onSave, onClose }: Props
       aria-label="Manifest editor" onPointerDown={(event) => event.stopPropagation()}>
       <h2>Manifest</h2>
       <label className="manifest-description-field">
+        <span>Entrypoint</span>
+        <select aria-label="Entrypoint" value={entrypoint}
+          onChange={(event) => setEntrypoint(event.target.value)}>
+          {markdownFiles.map((path) => <option key={path} value={path}>{path}</option>)}
+        </select>
+      </label>
+      <label className="manifest-description-field">
         <span>Description</span>
         <textarea aria-label="Description" value={description}
           onChange={(event) => setDescription(event.target.value)} />
@@ -49,7 +60,8 @@ export function ManifestEditorDialog({ manifest, files, onSave, onClose }: Props
         onClick={() => setResources((current) => [...current, { type: "", source: "", rendered: "" }])}>Add Resource</button>
       <div className="about-dialog-actions">
         <button type="button" onClick={onClose}>Cancel</button>
-        <button type="button" data-action="save" onClick={() => onSave({ description, resources })}>Save</button>
+        <button type="button" data-action="save"
+          onClick={() => onSave({ entrypoint, description, resources })}>Save</button>
       </div>
     </section>
   </div>;

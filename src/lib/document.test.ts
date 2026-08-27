@@ -161,15 +161,17 @@ describe("document structure", () => {
   });
 
   test("updates manifest metadata while preserving unknown fields", () => {
-    const current = createDocumentState(info, "test.mdpkg");
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "guide.md", "# Guide");
     const updated = updateManifestMetadata(current, {
+      entrypoint: "guide.md",
       description: "Guide",
       resources: [{ type: "custom", source: "README.md", rendered: "README.md" }],
     });
     expect(updated.manifest).toMatchObject({
-      title: "T", description: "Guide",
+      title: "T", entrypoint: "guide.md", description: "Guide",
       resources: [{ type: "custom", source: "README.md", rendered: "README.md" }],
     });
+    expect(updated.entrypoint).toBe("guide.md");
     expect(updated.dirty).toBe(true);
   });
 
@@ -191,8 +193,16 @@ describe("document structure", () => {
   test("rejects manifest resources whose files do not exist", () => {
     const current = createDocumentState(info, "test.mdpkg");
     expect(() => updateManifestMetadata(current, {
-      description: "", resources: [{ type: "plantuml", source: "missing.puml", rendered: "missing.svg" }],
+      entrypoint: "README.md", description: "",
+      resources: [{ type: "plantuml", source: "missing.puml", rendered: "missing.svg" }],
     })).toThrow(/does not exist/i);
+  });
+
+  test("rejects a non-Markdown manifest entrypoint", () => {
+    const current = createDocumentState(info, "test.mdpkg");
+    expect(() => updateManifestMetadata(current, {
+      entrypoint: "images/a.png", description: "", resources: [],
+    })).toThrow(/entrypoint/i);
   });
 
   test("deletes a resource and its manifest record without rewriting markdown", () => {
