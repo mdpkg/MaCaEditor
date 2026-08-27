@@ -123,6 +123,25 @@ describe("document structure", () => {
       .toBe("[Web](https://example.com) [Section](#section)");
   });
 
+  test("rewrites reference definitions but leaves link-shaped code unchanged", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "guide.md", [
+      "[Notes][notes]",
+      "",
+      "[notes]: docs/notes.md \"Notes\"",
+      "",
+      "`[Example](docs/notes.md)`",
+    ].join("\n"));
+    const withTarget = addMarkdown(current, "docs/notes.md", "# Notes");
+    const moved = movePath(withTarget, "docs/notes.md", "reference/notes.md");
+    expect(moved.files.find((file) => file.path === "guide.md")?.content).toBe([
+      "[Notes][notes]",
+      "",
+      "[notes]: reference/notes.md \"Notes\"",
+      "",
+      "`[Example](docs/notes.md)`",
+    ].join("\n"));
+  });
+
   test("requires another entrypoint before deleting the current one", () => {
     const current = createDocumentState(info, "test.mdpkg");
     expect(() => deletePath(current, "README.md")).toThrow(/entrypoint/i);

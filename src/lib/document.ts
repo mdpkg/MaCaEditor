@@ -5,6 +5,7 @@ export type DocumentOrigin =
   | { kind: "folder"; path: string }
   | { kind: "untitled" };
 import { relativePackagePath, resolvePackagePath } from "./markdown";
+import { rewriteMarkdownLinkDestinations } from "./markdownLinks";
 import { folderDocumentFingerprint, folderInfoFingerprint } from "./folderSync";
 
 export interface DocumentState {
@@ -112,22 +113,23 @@ function rewriteMarkdownLinksForMove(
   from: string,
   to: string,
 ): string {
-  return content.replace(/(!?\[[^\]]*\]\()(<[^>]*>|[^)\s]+)(\))/g, (match, start, rawTarget, end) => {
-    const target = markdownDestination(rawTarget);
-    if (target.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return match;
+  return rewriteMarkdownLinkDestinations(content, (target, link) => {
+    if (target.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return null;
     const parts = target.match(/^([^?#]*)([?#].*)?$/);
-    if (!parts || !parts[1]) return match;
+    if (!parts || !parts[1]) return null;
     let decodedPath: string;
     try { decodedPath = decodeURIComponent(parts[1]); } catch { decodedPath = parts[1]; }
     const oldBaseDir = oldMarkdownPath.includes("/")
       ? oldMarkdownPath.slice(0, oldMarkdownPath.lastIndexOf("/"))
       : "";
     const resolved = resolvePackagePath(oldBaseDir, decodedPath);
-    if (!resolved) return match;
+    if (!resolved) return null;
     const movedTarget = replacePathPrefix(resolved, from, to);
-    if (oldMarkdownPath === newMarkdownPath && resolved === movedTarget) return match;
+    if (oldMarkdownPath === newMarkdownPath && resolved === movedTarget) return null;
     const relative = relativePackagePath(newMarkdownPath, movedTarget);
-    return `${start}${formattedMarkdownDestination(relative + (parts[2] ?? ""))}${end}`;
+    const replacement = relative + (parts[2] ?? "");
+    const alreadyAngled = content[link.start - 1] === "<" && content[link.end] === ">";
+    return alreadyAngled ? replacement : formattedMarkdownDestination(replacement);
   });
 }
 
