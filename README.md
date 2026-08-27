@@ -45,7 +45,15 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - ファイルツリーの右クリックメニューからMarkdownとフォルダを追加
 - ファイルツリー内のドラッグ＆ドロップによるファイルやフォルダの移動
 - リネームまたは移動時に、パッケージ内Markdownリンクを自動更新
+- インラインリンク、画像リンク、参照形式リンクに対応したMarkdown ASTベースのリンク解析
 - ファイルツリーからMarkdownエディタへドロップしてリンクを挿入
+- `Ctrl`／`Cmd`+クリックによるMarkdownリンク先への移動
+- ファイルツリーから参照元（backlink）を表示
+- 壊れたリンクのエディタ上での強調表示
+- ファイル操作のUndo／Redoと、削除前の影響リンク数表示
+- パッケージ全体の診断と検索
+- manifestのdescriptionとresource関連付けの編集
+- 図source／renderedペアの一括移動・削除と、再生成が必要な図の検出
 - 画像やダイアグラムのリンクを、Markdownのカーソル位置または末尾へ挿入
 - 添付ファイルのリンクをMarkdownへ挿入し、プレビューから保存先を指定してダウンロード
 - 添付ファイルのダウンロード開始、完了、失敗を画面右上のバナーで通知
@@ -107,6 +115,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 新しいFolderモードのDocumentを始める場合は、**File** → **Start with New Empty Folder**を選びます。親フォルダを選択して新規フォルダ名を入力すると、そのフォルダにMDPKG v2の`manifest.json`とentrypointの`index.md`が生成され、すぐに編集を開始できます。入力した名前のフォルダが既に存在する場合はエラーとなり、上書きされません。
 
 MDPKG v1は引き続き読み込めます。v1 Documentを保存すると、既存のentrypointを維持したままmanifestのversionが`2.0`へ更新されます。
+保存前には移行内容を確認するダイアログが表示され、元ファイルを更新するか、v2のコピーとして別名保存するかを選択できます。
 
 ### 新しい `.mdpkg` を作成する
 
@@ -119,6 +128,41 @@ MDPKG v1は引き続き読み込めます。v1 Documentを保存すると、既�
 ファイルやフォルダは、ファイルツリー内で移動先のフォルダへドラッグ＆ドロップして移動することもできます。リネームまたは移動では、既存Markdown内のパッケージ内リンクが自動更新されます。削除されたファイルへのリンクは自動削除されません。空フォルダは保存されません。
 
 ファイルツリーから編集中のMarkdownへファイルをドラッグ＆ドロップすると、ドロップ位置へ相対リンクを挿入できます。Markdownと`attachments`内のファイルは通常リンク、`diagrams`と`images`内のファイルは画像リンクとして挿入されます。
+
+Markdownエディタ上のパッケージ内リンクを`Ctrl`+クリック（macOSでは`Cmd`+クリック）すると、リンク先のMarkdownを開けます。ファイルツリーの**Show References**では、そのファイルを参照しているMarkdownと行番号を確認できます。存在しないリンク、パッケージ外へ出るリンク、大文字・小文字が一致しないリンクはエディタ上で波線表示されます。
+
+**File** → **Undo File Operation**／**Redo File Operation**では、直前のrename、移動、削除、entrypoint変更、manifest編集を取り消し・やり直しできます。
+
+### パッケージを検証する
+
+**File** → **Validate Package...**を選択すると、次の問題をパッケージ全体から検出します。
+
+- 存在しないリンク、パッケージ外へ出るリンク、ファイル名の大文字・小文字の不一致
+- manifest resourceの不正またはsource／renderedファイルの欠落
+- source更新後にrenderedが再生成されていないresource
+- 未参照ファイル
+- 不正なパス、Unicode正規化後のパス衝突
+- UTF-8として読み込めないMarkdown
+
+診断結果をクリックすると、該当ファイルを開けます。
+
+### パッケージを検索する
+
+**File** → **Search Package...**では、次の検索方法を選択できます。
+
+- ファイル名
+- 全文
+- Markdown見出し
+- リンク先
+- 指定したパッケージ内パスへの参照元
+
+検索結果をクリックすると、対象ファイルの該当位置を開きます。
+
+### manifestを編集する
+
+**File** → **Edit Manifest...**では、`description`と`resources`の`type`、`source`、`rendered`を編集できます。resourceにはパッケージ内に存在するファイルだけを指定できます。アプリが認識しないmanifestの追加フィールドは保存時にも維持されます。
+
+manifestで関連付けられた図sourceとrenderedファイルは、片方を移動または削除するとペアで処理されます。sourceを編集したあとrenderedがまだ更新されていない場合は、パッケージ診断に警告が表示されます。
 
 ### 画像を追加する
 
@@ -200,6 +244,10 @@ Rspress形式のコンテナを表示するには、ツールバーの **Rspress
 - **File** → **Open Folder...**: 展開済みmdpkgフォルダをFolderモードで直接編集します。
 - **File** → **Start with New Empty Folder**: 新しいmdpkgフォルダと初期ファイルを作り、Folderモードで開始します。
 - **File** → **Export Package...**: FolderモードのDocument Modelを検証し、配布用`.mdpkg`を生成します。
+
+### 安全でないパッケージの読み込みを防ぐ
+
+ZIP Slipとパストラバーサルに加え、重複パス、区切り文字またはUnicode正規化後に衝突するパス、過大なファイル数・展開サイズ、異常な圧縮率を持つZIPを読み込み時に拒否します。現在の上限は10,000エントリ、1ファイルあたり128 MiB、合計展開サイズ512 MiBです。
 
 ## Drawing Editorの操作
 
