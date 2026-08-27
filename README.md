@@ -38,6 +38,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - `.mdpkg` の新規作成、読み込み、保存、別名保存
 - フォルダからのインポートとフォルダへのエクスポート
 - パッケージ内のファイルをツリー表示
+- ファイルツリーにFolder、Markdown、Image、Diagram、その他ファイルの種別アイコンを表示
 - Markdownとフォルダの追加
 - PNG、JPEG、GIF、WebP、BMP画像の追加
 - 任意形式の添付ファイルを1つまたは複数まとめて追加

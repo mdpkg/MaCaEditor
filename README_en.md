@@ -36,6 +36,7 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 - Create, open, save, and save `.mdpkg` files under a new name
 - Import from a folder and export to a folder
 - Browse files in the package using a tree view
+- File-type icons for folders, Markdown, images, diagrams, and other files
 - Add PNG, JPEG, GIF, WebP, and BMP images
 - Add one or multiple attachment files of any type
 - Drag and drop images into the `images` folder
