@@ -173,6 +173,21 @@ describe("document structure", () => {
     expect(updated.dirty).toBe(true);
   });
 
+  test("marks rendered output stale when its source changes and clears it when regenerated", () => {
+    const current = createDocumentState({
+      manifest: { format: "mdpkg", version: "2.0", entrypoint: "index.md", resources: [
+        { type: "custom", source: "diagrams/a.txt", rendered: "diagrams/a.svg" },
+      ] }, entrypoint: "index.md", files: [
+        { path: "index.md", is_text: true, content: "# Index", base64: null },
+        { path: "diagrams/a.txt", is_text: true, content: "source", base64: null },
+        { path: "diagrams/a.svg", is_text: true, content: "<svg/>", base64: null },
+      ],
+    }, "test.mdpkg");
+    const edited = updateFileContent(current, "diagrams/a.txt", "changed");
+    expect(edited.staleResources).toEqual(["diagrams/a.svg"]);
+    expect(updateFileContent(edited, "diagrams/a.svg", "<svg>new</svg>").staleResources).toEqual([]);
+  });
+
   test("rejects manifest resources whose files do not exist", () => {
     const current = createDocumentState(info, "test.mdpkg");
     expect(() => updateManifestMetadata(current, {

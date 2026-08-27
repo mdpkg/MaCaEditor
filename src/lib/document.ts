@@ -19,6 +19,8 @@ export interface DocumentState {
   manifest: Record<string, unknown>;
   dirty: boolean;
   folderSnapshot?: string;
+  /** Rendered resource paths whose source has changed since the last render. */
+  staleResources?: string[];
 }
 
 export function createDocumentState(info: PackageInfo, origin: DocumentOrigin | string): DocumentState {
@@ -210,6 +212,7 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
   const transientDirectories = currentDirectories.map((directory) => replacePathPrefix(directory, from, to));
   return {
     ...state, dirty: true, entrypoint, files,
+    staleResources: (state.staleResources ?? []).map(movedPath),
     directories: [...new Set([...inferDirectories(files.map((file) => file.path)), ...transientDirectories])].sort(),
     manifest: { ...state.manifest, entrypoint, resources },
   };
@@ -243,7 +246,11 @@ export function deletePath(state: DocumentState, requestedPath: string): Documen
         return !removes(resource.source ?? "") && !removes(resource.rendered ?? "");
       })
     : state.manifest.resources;
-  return { ...state, dirty: true, files, directories, manifest: { ...state.manifest, resources } };
+  return {
+    ...state, dirty: true, files, directories,
+    staleResources: (state.staleResources ?? []).filter((candidate) => !removes(candidate)),
+    manifest: { ...state.manifest, resources },
+  };
 }
 
 export function pathReferenceCount(state: DocumentState, requestedPath: string): number {
@@ -273,9 +280,19 @@ export function updateFileContent(
   filePath: string,
   content: string,
 ): DocumentState {
+  const stale = new Set(state.staleResources ?? []);
+  if (Array.isArray(state.manifest.resources)) {
+    for (const item of state.manifest.resources) {
+      if (typeof item !== "object" || item === null) continue;
+      const resource = item as { source?: unknown; rendered?: unknown };
+      if (resource.source === filePath && typeof resource.rendered === "string") stale.add(resource.rendered);
+      if (resource.rendered === filePath) stale.delete(filePath);
+    }
+  }
   return {
     ...state,
     dirty: true,
+    staleResources: [...stale],
     files: state.files.map((f) =>
       f.path === filePath ? { ...f, content } : f,
     ),

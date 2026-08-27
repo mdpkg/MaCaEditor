@@ -59,4 +59,11 @@ describe("diagnosePackage", () => {
     expect(diagnosePackage(document).map((item) => item.code)).toContain("path-collision");
     expect(diagnosePackage(document).map((item) => item.code)).toContain("invalid-markdown-encoding");
   });
+
+  test("reports rendered resources marked stale after source edits", () => {
+    const document = state({ staleResources: ["diagrams/a.svg"] });
+    expect(diagnosePackage(document)).toContainEqual(expect.objectContaining({
+      code: "stale-resource", target: "diagrams/a.svg",
+    }));
+  });
 });

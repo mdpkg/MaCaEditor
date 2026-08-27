@@ -5,7 +5,7 @@ import { markdownLinks } from "./markdownLinks";
 export type DiagnosticCode =
   | "missing-link" | "outside-package-link" | "link-case-mismatch"
   | "missing-resource" | "invalid-resource" | "unreferenced-file"
-  | "unsafe-path" | "path-collision" | "invalid-markdown-encoding";
+  | "unsafe-path" | "path-collision" | "invalid-markdown-encoding" | "stale-resource";
 
 export interface PackageDiagnostic {
   code: DiagnosticCode;
@@ -97,5 +97,9 @@ export function diagnosePackage(state: DocumentState): PackageDiagnostic[] {
       code: "invalid-markdown-encoding", severity: "error", message: `Markdown is not valid UTF-8: ${file.path}`, path: file.path,
     });
   }
+  for (const target of state.staleResources ?? []) diagnostics.push({
+    code: "stale-resource", severity: "warning", message: `Rendered resource is older than its source: ${target}`,
+    path: "manifest.json", target,
+  });
   return diagnostics;
 }
