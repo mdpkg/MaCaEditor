@@ -116,6 +116,15 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test("highlights broken package link destinations", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="[Missing](missing.md)" onChange={vi.fn()}
+      diagnosticRanges={[{ from: 10, to: 20 }]} />));
+    expect(container.querySelector(".cm-broken-package-link")?.textContent).toBe("missing.md");
+    act(() => root.unmount());
+  });
+
   test("preserves scroll when a controlled update inserts dropped content", () => {
     const restoreFrames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

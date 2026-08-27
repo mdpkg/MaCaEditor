@@ -1463,6 +1463,10 @@ export default function App() {
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
                     cursorPosition={navigationPosition}
+                    diagnosticRanges={diagnosePackage(doc)
+                      .filter((item) => item.path === displayFile.path && item.offset !== undefined &&
+                        ["missing-link", "outside-package-link", "link-case-mismatch"].includes(item.code))
+                      .map((item) => ({ from: item.offset!, to: item.offset! + (item.target?.length ?? 1) }))}
                     onSelectionChange={handleSelectionChange}
                     onAiSelection={handleAiSelection}
                     vimMode={vimMode}

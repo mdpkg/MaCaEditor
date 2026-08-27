@@ -12,9 +12,10 @@ interface Props {
   onPackagePathDrop?: (path: string, position: number) => void;
   onMarkdownLinkOpen?: (destination: string) => void;
   cursorPosition?: number | null;
+  diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
-export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, cursorPosition }: Props) {
+export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, cursorPosition, diagnosticRanges }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
@@ -30,6 +31,7 @@ export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionCha
       onPackagePathDrop={onPackagePathDrop}
       onMarkdownLinkOpen={onMarkdownLinkOpen}
       cursorPosition={cursorPosition}
+      diagnosticRanges={diagnosticRanges}
     />
   );
 }

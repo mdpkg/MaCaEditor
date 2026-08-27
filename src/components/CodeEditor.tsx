@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
+import { Compartment } from "@codemirror/state";
+import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
@@ -21,6 +23,7 @@ interface Props {
   onPackagePathDrop?: (path: string, position: number) => void;
   onMarkdownLinkOpen?: (destination: string) => void;
   cursorPosition?: number | null;
+  diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
 const vimSaveHandlers = new WeakMap<object, () => void>();
@@ -54,6 +57,7 @@ export function CodeEditor({
   onPackagePathDrop,
   onMarkdownLinkOpen,
   cursorPosition = null,
+  diagnosticRanges = [],
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -66,6 +70,7 @@ export function CodeEditor({
   const onPackagePathDropRef = useRef(onPackagePathDrop);
   const onMarkdownLinkOpenRef = useRef(onMarkdownLinkOpen);
   const [contextMenu, setContextMenu] = useState<{ from: number; to: number; text: string; hasSelection: boolean; x: number; y: number } | null>(null);
+  const diagnosticsCompartmentRef = useRef(new Compartment());
   valueRef.current = value;
   onChangeRef.current = onChange;
   onCursorChangeRef.current = onCursorChange;
@@ -82,6 +87,10 @@ export function CodeEditor({
       basicSetup,
       ...(language === "markdown" ? [markdown()] : []),
       EditorView.lineWrapping,
+      diagnosticsCompartmentRef.current.of(EditorView.decorations.of(Decoration.set(
+        diagnosticRanges.map((range) => Decoration.mark({ class: "cm-broken-package-link" })
+          .range(Math.max(0, range.from), Math.min(valueRef.current.length, range.to))),
+      ))),
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": ariaLabel })] : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
@@ -184,6 +193,18 @@ export function CodeEditor({
     view.dispatch({ selection: { anchor: Math.min(cursorPosition, view.state.doc.length) }, scrollIntoView: true });
     view.focus();
   }, [cursorPosition]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const ranges = diagnosticRanges
+      .filter((range) => range.from < range.to && range.from < view.state.doc.length)
+      .map((range) => Decoration.mark({ class: "cm-broken-package-link" })
+        .range(Math.max(0, range.from), Math.min(view.state.doc.length, range.to)));
+    view.dispatch({ effects: diagnosticsCompartmentRef.current.reconfigure(
+      EditorView.decorations.of(Decoration.set(ranges)),
+    ) });
+  }, [diagnosticRanges]);
 
   useEffect(() => {
     if (!contextMenu) return;

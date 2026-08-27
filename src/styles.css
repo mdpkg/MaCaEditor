@@ -292,6 +292,12 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+.cm-broken-package-link {
+  text-decoration: underline wavy #d64545;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+
 .editor-context-menu button {
   width: 100%;
   padding: 5px 10px;
