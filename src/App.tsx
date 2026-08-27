@@ -11,6 +11,7 @@ import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
 import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog";
+import { BacklinksDialog } from "./components/BacklinksDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -110,7 +111,7 @@ import {
 import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { diagnosePackage } from "./lib/packageDiagnostics";
-import { resolveMarkdownLink } from "./lib/packageNavigation";
+import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -164,6 +165,8 @@ export default function App() {
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
   const [packageDiagnosticsOpen, setPackageDiagnosticsOpen] = useState(false);
+  const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
+  const [navigationPosition, setNavigationPosition] = useState<number | null>(null);
   const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
@@ -1327,6 +1330,7 @@ export default function App() {
                   onAddMarkdown={handleAddMarkdown}
                   onAddFolder={handleAddFolder}
                   onDropPath={applyMove}
+                  onShowReferences={setBacklinksTarget}
                 />
               </div>
             )}
@@ -1454,9 +1458,11 @@ export default function App() {
               {mode === "split" && (
                 <SynchronizedScrollView>
                   <MarkdownEditor
+                    key={displayFile.path}
                     value={displayContent}
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
+                    cursorPosition={navigationPosition}
                     onSelectionChange={handleSelectionChange}
                     onAiSelection={handleAiSelection}
                     vimMode={vimMode}
@@ -1565,6 +1571,20 @@ export default function App() {
             setPackageDiagnosticsOpen(false);
           }}
           onClose={() => setPackageDiagnosticsOpen(false)}
+        />
+      )}
+      {backlinksTarget && doc && (
+        <BacklinksDialog
+          target={backlinksTarget}
+          backlinks={findBacklinks(backlinksTarget, doc.files)}
+          onNavigate={(path, offset) => {
+            editorCursorRef.current = offset;
+            setNavigationPosition(offset);
+            setSelectedPath(path);
+            setMode("split");
+            setBacklinksTarget(null);
+          }}
+          onClose={() => setBacklinksTarget(null)}
         />
       )}
       <StatusBar

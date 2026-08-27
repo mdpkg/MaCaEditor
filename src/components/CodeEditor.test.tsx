@@ -107,6 +107,15 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test("moves the selection to a requested navigation position", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="0123456789" onChange={vi.fn()} cursorPosition={6} />));
+    const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;
+    expect(view.state.selection.main.head).toBe(6);
+    act(() => root.unmount());
+  });
+
   test("preserves scroll when a controlled update inserts dropped content", () => {
     const restoreFrames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

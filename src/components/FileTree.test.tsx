@@ -241,6 +241,24 @@ describe("FileTree", () => {
     act(() => root.unmount());
   });
 
+  test("offers references for a package path", () => {
+    const onShowReferences = vi.fn(); const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree files={[{ path: "guide.md", is_text: true, content: "", base64: null }]}
+      selectedPath={null} onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+      onShowReferences={onShowReferences} />));
+    const guide = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    act(() => guide
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const button = [...document.querySelectorAll(".file-tree-context-menu button")]
+      .find((item) => item.textContent === "Show References") as HTMLButtonElement;
+    act(() => button.click());
+    expect(onShowReferences).toHaveBeenCalledWith("guide.md");
+    act(() => root.unmount());
+  });
+
   test("offers add actions without changing the current selection", () => {
     const onSelect = vi.fn(); const onAddMarkdown = vi.fn(); const onAddFolder = vi.fn();
     const container = document.createElement("div"); document.body.appendChild(container);

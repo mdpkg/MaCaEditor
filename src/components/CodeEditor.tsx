@@ -20,6 +20,7 @@ interface Props {
   onAiSelection?: (task: AiTaskKind) => void;
   onPackagePathDrop?: (path: string, position: number) => void;
   onMarkdownLinkOpen?: (destination: string) => void;
+  cursorPosition?: number | null;
 }
 
 const vimSaveHandlers = new WeakMap<object, () => void>();
@@ -52,6 +53,7 @@ export function CodeEditor({
   onAiSelection,
   onPackagePathDrop,
   onMarkdownLinkOpen,
+  cursorPosition = null,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -139,6 +141,7 @@ export function CodeEditor({
     ];
     const view = new EditorView({
       doc: valueRef.current,
+      selection: cursorPosition === null ? undefined : { anchor: Math.min(cursorPosition, valueRef.current.length) },
       extensions,
       parent: hostRef.current,
     });
@@ -174,6 +177,13 @@ export function CodeEditor({
     });
     preserveScrollPosition(view, scrollTop, scrollLeft);
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || cursorPosition === null) return;
+    view.dispatch({ selection: { anchor: Math.min(cursorPosition, view.state.doc.length) }, scrollIntoView: true });
+    view.focus();
+  }, [cursorPosition]);
 
   useEffect(() => {
     if (!contextMenu) return;

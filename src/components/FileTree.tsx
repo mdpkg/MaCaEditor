@@ -23,6 +23,7 @@ interface Props {
   onAddMarkdown?: (contextPath: string) => void;
   onAddFolder?: (contextPath: string) => void;
   onDropPath?: (sourcePath: string, destinationPath: string) => void;
+  onShowReferences?: (path: string) => void;
 }
 
 function TreeItem({
@@ -137,6 +138,7 @@ export function FileTree({
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
   onAddMarkdown, onAddFolder,
   onDropPath,
+  onShowReferences,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
@@ -154,7 +156,7 @@ export function FileTree({
   }, [contextMenu]);
 
   const openContextMenu = (event: React.MouseEvent, path: string) => {
-    if (!onAddMarkdown && !onAddFolder && !canRename(path) && !canDelete(path) && !canMove(path) && !canSetEntrypoint(path)) return;
+    if (!onAddMarkdown && !onAddFolder && !onShowReferences && !canRename(path) && !canDelete(path) && !canMove(path) && !canSetEntrypoint(path)) return;
     event.preventDefault();
     setContextMenu({ path, x: event.clientX, y: event.clientY });
   };
@@ -209,6 +211,12 @@ export function FileTree({
               setContextMenu(null);
             }}>Set as entrypoint</button>
           )}
+          {onShowReferences && (
+            <button type="button" onClick={() => {
+              onShowReferences(contextMenu.path);
+              setContextMenu(null);
+            }}>Show References</button>
+          )}
           {canDelete(contextMenu.path) && (
             <button type="button" onClick={() => {
               onDelete(contextMenu.path);
@@ -217,7 +225,7 @@ export function FileTree({
           )}
           {(onAddMarkdown || onAddFolder) && (
             canRename(contextMenu.path) || canMove(contextMenu.path) ||
-            canSetEntrypoint(contextMenu.path) || canDelete(contextMenu.path)
+            canSetEntrypoint(contextMenu.path) || canDelete(contextMenu.path) || onShowReferences
           ) && <div className="file-tree-context-menu-divider" />}
           {onAddMarkdown && (
             <button type="button" onClick={() => {
