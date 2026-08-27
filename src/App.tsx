@@ -13,6 +13,7 @@ import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog"
 import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog";
 import { BacklinksDialog } from "./components/BacklinksDialog";
 import { ManifestEditorDialog } from "./components/ManifestEditorDialog";
+import { V1MigrationDialog } from "./components/V1MigrationDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -170,6 +171,7 @@ export default function App() {
   const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
   const [navigationPosition, setNavigationPosition] = useState<number | null>(null);
   const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
+  const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
   const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
@@ -455,7 +457,7 @@ export default function App() {
     }
   };
 
-  const handleSave = async () => {
+  const performSave = async () => {
     if (!doc) return;
     if (doc.origin.kind === "folder" && externalConflictRef.current) {
       setError("External changes conflict with unsaved edits. Reopen the folder before saving.");
@@ -463,7 +465,7 @@ export default function App() {
       return;
     }
     if (doc.origin.kind === "untitled") {
-      await handleSaveAs();
+      await performSaveAs();
       return;
     }
     try {
@@ -475,7 +477,7 @@ export default function App() {
     }
   };
 
-  const handleSaveAs = async () => {
+  const performSaveAs = async () => {
     if (!doc) return;
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
@@ -491,6 +493,19 @@ export default function App() {
         setStatus("Error");
       }
     }
+  };
+
+  const handleSave = async () => {
+    if (!doc) return;
+    if (String(doc.manifest.version ?? "").startsWith("1.")) {
+      setV1MigrationOpen(true);
+      return;
+    }
+    await performSave();
+  };
+
+  const handleSaveAs = async () => {
+    await performSaveAs();
   };
 
   const handlePrint = () => {
@@ -1604,6 +1619,12 @@ export default function App() {
             } catch (reason) { setError(String(reason)); setStatus("Error"); }
           }}
           onClose={() => setManifestEditorOpen(false)} />
+      )}
+      {v1MigrationOpen && doc && (
+        <V1MigrationDialog entrypoint={doc.entrypoint}
+          onOverwrite={() => { setV1MigrationOpen(false); void performSave(); }}
+          onSaveAs={() => { setV1MigrationOpen(false); void performSaveAs(); }}
+          onCancel={() => setV1MigrationOpen(false)} />
       )}
       <StatusBar
         message={status}
