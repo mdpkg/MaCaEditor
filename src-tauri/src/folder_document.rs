@@ -95,10 +95,11 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     if !root.is_dir() {
         return Err(FolderError::Invalid("selected path is not a folder".into()));
     }
-    let mut files = Vec::new();
-    collect(&root, &root, &mut files)?;
     let manifest_path = root.join("manifest.json");
-    let (manifest, manifest_was_generated) = if manifest_path.is_file() {
+    let manifest_exists = manifest_path.is_file();
+    let mut files = Vec::new();
+    collect(&root, &root, &mut files, !manifest_exists)?;
+    let (manifest, manifest_was_generated) = if manifest_exists {
         reject_link(&manifest_path)?;
         let manifest_text = fs::read_to_string(&manifest_path)
             .map_err(|e| FolderError::Invalid(format!("manifest.json cannot be read: {e}")))?;
@@ -144,7 +145,19 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     })
 }
 
-fn collect(root: &Path, dir: &Path, files: &mut Vec<PackageFile>) -> Result<(), FolderError> {
+fn ignored_inference_directory(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".git" | ".hg" | ".svn" | ".next" | "node_modules" | "target" | "dist" | "build" | "coverage")
+    )
+}
+
+fn collect(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<PackageFile>,
+    ignore_generated_directories: bool,
+) -> Result<(), FolderError> {
     reject_link(dir)?;
     ensure_inside(root, dir)?;
     for entry in fs::read_dir(dir)? {
@@ -153,7 +166,10 @@ fn collect(root: &Path, dir: &Path, files: &mut Vec<PackageFile>) -> Result<(), 
         reject_link(&path)?;
         ensure_inside(root, &path)?;
         if entry.file_type()?.is_dir() {
-            collect(root, &path, files)?;
+            if ignore_generated_directories && ignored_inference_directory(&path) {
+                continue;
+            }
+            collect(root, &path, files, ignore_generated_directories)?;
         } else if entry.file_type()?.is_file() {
             let rel = path
                 .strip_prefix(root)
@@ -347,6 +363,22 @@ mod tests {
         assert_eq!(loaded.manifest.version, "2.0");
         assert_eq!(loaded.manifest.entrypoint, "index.md");
         fs::remove_dir_all(missing).unwrap();
+    }
+
+    #[test]
+    fn skips_generated_dependency_directories_when_inferring_a_manifest() {
+        let dir = temp("manifest-inference-ignored-directories");
+        fs::write(dir.join("index.md"), "# Index").unwrap();
+        fs::create_dir_all(dir.join("node_modules/dependency")).unwrap();
+        fs::write(dir.join("node_modules/dependency/README.md"), "# Dependency").unwrap();
+        fs::create_dir_all(dir.join("target/debug")).unwrap();
+        fs::write(dir.join("target/debug/output.bin"), [0_u8; 64]).unwrap();
+
+        let loaded = load_folder(&dir).unwrap();
+
+        assert_eq!(loaded.files.len(), 1);
+        assert_eq!(loaded.files[0].path, "index.md");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

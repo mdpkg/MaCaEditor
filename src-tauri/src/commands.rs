@@ -131,9 +131,12 @@ pub fn open_package(path: String) -> Result<PackageInfo, String> {
 }
 
 #[tauri::command]
-pub fn open_folder(path: String) -> Result<PackageInfo, String> {
-    let loaded =
-        crate::folder_document::load_folder(&PathBuf::from(path)).map_err(|e| e.to_string())?;
+pub async fn open_folder(path: String) -> Result<PackageInfo, String> {
+    let loaded = tokio::task::spawn_blocking(move || {
+        crate::folder_document::load_folder(&PathBuf::from(path)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("folder scan failed: {e}"))??;
     folder_package_info(loaded)
 }
 
