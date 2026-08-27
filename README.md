@@ -18,6 +18,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - GitHub Flavored Markdown（GFM）対応
 - テーブル、タスクリスト、取り消し線、URL自動リンク
 - GitHub Flavored Markdown Alerts（`> [!NOTE]`など）の表示
+- YAML front matterをキー・値の表として表示
 - Rspressモードでの`:::`コンテナ表示
 - チェックボックスで切り替えられる目次（TOC）表示
 - プレビュー上のテーブルをクリックしてGUIで編集

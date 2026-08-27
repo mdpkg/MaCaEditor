@@ -18,6 +18,7 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 - GitHub Flavored Markdown (GFM) support
 - Tables, task lists, strikethrough, and automatic URL linking
 - GitHub Flavored Markdown Alerts such as `> [!NOTE]`
+- YAML front matter rendered as a key-value table
 - `:::` container rendering in Rspress mode
 - Toggleable table of contents (TOC)
 - Click tables in the preview to edit them with a GUI

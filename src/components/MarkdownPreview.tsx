@@ -8,6 +8,7 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
 import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
 import { resolvePackagePath } from "../lib/markdown";
@@ -19,6 +20,7 @@ import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
 import { findMathJaxResourceByRendered } from "../lib/mathjax/docIntegration";
 import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
 import { remarkRspressContainers } from "../lib/remarkRspressContainers";
+import { remarkFrontmatterTable } from "../lib/remarkFrontmatterTable";
 
 interface Props {
   markdown: string;
@@ -111,7 +113,7 @@ export function MarkdownPreview({
   initialScrollRatio = 0,
   onScrollRatioChange,
 }: Props) {
-  const tocPrefixLength = showToc ? "## 目次\n\n".length : 0;
+  const tocPrefixLength = 0;
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
@@ -245,11 +247,12 @@ export function MarkdownPreview({
       const end = previewEnd === undefined || previewEnd < tocPrefixLength
         ? undefined
         : previewEnd - tocPrefixLength;
+      const editable = Boolean(onEditTable && start !== undefined && end !== undefined);
       return <table
         {...props}
-        className={onEditTable ? "editable-markdown-table" : undefined}
-        role={onEditTable ? "button" : undefined}
-        tabIndex={onEditTable ? 0 : undefined}
+        className={[props.className, editable ? "editable-markdown-table" : ""].filter(Boolean).join(" ") || undefined}
+        role={editable ? "button" : undefined}
+        tabIndex={editable ? 0 : undefined}
         onClick={() => {
           if (start !== undefined && end !== undefined) onEditTable?.(start, end);
         }}
@@ -381,13 +384,13 @@ export function MarkdownPreview({
   const urlTransform: UrlTransform = (url, key) =>
     key === "href" ? packageUrl(baseDir, url) : url;
   const compatibleMarkdown = normalizeLegacyImageDestinations(markdown, baseDir, files);
-  const previewMarkdown = showToc
-    ? `## 目次\n\n${compatibleMarkdown}`
-    : compatibleMarkdown;
+  const previewMarkdown = compatibleMarkdown;
   const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
+    remarkFrontmatter,
     remarkGfm,
     ...(rspressMode ? [remarkRspressContainers] : []),
     remarkGitHubAlerts,
+    [remarkFrontmatterTable, { showToc }],
     [remarkToc, { heading: "目次" }],
   ];
 
