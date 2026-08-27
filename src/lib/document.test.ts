@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
 import {
   addDirectory, addMarkdown, createDocumentState, createFolderDocumentState, deletePath,
-  markSaved, movePath, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent,
+  markSaved, movePath, pathReferenceCount, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent,
 } from "./document";
 
 const info: PackageInfo = {
@@ -145,6 +145,12 @@ describe("document structure", () => {
   test("requires another entrypoint before deleting the current one", () => {
     const current = createDocumentState(info, "test.mdpkg");
     expect(() => deletePath(current, "README.md")).toThrow(/entrypoint/i);
+  });
+
+  test("counts Markdown references affected by deleting a path", () => {
+    const current = addMarkdown(createDocumentState(info, "test.mdpkg"), "guide.md",
+      "[One](docs/a.md) ![Two](docs/images/a.png) [Web](https://example.com)");
+    expect(pathReferenceCount(current, "docs")).toBe(2);
   });
 
   test("sets an existing markdown file as entrypoint", () => {

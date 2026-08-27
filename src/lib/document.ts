@@ -5,7 +5,7 @@ export type DocumentOrigin =
   | { kind: "folder"; path: string }
   | { kind: "untitled" };
 import { relativePackagePath, resolvePackagePath } from "./markdown";
-import { rewriteMarkdownLinkDestinations } from "./markdownLinks";
+import { markdownLinks, rewriteMarkdownLinkDestinations } from "./markdownLinks";
 import { folderDocumentFingerprint, folderInfoFingerprint } from "./folderSync";
 
 export interface DocumentState {
@@ -193,6 +193,24 @@ export function deletePath(state: DocumentState, requestedPath: string): Documen
       })
     : state.manifest.resources;
   return { ...state, dirty: true, files, directories, manifest: { ...state.manifest, resources } };
+}
+
+export function pathReferenceCount(state: DocumentState, requestedPath: string): number {
+  const path = validateNewPackagePath(requestedPath);
+  let count = 0;
+  for (const file of state.files) {
+    if (!file.is_text || file.content === null || !/\.(md|markdown)$/i.test(file.path)) continue;
+    const baseDir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
+    for (const link of markdownLinks(file.content)) {
+      const rawPath = link.destination.split(/[?#]/, 1)[0];
+      if (!rawPath || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(link.destination)) continue;
+      let decoded = rawPath;
+      try { decoded = decodeURIComponent(rawPath); } catch { /* use the literal destination */ }
+      const resolved = resolvePackagePath(baseDir, decoded);
+      if (resolved === path || resolved?.startsWith(`${path}/`)) count += 1;
+    }
+  }
+  return count;
 }
 
 export function createFolderDocumentState(info: PackageInfo, path: string): DocumentState {
