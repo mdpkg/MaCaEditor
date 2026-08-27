@@ -1284,6 +1284,18 @@ body {
   opacity: 0.7;
 }
 
+.manifest-editor-dialog textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.manifest-resource-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1fr auto;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
 /* AI Settings: 各項目を縦に並べる */
 .about-dialog label {
   display: block;

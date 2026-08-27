@@ -20,6 +20,7 @@ interface Props {
   onRedoFileOperation?: () => void;
   canUndoFileOperation?: boolean;
   canRedoFileOperation?: boolean;
+  onEditManifest?: () => void;
   onAddMarkdown?: () => void;
   onAddFolder?: () => void;
   documentKind?: "package" | "folder" | "untitled" | null;
@@ -70,6 +71,7 @@ export function Toolbar({
   onRedoFileOperation = () => {},
   canUndoFileOperation = false,
   canRedoFileOperation = false,
+  onEditManifest = () => {},
   onAddMarkdown = () => {},
   onAddFolder = () => {},
   documentKind,
@@ -150,6 +152,7 @@ export function Toolbar({
             <button type="button" role="menuitem" disabled={documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>Validate Package...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>Edit Manifest...</button>
             <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>Undo File Operation</button>
             <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>Redo File Operation</button>
           </div>

@@ -12,6 +12,7 @@ import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
 import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog";
 import { BacklinksDialog } from "./components/BacklinksDialog";
+import { ManifestEditorDialog } from "./components/ManifestEditorDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -36,6 +37,7 @@ import {
   setEntrypoint,
   toSaveRequest,
   updateFileContent,
+  updateManifestMetadata,
 } from "./lib/document";
 import {
   createNewPackage,
@@ -167,6 +169,7 @@ export default function App() {
   const [packageDiagnosticsOpen, setPackageDiagnosticsOpen] = useState(false);
   const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
   const [navigationPosition, setNavigationPosition] = useState<number | null>(null);
+  const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
   const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
@@ -1272,6 +1275,7 @@ export default function App() {
         onRedoFileOperation={redoFileOperation}
         canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
         canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
+        onEditManifest={() => setManifestEditorOpen(true)}
         onAddMarkdown={handleAddMarkdown}
         onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
@@ -1590,6 +1594,16 @@ export default function App() {
           }}
           onClose={() => setBacklinksTarget(null)}
         />
+      )}
+      {manifestEditorOpen && doc && (
+        <ManifestEditorDialog manifest={doc.manifest} files={doc.files.map((file) => file.path)}
+          onSave={(values) => {
+            try {
+              recordDocumentOperation(updateManifestMetadata(doc, values), "edit manifest");
+              setManifestEditorOpen(false); setStatus("Manifest updated"); setError(null);
+            } catch (reason) { setError(String(reason)); setStatus("Error"); }
+          }}
+          onClose={() => setManifestEditorOpen(false)} />
       )}
       <StatusBar
         message={status}

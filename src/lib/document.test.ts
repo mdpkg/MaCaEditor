@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
 import {
   addDirectory, addMarkdown, createDocumentState, createFolderDocumentState, deletePath,
-  markSaved, movePath, pathReferenceCount, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent,
+  markSaved, movePath, pathReferenceCount, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent, updateManifestMetadata,
 } from "./document";
 
 const info: PackageInfo = {
@@ -158,6 +158,26 @@ describe("document structure", () => {
     const updated = setEntrypoint(current, "guide.md");
     expect(updated.entrypoint).toBe("guide.md");
     expect(updated.manifest.entrypoint).toBe("guide.md");
+  });
+
+  test("updates manifest metadata while preserving unknown fields", () => {
+    const current = createDocumentState(info, "test.mdpkg");
+    const updated = updateManifestMetadata(current, {
+      description: "Guide",
+      resources: [{ type: "custom", source: "README.md", rendered: "README.md" }],
+    });
+    expect(updated.manifest).toMatchObject({
+      title: "T", description: "Guide",
+      resources: [{ type: "custom", source: "README.md", rendered: "README.md" }],
+    });
+    expect(updated.dirty).toBe(true);
+  });
+
+  test("rejects manifest resources whose files do not exist", () => {
+    const current = createDocumentState(info, "test.mdpkg");
+    expect(() => updateManifestMetadata(current, {
+      description: "", resources: [{ type: "plantuml", source: "missing.puml", rendered: "missing.svg" }],
+    })).toThrow(/does not exist/i);
   });
 
   test("deletes a resource and its manifest record without rewriting markdown", () => {

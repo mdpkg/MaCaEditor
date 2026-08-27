@@ -44,6 +44,7 @@ describe("Toolbar menus", () => {
         onRedoFileOperation={noop}
         canUndoFileOperation={true}
         canRedoFileOperation={true}
+        onEditManifest={noop}
         onInsertDrawing={onInsertDrawing}
         onInsertPlantUml={noop}
         onInsertMermaid={noop}
@@ -86,7 +87,7 @@ describe("Toolbar menus", () => {
       .find((button) => button.textContent === "File") as HTMLButtonElement;
     act(() => fileButton.click());
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
-      .toEqual(["New", "Open", "Open Folder...", "Start with New Empty Folder", "Save", "Save As", "Print", "Add Markdown...", "Add Folder...", "Import Folder", "Export Folder", "Export Package...", "Validate Package...", "Undo File Operation", "Redo File Operation"]);
+      .toEqual(["New", "Open", "Open Folder...", "Start with New Empty Folder", "Save", "Save As", "Print", "Add Markdown...", "Add Folder...", "Import Folder", "Export Folder", "Export Package...", "Validate Package...", "Edit Manifest...", "Undo File Operation", "Redo File Operation"]);
     const printButton = Array.from(container.querySelectorAll(".toolbar-menu-items button"))
       .find((button) => button.textContent === "Print") as HTMLButtonElement;
     act(() => printButton.click());

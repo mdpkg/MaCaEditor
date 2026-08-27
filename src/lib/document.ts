@@ -102,6 +102,33 @@ export function setEntrypoint(state: DocumentState, requestedPath: string): Docu
   return { ...state, dirty: true, entrypoint: path, manifest: { ...state.manifest, entrypoint: path } };
 }
 
+export interface EditableManifestResource {
+  type: string;
+  source: string;
+  rendered: string;
+}
+
+export function updateManifestMetadata(
+  state: DocumentState,
+  values: { description: string; resources: EditableManifestResource[] },
+): DocumentState {
+  for (const resource of values.resources) {
+    if (!resource.type.trim() || !resource.source || !resource.rendered) {
+      throw new Error("Resource type, source, and rendered are required");
+    }
+    for (const path of [resource.source, resource.rendered]) {
+      validateNewPackagePath(path);
+      if (!state.files.some((file) => file.path === path)) throw new Error(`Resource file does not exist: ${path}`);
+    }
+  }
+  const manifest: Record<string, unknown> = {
+    ...state.manifest, resources: values.resources.map((resource) => ({ ...resource })),
+  };
+  if (values.description.trim()) manifest.description = values.description.trim();
+  else delete manifest.description;
+  return { ...state, dirty: true, manifest };
+}
+
 function replacePathPrefix(path: string, from: string, to: string): string {
   return path === from ? to : path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
 }
