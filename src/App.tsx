@@ -73,7 +73,7 @@ import {
   isMarkdownPath,
   packageFileMarkdownLink,
 } from "./lib/markdown";
-import { isSaveShortcut } from "./lib/shortcuts";
+import { isPackageSearchShortcut, isSaveShortcut } from "./lib/shortcuts";
 import {
   droppedFileToImage,
   importedImageDataUrl,
@@ -1212,9 +1212,13 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSaveShortcut(event)) return;
-      event.preventDefault();
-      void handleSave();
+      if (isPackageSearchShortcut(event) && doc) {
+        event.preventDefault();
+        setPackageSearchOpen(true);
+      } else if (isSaveShortcut(event)) {
+        event.preventDefault();
+        void handleSave();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
