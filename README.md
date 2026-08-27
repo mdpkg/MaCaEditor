@@ -115,6 +115,8 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 選択したフォルダに`manifest.json`がない場合は、Markdownとそのリンクを解析してMDPKG v2 manifestの候補を生成します。entrypointは`index.md`、`README.md`、パス順で最初のMarkdownの順に選択されます。参照された`.svg`／`.png`と同名の`.draw.json`、`.puml`、`.mmd`、`.tex`、`.dot`がある場合は図resourceとして関連付けます。確認画面ではentrypointとresourceを修正でき、壊れたリンク、フォルダ外リンク、曖昧な図sourceは警告されます。Open Folderでは最初のSave時に`manifest.json`を書き込み、Import Folderでは生成したmanifestを新しい`.mdpkg`へ格納します。
 
+manifest生成時は、大規模な依存・生成物を誤って取り込まないよう、`.git`、`.hg`、`.svn`、`.next`、`node_modules`、`target`、`dist`、`build`、`coverage`ディレクトリを走査対象から除外します。
+
 新しいFolderモードのDocumentを始める場合は、**File** → **Start with New Empty Folder**を選びます。親フォルダを選択して新規フォルダ名を入力すると、そのフォルダにMDPKG v2の`manifest.json`とentrypointの`index.md`が生成され、すぐに編集を開始できます。入力した名前のフォルダが既に存在する場合はエラーとなり、上書きされません。
 
 MDPKG v1は引き続き読み込めます。v1 Documentを保存すると、既存のentrypointを維持したままmanifestのversionが`2.0`へ更新されます。

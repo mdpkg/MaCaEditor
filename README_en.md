@@ -96,6 +96,8 @@ Choose **File** → **Open Folder...** to edit either an extracted mdpkg folder 
 
 Review and edit the inferred entrypoint and resources before opening the folder. Broken links, links outside the folder, and ambiguous diagram sources are shown as warnings. In Folder mode, `manifest.json` is written on the first save. **File** → **Import Folder** uses the same review flow and embeds the generated manifest in the new `.mdpkg` file.
 
+During manifest inference, `.git`, `.hg`, `.svn`, `.next`, `node_modules`, `target`, `dist`, `build`, and `coverage` are skipped so large dependency and generated-output directories are not imported accidentally.
+
 ### Creating a New `.mdpkg` File
 
 1. Click **New** from the **File** menu.
