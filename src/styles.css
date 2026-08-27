@@ -1291,6 +1291,30 @@ body {
   overflow-y: auto;
 }
 
+.manifest-inference-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.manifest-inference-warnings {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid #d6a700;
+  border-radius: 4px;
+  background: rgba(214, 167, 0, 0.12);
+}
+
+.manifest-inference-warnings h3,
+.manifest-inference-warnings ul {
+  margin: 0;
+}
+
+.manifest-inference-warnings ul {
+  padding-left: 22px;
+}
+
 .manifest-description-field {
   display: flex;
   align-items: stretch;

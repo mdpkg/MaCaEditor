@@ -13,6 +13,7 @@ import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog"
 import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog";
 import { BacklinksDialog } from "./components/BacklinksDialog";
 import { ManifestEditorDialog } from "./components/ManifestEditorDialog";
+import { InferredManifestDialog } from "./components/InferredManifestDialog";
 import { V1MigrationDialog } from "./components/V1MigrationDialog";
 import { PackageSearchDialog } from "./components/PackageSearchDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
@@ -63,7 +64,7 @@ import {
   parseDrawingFile,
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
-import type { FileInfo, ImportedFile, ImportedImage } from "./types";
+import type { FileInfo, ImportedFile, ImportedImage, PackageInfo } from "./types";
 import { isSelectionValid, isEntirelyInsideCodeBlock, type AiSelectionSnapshot, type AiTaskKind } from "./lib/aiSelection";
 import { applyAiResult } from "./lib/aiApply";
 import {
@@ -116,6 +117,7 @@ import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersist
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { diagnosePackage } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
+import { inferManifest, type ManifestInference } from "./lib/manifestInference";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -147,6 +149,13 @@ interface TableEditContext {
   end: number;
 }
 
+interface PendingInferredFolder {
+  path: string;
+  info: PackageInfo;
+  inference: ManifestInference;
+  destination?: string;
+}
+
 export default function App() {
   const [doc, setDoc] = useState<DocumentState | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -174,6 +183,7 @@ export default function App() {
   const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
   const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
   const [packageSearchOpen, setPackageSearchOpen] = useState(false);
+  const [pendingInferredFolder, setPendingInferredFolder] = useState<PendingInferredFolder | null>(null);
   const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
@@ -416,6 +426,12 @@ export default function App() {
     if (typeof result !== "string") return;
     try {
       const info = await openFolder(result);
+      if (info.manifest_generated) {
+        setPendingInferredFolder({ path: result, info, inference: inferManifest(info.files) });
+        setError(null);
+        setStatus("Review generated manifest");
+        return;
+      }
       setDoc(createFolderDocumentState(info, result));
       setSelectedPath(info.entrypoint);
       setMode("preview");
@@ -550,6 +566,18 @@ export default function App() {
       });
       if (typeof dest === "string") {
         try {
+          const sourceInfo = await openFolder(folder);
+          if (sourceInfo.manifest_generated) {
+            setPendingInferredFolder({
+              path: folder,
+              info: sourceInfo,
+              inference: inferManifest(sourceInfo.files),
+              destination: dest,
+            });
+            setError(null);
+            setStatus("Review generated manifest");
+            return;
+          }
           await importFolder(folder, dest);
           const info = await openPackage(dest);
           setDoc(createDocumentState(info, dest));
@@ -1626,6 +1654,48 @@ export default function App() {
             } catch (reason) { setError(String(reason)); setStatus("Error"); }
           }}
           onClose={() => setManifestEditorOpen(false)} />
+      )}
+      {pendingInferredFolder && (
+        <InferredManifestDialog
+          files={pendingInferredFolder.info.files.map((file) => file.path)}
+          manifest={pendingInferredFolder.inference.manifest}
+          warnings={pendingInferredFolder.inference.warnings}
+          confirmLabel={pendingInferredFolder.destination ? "Create Package" : "Open Folder"}
+          onConfirm={(manifest) => {
+            const pending = pendingInferredFolder;
+            void (async () => {
+              try {
+                if (pending.destination) {
+                  await savePackage({ path: pending.destination, manifest, files: pending.info.files });
+                  const imported = await openPackage(pending.destination);
+                  setDoc(createDocumentState(imported, pending.destination));
+                  setStatus(`Imported ${pending.path}`);
+                } else {
+                  const generatedInfo = { ...pending.info, manifest, entrypoint: manifest.entrypoint };
+                  const next = createFolderDocumentState(generatedInfo, pending.path);
+                  setDoc({ ...next, dirty: true, folderSnapshot: folderInfoFingerprint(pending.info) });
+                  setStatus(`Opened folder ${pending.path}; manifest.json will be created on save`);
+                }
+                setSelectedPath(manifest.entrypoint);
+                setMode("preview");
+                setDrawingDoc(null);
+                setDrawingPath(null);
+                setPlantUmlPath(null);
+                setMermaidPath(null);
+                setMathJaxPath(null);
+                setPendingInferredFolder(null);
+                setError(null);
+              } catch (reason) {
+                setError(String(reason));
+                setStatus("Error");
+              }
+            })();
+          }}
+          onCancel={() => {
+            setPendingInferredFolder(null);
+            setStatus("Open folder cancelled");
+          }}
+        />
       )}
       {v1MigrationOpen && doc && (
         <V1MigrationDialog entrypoint={doc.entrypoint}
