@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { markdownLinks, rewriteMarkdownLinkDestinations } from "./markdownLinks";
+import { markdownLinkAtPosition, markdownLinks, rewriteMarkdownLinkDestinations } from "./markdownLinks";
 
 describe("markdownLinks", () => {
   test("extracts inline links, images, and reference definitions from an AST", () => {
@@ -43,4 +43,10 @@ describe("rewriteMarkdownLinkDestinations", () => {
       "[notes]: moved/reference/notes.md \"Notes\"",
     ].join("\n"));
   });
+});
+
+test("finds the link destination under an editor position", () => {
+  const markdown = "See [Guide](docs/guide.md).";
+  expect(markdownLinkAtPosition(markdown, markdown.indexOf("docs"))?.destination).toBe("docs/guide.md");
+  expect(markdownLinkAtPosition(markdown, 0)).toBeNull();
 });

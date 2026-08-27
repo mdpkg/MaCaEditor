@@ -61,6 +61,22 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test("opens a Markdown link under Ctrl-click", () => {
+    const onMarkdownLinkOpen = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="[Guide](docs/guide.md)" onChange={vi.fn()}
+      onMarkdownLinkOpen={onMarkdownLinkOpen} />));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const view = EditorView.findFromDOM(editorElement)!;
+    vi.spyOn(view, "posAtCoords").mockReturnValue(10);
+    act(() => editorElement.querySelector(".cm-content")!.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, ctrlKey: true, clientX: 10, clientY: 20,
+    })));
+    expect(onMarkdownLinkOpen).toHaveBeenCalledWith("docs/guide.md");
+    act(() => root.unmount());
+  });
+
   test("uses standard mode by default and can enable Vim mode", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

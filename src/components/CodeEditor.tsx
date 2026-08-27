@@ -5,6 +5,7 @@ import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { markdownLinkAtPosition } from "../lib/markdownLinks";
 
 interface Props {
   value: string;
@@ -18,6 +19,7 @@ interface Props {
   ariaLabel?: string;
   onAiSelection?: (task: AiTaskKind) => void;
   onPackagePathDrop?: (path: string, position: number) => void;
+  onMarkdownLinkOpen?: (destination: string) => void;
 }
 
 const vimSaveHandlers = new WeakMap<object, () => void>();
@@ -49,6 +51,7 @@ export function CodeEditor({
   onSelectionChange,
   onAiSelection,
   onPackagePathDrop,
+  onMarkdownLinkOpen,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -59,6 +62,7 @@ export function CodeEditor({
   const onAiSelectionRef = useRef(onAiSelection);
   const onSaveRef = useRef(onSave);
   const onPackagePathDropRef = useRef(onPackagePathDrop);
+  const onMarkdownLinkOpenRef = useRef(onMarkdownLinkOpen);
   const [contextMenu, setContextMenu] = useState<{ from: number; to: number; text: string; hasSelection: boolean; x: number; y: number } | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -67,6 +71,7 @@ export function CodeEditor({
   onAiSelectionRef.current = onAiSelection;
   onSaveRef.current = onSave;
   onPackagePathDropRef.current = onPackagePathDrop;
+  onMarkdownLinkOpenRef.current = onMarkdownLinkOpen;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -88,6 +93,16 @@ export function CodeEditor({
         }
       }),
       EditorView.domEventHandlers({
+        mousedown: (event, view) => {
+          if (!(event.ctrlKey || event.metaKey) || !onMarkdownLinkOpenRef.current) return false;
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+          if (position === null) return false;
+          const link = markdownLinkAtPosition(view.state.doc.toString(), position);
+          if (!link) return false;
+          event.preventDefault();
+          onMarkdownLinkOpenRef.current(link.destination);
+          return true;
+        },
         dragover: (event) => {
           if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes(PACKAGE_PATH_DRAG_TYPE)) return false;
           event.preventDefault();

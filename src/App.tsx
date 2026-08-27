@@ -110,6 +110,7 @@ import {
 import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { diagnosePackage } from "./lib/packageDiagnostics";
+import { resolveMarkdownLink } from "./lib/packageNavigation";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -1461,6 +1462,13 @@ export default function App() {
                     vimMode={vimMode}
                     onSave={handleSave}
                     onPackagePathDrop={handlePackagePathDrop}
+                    onMarkdownLinkOpen={(destination) => {
+                      const target = resolveMarkdownLink(displayFile.path, destination, doc.files);
+                      if (target && isMarkdownPath(target)) {
+                        setSelectedPath(target);
+                        setMode("split");
+                      }
+                    }}
                   />
                   <MarkdownPreview
                     markdown={displayContent}

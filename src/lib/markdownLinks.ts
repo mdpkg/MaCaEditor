@@ -85,3 +85,7 @@ export function rewriteMarkdownLinkDestinations(
     source,
   );
 }
+
+export function markdownLinkAtPosition(source: string, position: number): MarkdownLink | null {
+  return markdownLinks(source).find((link) => position >= link.start && position <= link.end) ?? null;
+}

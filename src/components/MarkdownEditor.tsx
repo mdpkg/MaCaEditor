@@ -10,9 +10,10 @@ interface Props {
   vimMode?: boolean;
   onAiSelection?: (task: AiTaskKind) => void;
   onPackagePathDrop?: (path: string, position: number) => void;
+  onMarkdownLinkOpen?: (destination: string) => void;
 }
 
-export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop }: Props) {
+export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
@@ -26,6 +27,7 @@ export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionCha
       ariaLabel="Markdown source"
       onAiSelection={onAiSelection}
       onPackagePathDrop={onPackagePathDrop}
+      onMarkdownLinkOpen={onMarkdownLinkOpen}
     />
   );
 }
