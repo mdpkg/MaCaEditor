@@ -29,8 +29,11 @@ export function ManifestEditorDialog({ manifest, files, onSave, onClose }: Props
     <section className="about-dialog manifest-editor-dialog" role="dialog" aria-modal="true"
       aria-label="Manifest editor" onPointerDown={(event) => event.stopPropagation()}>
       <h2>Manifest</h2>
-      <label>Description<textarea aria-label="Description" value={description}
-        onChange={(event) => setDescription(event.target.value)} /></label>
+      <label className="manifest-description-field">
+        <span>Description</span>
+        <textarea aria-label="Description" value={description}
+          onChange={(event) => setDescription(event.target.value)} />
+      </label>
       <h3>Resources</h3>
       <datalist id="manifest-file-paths">{files.map((path) => <option key={path} value={path} />)}</datalist>
       {resources.map((resource, index) => <div className="manifest-resource-row" key={index}>

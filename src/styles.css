@@ -1284,8 +1284,24 @@ body {
   opacity: 0.7;
 }
 
-.manifest-editor-dialog textarea {
+.manifest-editor-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.manifest-description-field {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex-direction: column;
+}
+
+.manifest-description-field textarea {
+  width: 100%;
   min-height: 72px;
+  box-sizing: border-box;
   resize: vertical;
 }
 
@@ -1294,6 +1310,22 @@ body {
   grid-template-columns: 0.8fr 1fr 1fr auto;
   gap: 6px;
   margin-bottom: 6px;
+}
+
+.manifest-resource-row input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .manifest-resource-row {
+    grid-template-columns: 1fr;
+  }
+
+  .manifest-resource-row > button {
+    justify-self: end;
+  }
 }
 
 .package-search-dialog {
