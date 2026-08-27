@@ -20,7 +20,7 @@ export function applyDocumentOperation(history: DocumentHistory, next: DocumentS
 }
 
 export function undoDocumentOperation(history: DocumentHistory): DocumentHistory {
-  const entry = history.undo.at(-1);
+  const entry = history.undo[history.undo.length - 1];
   if (!entry) return history;
   return {
     present: entry.state,
@@ -30,7 +30,7 @@ export function undoDocumentOperation(history: DocumentHistory): DocumentHistory
 }
 
 export function redoDocumentOperation(history: DocumentHistory): DocumentHistory {
-  const entry = history.redo.at(-1);
+  const entry = history.redo[history.redo.length - 1];
   if (!entry) return history;
   return {
     present: entry.state,

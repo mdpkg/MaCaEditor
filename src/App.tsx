@@ -30,6 +30,7 @@ import {
   deletePath,
   imageMediaType,
   movePath,
+  pathReferenceCount,
   resourceDirectoryForMarkdown,
   setEntrypoint,
   toSaveRequest,
@@ -162,6 +163,9 @@ export default function App() {
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
   const [packageDiagnosticsOpen, setPackageDiagnosticsOpen] = useState(false);
+  const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
+  const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
+  const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
@@ -181,6 +185,35 @@ export default function App() {
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
   );
+  const recordDocumentOperation = (next: DocumentState, label: string) => {
+    if (!doc) return;
+    operationUndoRef.current.push({ state: doc, label });
+    operationRedoRef.current = [];
+    setDoc(next);
+    setOperationHistoryRevision((revision) => revision + 1);
+  };
+  const undoFileOperation = () => {
+    if (!doc) return;
+    const entry = operationUndoRef.current.pop();
+    if (!entry) return;
+    operationRedoRef.current.push({ state: doc, label: entry.label });
+    setDoc(entry.state);
+    setSelectedPath(entry.state.entrypoint);
+    setMode("preview");
+    setStatus(`Undid ${entry.label}`);
+    setOperationHistoryRevision((revision) => revision + 1);
+  };
+  const redoFileOperation = () => {
+    if (!doc) return;
+    const entry = operationRedoRef.current.pop();
+    if (!entry) return;
+    operationUndoRef.current.push({ state: doc, label: entry.label });
+    setDoc(entry.state);
+    setSelectedPath(entry.state.entrypoint);
+    setMode("preview");
+    setStatus(`Redid ${entry.label}`);
+    setOperationHistoryRevision((revision) => revision + 1);
+  };
 
   const entrypointFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === doc.entrypoint,
@@ -972,7 +1005,7 @@ export default function App() {
     const destination = parent ? `${parent}/${requested}` : requested;
     try {
       const renamed = movePath(doc, path, destination);
-      setDoc(renamed);
+      recordDocumentOperation(renamed, `rename ${path}`);
       setSelectedPath(destination);
       setMode("preview");
       setStatus(`Renamed to ${destination}; Markdown links were updated`);
@@ -991,7 +1024,7 @@ export default function App() {
       const mapPath = (current: string | null) => current === path
         ? destination
         : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
-      setDoc(moved);
+      recordDocumentOperation(moved, `move ${path}`);
       setSelectedPath((current) => mapPath(current));
       setDrawingPath((current) => mapPath(current));
       setPlantUmlPath((current) => mapPath(current));
@@ -1040,10 +1073,11 @@ export default function App() {
   const handleDelete = (path: string | null = selectedPath) => {
     if (!doc || !path) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
-    if (!window.confirm(`Delete ${fileName}? Markdown links will not be updated.`)) return;
+    const references = pathReferenceCount(doc, path);
+    if (!window.confirm(`Delete ${fileName}? ${references} Markdown reference${references === 1 ? "" : "s"} will remain unchanged.`)) return;
     try {
       const next = deletePath(doc, path);
-      setDoc(next);
+      recordDocumentOperation(next, `delete ${path}`);
       setSelectedPath(next.entrypoint);
       if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
         setDrawingDoc(null);
@@ -1230,6 +1264,10 @@ export default function App() {
         onExport={handleExport}
         onExportPackage={handleExportPackage}
         onValidatePackage={() => setPackageDiagnosticsOpen(true)}
+        onUndoFileOperation={undoFileOperation}
+        onRedoFileOperation={redoFileOperation}
+        canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
+        canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
         onAddMarkdown={handleAddMarkdown}
         onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
@@ -1282,7 +1320,7 @@ export default function App() {
                   canSetEntrypoint={(path) => path !== doc?.entrypoint && /\.(md|markdown)$/i.test(path)}
                   onSetEntrypoint={(path) => {
                     if (!doc) return;
-                    try { setDoc(setEntrypoint(doc, path)); setStatus(`Entrypoint set to ${path}`); setError(null); }
+                    try { recordDocumentOperation(setEntrypoint(doc, path), `set entrypoint to ${path}`); setStatus(`Entrypoint set to ${path}`); setError(null); }
                     catch (reason) { setError(String(reason)); setStatus("Error"); }
                   }}
                   onAddMarkdown={handleAddMarkdown}
