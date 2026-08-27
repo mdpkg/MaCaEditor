@@ -34,7 +34,11 @@ describe("Folder external synchronization", () => {
   test("updates the disk baseline after a successful Folder save", () => {
     const edited = updateFileContent(createFolderDocumentState(info, "C:/docs/book"), "README.md", "# Saved");
     const saved = markSaved(edited);
-    const disk = { ...info, files: [{ ...info.files[0], content: "# Saved" }] };
+    const disk = {
+      ...info,
+      manifest: { ...info.manifest, version: "2.0" },
+      files: [{ ...info.files[0], content: "# Saved" }],
+    };
     expect(externalFolderAction(saved, disk)).toBe("unchanged");
   });
 });

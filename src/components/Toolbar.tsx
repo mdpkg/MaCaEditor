@@ -15,6 +15,15 @@ interface Props {
   onImport: () => void;
   onExport: () => void;
   onExportPackage?: () => void;
+  onValidatePackage?: () => void;
+  onUndoFileOperation?: () => void;
+  onRedoFileOperation?: () => void;
+  canUndoFileOperation?: boolean;
+  canRedoFileOperation?: boolean;
+  onEditManifest?: () => void;
+  onSearchPackage?: () => void;
+  onAddMarkdown?: () => void;
+  onAddFolder?: () => void;
   documentKind?: "package" | "folder" | "untitled" | null;
   onInsertDrawing: () => void;
   onInsertPlantUml: () => void;
@@ -58,6 +67,15 @@ export function Toolbar({
   onImport,
   onExport,
   onExportPackage,
+  onValidatePackage = () => {},
+  onUndoFileOperation = () => {},
+  onRedoFileOperation = () => {},
+  canUndoFileOperation = false,
+  canRedoFileOperation = false,
+  onEditManifest = () => {},
+  onSearchPackage = () => {},
+  onAddMarkdown = () => {},
+  onAddFolder = () => {},
   documentKind,
   onInsertDrawing,
   onInsertPlantUml,
@@ -128,9 +146,18 @@ export function Toolbar({
             <button type="button" role="menuitem" disabled={!hasDocument || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
             <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>
             <div className="toolbar-menu-separator" role="separator" />
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddMarkdown)}>Add Markdown...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddFolder)}>Add Folder...</button>
+            <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
             <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>Export Folder</button>
             <button type="button" role="menuitem" disabled={documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
+            <div className="toolbar-menu-separator" role="separator" />
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>Validate Package...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>Edit Manifest...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSearchPackage)}>Search Package...</button>
+            <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>Undo File Operation</button>
+            <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>Redo File Operation</button>
           </div>
         )}
       </div>

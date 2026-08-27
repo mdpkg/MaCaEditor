@@ -8,7 +8,7 @@ export function isMarkdownPath(path: string): boolean {
  */
 export function resolvePackagePath(baseDir: string, target: string): string | null {
   const normalizedTarget = target.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (normalizedTarget.startsWith("/")) {
+  if (normalizedTarget.startsWith("/") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalizedTarget)) {
     return null;
   }
   const resolved = baseDir === "" ? [] : baseDir.split("/");
@@ -33,6 +33,39 @@ export function relativePackagePath(fromFile: string, toFile: string): string {
     to.shift();
   }
   return [...from.map(() => ".."), ...to].join("/");
+}
+
+function markdownDestination(path: string): string {
+  return /[\s()]/.test(path) ? `<${path}>` : path;
+}
+
+export function packageFileMarkdownLink(
+  markdownPath: string,
+  droppedPath: string,
+  files: FileInfo[],
+  manifest: Record<string, unknown>,
+): string {
+  const file = files.find((candidate) => candidate.path === droppedPath);
+  if (!file) throw new Error(`Package file not found: ${droppedPath}`);
+  const resource = Array.isArray(manifest.resources)
+    ? manifest.resources.find((item) => typeof item === "object" && item !== null &&
+        ((item as { source?: string }).source === droppedPath ||
+          (item as { rendered?: string }).rendered === droppedPath)) as
+        | { source?: string; rendered?: string }
+        | undefined
+    : undefined;
+  const targetPath = resource?.rendered ?? droppedPath;
+  const relativePath = markdownDestination(relativePackagePath(markdownPath, targetPath));
+  const fileName = targetPath.slice(targetPath.lastIndexOf("/") + 1);
+  const isAttachment = /(^|\/)attachments\//.test(droppedPath);
+  const imageLink = !isAttachment &&
+    (resource !== undefined || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(targetPath));
+  if (imageLink) {
+    const alt = fileName.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "\\$&");
+    return `![${alt}](${relativePath})`;
+  }
+  const label = fileName.replace(/[\[\]]/g, "\\$&");
+  return `[${label}](${relativePath})`;
 }
 
 export function insertMarkdownImages(
@@ -94,3 +127,4 @@ export function insertMarkdownBlock(
     cursor: position + insertion.length - suffix.length,
   };
 }
+import type { FileInfo } from "../types";

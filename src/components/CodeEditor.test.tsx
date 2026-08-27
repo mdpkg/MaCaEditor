@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CodeEditor } from "./CodeEditor";
 import { EditorView } from "codemirror";
 import { getCM, Vim, type CodeMirrorV } from "@replit/codemirror-vim";
+import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,6 +13,70 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("preserves the editor scroll position across undo", () => {
+    const restoreFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      restoreFrames.push(callback); return restoreFrames.length;
+    });
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value={"line\n".repeat(100)} onChange={vi.fn()} />));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const scroller = editorElement.querySelector(".cm-scroller") as HTMLElement;
+    scroller.scrollTop = 240;
+    act(() => editorElement.querySelector(".cm-content")!.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+    })));
+    scroller.scrollTop = 0;
+    act(() => {
+      while (restoreFrames.length > 0) restoreFrames.shift()?.(0);
+    });
+    expect(scroller.scrollTop).toBe(240);
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+
+  test("reports a package file dropped at the editor position", () => {
+    const onPackagePathDrop = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="hello" onChange={vi.fn()}
+      onPackagePathDrop={onPackagePathDrop} />));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const view = EditorView.findFromDOM(editorElement)!;
+    vi.spyOn(view, "posAtCoords").mockReturnValue(2);
+    const dataTransfer = {
+      files: [], types: [PACKAGE_PATH_DRAG_TYPE], dropEffect: "none", effectAllowed: "copyMove",
+      setData: vi.fn(), getData: (type: string) => type === PACKAGE_PATH_DRAG_TYPE ? "docs/guide.md" : "",
+    };
+    const content = editorElement.querySelector(".cm-content")!;
+    const dragOver = new MouseEvent("dragover", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 });
+    Object.defineProperty(dragOver, "dataTransfer", { value: dataTransfer });
+    act(() => content.dispatchEvent(dragOver));
+    const drop = new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 });
+    Object.defineProperty(drop, "dataTransfer", { value: dataTransfer });
+    act(() => content.dispatchEvent(drop));
+    expect(onPackagePathDrop).toHaveBeenCalledWith("docs/guide.md", 2);
+    expect(dataTransfer.dropEffect).toBe("copy");
+    act(() => root.unmount());
+  });
+
+  test("opens a Markdown link under Ctrl-click", () => {
+    const onMarkdownLinkOpen = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="[Guide](docs/guide.md)" onChange={vi.fn()}
+      onMarkdownLinkOpen={onMarkdownLinkOpen} />));
+    const editorElement = container.querySelector(".cm-editor") as HTMLElement;
+    const view = EditorView.findFromDOM(editorElement)!;
+    vi.spyOn(view, "posAtCoords").mockReturnValue(10);
+    act(() => editorElement.querySelector(".cm-content")!.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, ctrlKey: true, clientX: 10, clientY: 20,
+    })));
+    expect(onMarkdownLinkOpen).toHaveBeenCalledWith("docs/guide.md");
+    act(() => root.unmount());
+  });
+
   test("uses standard mode by default and can enable Vim mode", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -40,6 +105,46 @@ describe("CodeEditor", () => {
     expect(container.querySelector(".cm-editor")?.textContent).toContain("after");
 
     act(() => root.unmount());
+  });
+
+  test("moves the selection to a requested navigation position", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="0123456789" onChange={vi.fn()} cursorPosition={6} />));
+    const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;
+    expect(view.state.selection.main.head).toBe(6);
+    act(() => root.unmount());
+  });
+
+  test("highlights broken package link destinations", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value="[Missing](missing.md)" onChange={vi.fn()}
+      diagnosticRanges={[{ from: 10, to: 20 }]} />));
+    expect(container.querySelector(".cm-broken-package-link")?.textContent).toBe("missing.md");
+    act(() => root.unmount());
+  });
+
+  test("preserves scroll when a controlled update inserts dropped content", () => {
+    const restoreFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      restoreFrames.push(callback); return restoreFrames.length;
+    });
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value={"line\n".repeat(100)} onChange={vi.fn()} />));
+    const scroller = container.querySelector(".cm-scroller") as HTMLElement;
+    scroller.scrollTop = 320;
+    scroller.scrollLeft = 24;
+    act(() => root.render(<CodeEditor value={`[link](target.md)\n${"line\n".repeat(100)}`}
+      onChange={vi.fn()} />));
+    scroller.scrollTop = 0;
+    scroller.scrollLeft = 0;
+    act(() => { while (restoreFrames.length > 0) restoreFrames.shift()?.(0); });
+    expect(scroller.scrollTop).toBe(320);
+    expect(scroller.scrollLeft).toBe(24);
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
   });
 
   test("reports selection changes", () => {

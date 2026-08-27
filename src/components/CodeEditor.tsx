@@ -3,7 +3,11 @@ import { createPortal } from "react-dom";
 import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
+import { Compartment } from "@codemirror/state";
+import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
+import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { markdownLinkAtPosition } from "../lib/markdownLinks";
 
 interface Props {
   value: string;
@@ -16,12 +20,28 @@ interface Props {
   className?: string;
   ariaLabel?: string;
   onAiSelection?: (task: AiTaskKind) => void;
+  onPackagePathDrop?: (path: string, position: number) => void;
+  onMarkdownLinkOpen?: (destination: string) => void;
+  cursorPosition?: number | null;
+  diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
 const vimSaveHandlers = new WeakMap<object, () => void>();
 Vim.defineEx("write", "w", (editor) => {
   vimSaveHandlers.get(editor)?.();
 });
+
+function preserveScrollPosition(view: EditorView, scrollTop: number, scrollLeft: number) {
+  const restore = () => {
+    view.scrollDOM.scrollTop = scrollTop;
+    view.scrollDOM.scrollLeft = scrollLeft;
+  };
+  restore();
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
+  });
+}
 
 export function CodeEditor({
   value,
@@ -34,6 +54,10 @@ export function CodeEditor({
   ariaLabel,
   onSelectionChange,
   onAiSelection,
+  onPackagePathDrop,
+  onMarkdownLinkOpen,
+  cursorPosition = null,
+  diagnosticRanges = [],
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -43,13 +67,18 @@ export function CodeEditor({
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onAiSelectionRef = useRef(onAiSelection);
   const onSaveRef = useRef(onSave);
+  const onPackagePathDropRef = useRef(onPackagePathDrop);
+  const onMarkdownLinkOpenRef = useRef(onMarkdownLinkOpen);
   const [contextMenu, setContextMenu] = useState<{ from: number; to: number; text: string; hasSelection: boolean; x: number; y: number } | null>(null);
+  const diagnosticsCompartmentRef = useRef(new Compartment());
   valueRef.current = value;
   onChangeRef.current = onChange;
   onCursorChangeRef.current = onCursorChange;
   onSelectionChangeRef.current = onSelectionChange;
   onAiSelectionRef.current = onAiSelection;
   onSaveRef.current = onSave;
+  onPackagePathDropRef.current = onPackagePathDrop;
+  onMarkdownLinkOpenRef.current = onMarkdownLinkOpen;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -58,6 +87,10 @@ export function CodeEditor({
       basicSetup,
       ...(language === "markdown" ? [markdown()] : []),
       EditorView.lineWrapping,
+      diagnosticsCompartmentRef.current.of(EditorView.decorations.of(Decoration.set(
+        diagnosticRanges.map((range) => Decoration.mark({ class: "cm-broken-package-link" })
+          .range(Math.max(0, range.from), Math.min(valueRef.current.length, range.to))),
+      ))),
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": ariaLabel })] : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
@@ -71,6 +104,31 @@ export function CodeEditor({
         }
       }),
       EditorView.domEventHandlers({
+        mousedown: (event, view) => {
+          if (!(event.ctrlKey || event.metaKey) || !onMarkdownLinkOpenRef.current) return false;
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+          if (position === null) return false;
+          const link = markdownLinkAtPosition(view.state.doc.toString(), position);
+          if (!link) return false;
+          event.preventDefault();
+          onMarkdownLinkOpenRef.current(link.destination);
+          return true;
+        },
+        dragover: (event) => {
+          if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes(PACKAGE_PATH_DRAG_TYPE)) return false;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          return true;
+        },
+        drop: (event, view) => {
+          const path = event.dataTransfer?.getData(PACKAGE_PATH_DRAG_TYPE) ?? "";
+          if (!path || !onPackagePathDropRef.current) return false;
+          event.preventDefault();
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
+            ?? view.state.selection.main.head;
+          onPackagePathDropRef.current(path, position);
+          return true;
+        },
         contextmenu: (event, view) => {
           event.preventDefault?.();
           const sel = view.state.selection.main;
@@ -92,15 +150,25 @@ export function CodeEditor({
     ];
     const view = new EditorView({
       doc: valueRef.current,
+      selection: cursorPosition === null ? undefined : { anchor: Math.min(cursorPosition, valueRef.current.length) },
       extensions,
       parent: hostRef.current,
     });
     viewRef.current = view;
+    const preserveScrollOnUndo = (event: KeyboardEvent) => {
+      const undoOrRedo = (event.ctrlKey || event.metaKey) &&
+        (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y");
+      if (!undoOrRedo) return;
+      const { scrollTop, scrollLeft } = view.scrollDOM;
+      preserveScrollPosition(view, scrollTop, scrollLeft);
+    };
+    view.dom.addEventListener("keydown", preserveScrollOnUndo, true);
     const vimEditor = vimMode ? getCM(view) : null;
     if (vimEditor) {
       vimSaveHandlers.set(vimEditor, () => { void onSaveRef.current?.(); });
     }
     return () => {
+      view.dom.removeEventListener("keydown", preserveScrollOnUndo, true);
       if (vimEditor) vimSaveHandlers.delete(vimEditor);
       view.destroy();
       viewRef.current = null;
@@ -111,11 +179,32 @@ export function CodeEditor({
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === value) return;
     const head = Math.min(view.state.selection.main.head, value.length);
+    const { scrollTop, scrollLeft } = view.scrollDOM;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
       selection: { anchor: head },
     });
+    preserveScrollPosition(view, scrollTop, scrollLeft);
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || cursorPosition === null) return;
+    view.dispatch({ selection: { anchor: Math.min(cursorPosition, view.state.doc.length) }, scrollIntoView: true });
+    view.focus();
+  }, [cursorPosition]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const ranges = diagnosticRanges
+      .filter((range) => range.from < range.to && range.from < view.state.doc.length)
+      .map((range) => Decoration.mark({ class: "cm-broken-package-link" })
+        .range(Math.max(0, range.from), Math.min(view.state.doc.length, range.to)));
+    view.dispatch({ effects: diagnosticsCompartmentRef.current.reconfigure(
+      EditorView.decorations.of(Decoration.set(ranges)),
+    ) });
+  }, [diagnosticRanges]);
 
   useEffect(() => {
     if (!contextMenu) return;

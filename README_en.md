@@ -18,6 +18,7 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 - GitHub Flavored Markdown (GFM) support
 - Tables, task lists, strikethrough, and automatic URL linking
 - GitHub Flavored Markdown Alerts such as `> [!NOTE]`
+- YAML front matter rendered as a key-value table
 - `:::` container rendering in Rspress mode
 - Toggleable table of contents (TOC)
 - Click tables in the preview to edit them with a GUI
@@ -35,6 +36,7 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 - Create, open, save, and save `.mdpkg` files under a new name
 - Import from a folder and export to a folder
 - Browse files in the package using a tree view
+- File-type icons for folders, Markdown, images, diagrams, and other files
 - Add PNG, JPEG, GIF, WebP, and BMP images
 - Add one or multiple attachment files of any type
 - Drag and drop images into the `images` folder
@@ -89,11 +91,21 @@ The window position and size are also saved when the application exits and resto
 
 Click **☰** at the left end of the toolbar to hide the file list and expand the editing area. Click it again to show the file list.
 
+### Editing an Existing Folder (Folder Mode)
+
+Choose **File** → **Open Folder...** to edit either an extracted mdpkg folder or an existing Markdown folder directly. If `manifest.json` is missing, MaCa Editor analyzes the Markdown files and their links and generates an MDPKG v2 manifest candidate. It chooses `index.md`, then `README.md`, then the first Markdown path as the entrypoint. Linked `.svg` and `.png` files are paired with same-name `.draw.json`, `.puml`, `.mmd`, `.tex`, or `.dot` diagram sources.
+
+Review and edit the inferred entrypoint and resources before opening the folder. Broken links, links outside the folder, and ambiguous diagram sources are shown as warnings. In Folder mode, `manifest.json` is written on the first save. **File** → **Import Folder** uses the same review flow and embeds the generated manifest in the new `.mdpkg` file.
+
+During manifest inference, `.git`, `.hg`, `.svn`, `.next`, `node_modules`, `target`, `dist`, `build`, and `coverage` are skipped so large dependency and generated-output directories are not imported accidentally.
+
 ### Creating a New `.mdpkg` File
 
 1. Click **New** from the **File** menu.
 2. Edit the Markdown and add images or diagrams as needed.
 3. Choose a destination using **Save** or **Save As** from the **File** menu.
+
+Use **File** → **Edit Manifest...** to change the entrypoint, description, and resource relationships. Only existing Markdown files can be selected as the entrypoint.
 
 ### Adding an Image
 

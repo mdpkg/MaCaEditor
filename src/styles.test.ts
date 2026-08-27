@@ -105,6 +105,52 @@ describe("AI diagram generation dialog layout", () => {
   });
 });
 
+describe("manifest editor dialog layout", () => {
+  it("fits its fields inside a responsive, scrollable dialog", () => {
+    const dialogStart = styles.indexOf(".manifest-editor-dialog {");
+    const dialogBlock = dialogStart >= 0
+      ? styles.slice(dialogStart, styles.indexOf("}", dialogStart))
+      : "";
+    const descriptionStart = styles.indexOf(".manifest-description-field {");
+    const descriptionBlock = descriptionStart >= 0
+      ? styles.slice(descriptionStart, styles.indexOf("}", descriptionStart))
+      : "";
+    const inputStart = styles.indexOf(".manifest-resource-row input {");
+    const inputBlock = inputStart >= 0
+      ? styles.slice(inputStart, styles.indexOf("}", inputStart))
+      : "";
+
+    expect(dialogBlock).toContain("width: min(760px, calc(100vw - 32px))");
+    expect(dialogBlock).toContain("overflow-y: auto");
+    expect(descriptionBlock).toContain("flex-direction: column");
+    expect(descriptionBlock).toContain("align-items: stretch");
+    expect(inputBlock).toContain("min-width: 0");
+    expect(inputBlock).toContain("width: 100%");
+    expect(styles).toContain("@media (max-width: 640px)");
+    expect(styles).toContain(".manifest-resource-row > button {");
+  });
+});
+
+describe("package search dialog layout", () => {
+  it("keeps long result lists inside the dialog", () => {
+    const dialogStart = styles.indexOf(".package-search-dialog {");
+    const dialogBlock = dialogStart >= 0
+      ? styles.slice(dialogStart, styles.indexOf("}", dialogStart))
+      : "";
+    const resultsStart = styles.indexOf(".package-search-results {");
+    const resultsBlock = resultsStart >= 0
+      ? styles.slice(resultsStart, styles.indexOf("}", resultsStart))
+      : "";
+
+    expect(dialogBlock).toContain("display: flex");
+    expect(dialogBlock).toContain("flex-direction: column");
+    expect(dialogBlock).toContain("box-sizing: border-box");
+    expect(dialogBlock).toContain("overflow: hidden");
+    expect(resultsBlock).toContain("min-height: 0");
+    expect(resultsBlock).toContain("overflow-y: auto");
+  });
+});
+
 describe("drawing sidebar layout", () => {
   it("splits the drawing sidebar between the file tree and properties", () => {
     const treeStart = styles.indexOf(".sidebar-with-properties .sidebar-tree {");

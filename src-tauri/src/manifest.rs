@@ -14,6 +14,7 @@ pub struct Manifest {
     pub format: String,
     pub version: String,
     pub entrypoint: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resources: Vec<Resource>,
@@ -99,5 +100,14 @@ mod tests {
     fn rejects_invalid_json() {
         let result = Manifest::parse("not json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_the_v2_minimal_manifest_without_a_title() {
+        let manifest = Manifest::parse(
+            r#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md"}"#,
+        ).unwrap();
+        assert_eq!(manifest.entrypoint, "index.md");
+        assert!(manifest.title.is_empty());
     }
 }

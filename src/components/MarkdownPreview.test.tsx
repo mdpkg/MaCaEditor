@@ -10,6 +10,40 @@ afterEach(() => {
 });
 
 describe("MarkdownPreview", () => {
+  test("renders YAML front matter as a key-value table", () => {
+    const onEditTable = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={"---\ntitle: 開発者テスト入門\nauthor: mikoto2000\ndate: 2026/02/14\ntags:\n  - test\n  - docs\n---\n\n# 本文"}
+        baseDir=""
+        files={[]}
+        onEditTable={onEditTable}
+        showToc
+      />,
+    ));
+
+    const table = container.querySelector("table.markdown-frontmatter");
+    expect(table).not.toBeNull();
+    expect(Array.from(table!.querySelectorAll("tr")).map((row) =>
+      Array.from(row.children).map((cell) => cell.textContent),
+    )).toEqual([
+      ["title", "開発者テスト入門"],
+      ["author", "mikoto2000"],
+      ["date", "2026/02/14"],
+      ["tags", "test, docs"],
+    ]);
+    expect(table!.querySelectorAll("th")).toHaveLength(4);
+    expect(table!.classList.contains("editable-markdown-table")).toBe(false);
+    act(() => (table as HTMLTableElement).click());
+    expect(onEditTable).not.toHaveBeenCalled();
+    expect(container.querySelector("h2")?.textContent).toBe("目次");
+    expect(container.querySelector("h1")?.textContent).toBe("本文");
+    act(() => root.unmount());
+  });
+
   test("restores and reports the Markdown scroll ratio", () => {
     let restoreFrame: FrameRequestCallback | undefined;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -102,6 +136,19 @@ describe("MarkdownPreview", () => {
     expect(link.download).toBe("notes.txt");
     expect(link.href).toContain("data:text/plain;charset=utf-8,");
     expect(decodeURIComponent(link.href)).toContain("日本語のメモ");
+    act(() => root.unmount());
+  });
+
+  test("opens a package markdown link inside the editor", () => {
+    const onNavigateMarkdown = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<MarkdownPreview markdown="[Guide](../guide.md)" baseDir="docs"
+      files={[{ path: "guide.md", is_text: true, content: "# Guide", base64: null }]}
+      onNavigateMarkdown={onNavigateMarkdown} />));
+    const link = container.querySelector("a") as HTMLAnchorElement;
+    act(() => link.click());
+    expect(onNavigateMarkdown).toHaveBeenCalledWith("guide.md");
     act(() => root.unmount());
   });
 

@@ -10,6 +10,12 @@ import { AiChatPanel } from "./components/AiChatPanel";
 import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
 import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
+import { PackageDiagnosticsDialog } from "./components/PackageDiagnosticsDialog";
+import { BacklinksDialog } from "./components/BacklinksDialog";
+import { ManifestEditorDialog } from "./components/ManifestEditorDialog";
+import { InferredManifestDialog } from "./components/InferredManifestDialog";
+import { V1MigrationDialog } from "./components/V1MigrationDialog";
+import { PackageSearchDialog } from "./components/PackageSearchDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
@@ -23,13 +29,18 @@ import {
   createDocumentState,
   createFolderDocumentState,
   addAttachment,
+  addDirectory,
   addImage,
-  deleteAsset,
+  addMarkdown,
+  deletePath,
   imageMediaType,
-  isDeletableAsset,
-  renameAsset,
+  movePath,
+  pathReferenceCount,
+  resourceDirectoryForMarkdown,
+  setEntrypoint,
   toSaveRequest,
   updateFileContent,
+  updateManifestMetadata,
 } from "./lib/document";
 import {
   createNewPackage,
@@ -53,7 +64,7 @@ import {
   parseDrawingFile,
   saveDrawingToDocument,
 } from "./lib/drawing/docIntegration";
-import type { FileInfo, ImportedFile, ImportedImage } from "./types";
+import type { FileInfo, ImportedFile, ImportedImage, PackageInfo } from "./types";
 import { isSelectionValid, isEntirelyInsideCodeBlock, type AiSelectionSnapshot, type AiTaskKind } from "./lib/aiSelection";
 import { applyAiResult } from "./lib/aiApply";
 import {
@@ -61,8 +72,9 @@ import {
   insertMarkdownImages,
   insertMarkdownLinks,
   isMarkdownPath,
+  packageFileMarkdownLink,
 } from "./lib/markdown";
-import { isSaveShortcut } from "./lib/shortcuts";
+import { isPackageSearchShortcut, isSaveShortcut } from "./lib/shortcuts";
 import {
   droppedFileToImage,
   importedImageDataUrl,
@@ -103,6 +115,9 @@ import {
 } from "./lib/editorPreferences";
 import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
+import { diagnosePackage } from "./lib/packageDiagnostics";
+import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
+import { inferManifest, type ManifestInference } from "./lib/manifestInference";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
@@ -134,6 +149,13 @@ interface TableEditContext {
   end: number;
 }
 
+interface PendingInferredFolder {
+  path: string;
+  info: PackageInfo;
+  inference: ManifestInference;
+  destination?: string;
+}
+
 export default function App() {
   const [doc, setDoc] = useState<DocumentState | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -155,6 +177,16 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
+  const [packageDiagnosticsOpen, setPackageDiagnosticsOpen] = useState(false);
+  const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
+  const [navigationPosition, setNavigationPosition] = useState<number | null>(null);
+  const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
+  const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
+  const [packageSearchOpen, setPackageSearchOpen] = useState(false);
+  const [pendingInferredFolder, setPendingInferredFolder] = useState<PendingInferredFolder | null>(null);
+  const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
+  const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
+  const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
@@ -174,6 +206,35 @@ export default function App() {
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
   );
+  const recordDocumentOperation = (next: DocumentState, label: string) => {
+    if (!doc) return;
+    operationUndoRef.current.push({ state: doc, label });
+    operationRedoRef.current = [];
+    setDoc(next);
+    setOperationHistoryRevision((revision) => revision + 1);
+  };
+  const undoFileOperation = () => {
+    if (!doc) return;
+    const entry = operationUndoRef.current.pop();
+    if (!entry) return;
+    operationRedoRef.current.push({ state: doc, label: entry.label });
+    setDoc(entry.state);
+    setSelectedPath(entry.state.entrypoint);
+    setMode("preview");
+    setStatus(`Undid ${entry.label}`);
+    setOperationHistoryRevision((revision) => revision + 1);
+  };
+  const redoFileOperation = () => {
+    if (!doc) return;
+    const entry = operationRedoRef.current.pop();
+    if (!entry) return;
+    operationUndoRef.current.push({ state: doc, label: entry.label });
+    setDoc(entry.state);
+    setSelectedPath(entry.state.entrypoint);
+    setMode("preview");
+    setStatus(`Redid ${entry.label}`);
+    setOperationHistoryRevision((revision) => revision + 1);
+  };
 
   const entrypointFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === doc.entrypoint,
@@ -365,6 +426,12 @@ export default function App() {
     if (typeof result !== "string") return;
     try {
       const info = await openFolder(result);
+      if (info.manifest_generated) {
+        setPendingInferredFolder({ path: result, info, inference: inferManifest(info.files) });
+        setError(null);
+        setStatus("Review generated manifest");
+        return;
+      }
       setDoc(createFolderDocumentState(info, result));
       setSelectedPath(info.entrypoint);
       setMode("preview");
@@ -408,7 +475,7 @@ export default function App() {
     }
   };
 
-  const handleSave = async () => {
+  const performSave = async () => {
     if (!doc) return;
     if (doc.origin.kind === "folder" && externalConflictRef.current) {
       setError("External changes conflict with unsaved edits. Reopen the folder before saving.");
@@ -416,7 +483,7 @@ export default function App() {
       return;
     }
     if (doc.origin.kind === "untitled") {
-      await handleSaveAs();
+      await performSaveAs();
       return;
     }
     try {
@@ -428,7 +495,7 @@ export default function App() {
     }
   };
 
-  const handleSaveAs = async () => {
+  const performSaveAs = async () => {
     if (!doc) return;
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
@@ -444,6 +511,19 @@ export default function App() {
         setStatus("Error");
       }
     }
+  };
+
+  const handleSave = async () => {
+    if (!doc) return;
+    if (String(doc.manifest.version ?? "").startsWith("1.")) {
+      setV1MigrationOpen(true);
+      return;
+    }
+    await performSave();
+  };
+
+  const handleSaveAs = async () => {
+    await performSaveAs();
   };
 
   const handlePrint = () => {
@@ -486,6 +566,18 @@ export default function App() {
       });
       if (typeof dest === "string") {
         try {
+          const sourceInfo = await openFolder(folder);
+          if (sourceInfo.manifest_generated) {
+            setPendingInferredFolder({
+              path: folder,
+              info: sourceInfo,
+              inference: inferManifest(sourceInfo.files),
+              destination: dest,
+            });
+            setError(null);
+            setStatus("Review generated manifest");
+            return;
+          }
           await importFolder(folder, dest);
           const info = await openPackage(dest);
           setDoc(createDocumentState(info, dest));
@@ -652,7 +744,7 @@ export default function App() {
       ? selectedFile
       : entrypointFile;
     const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
-    const baseDir = DEFAULT_DRAWING_DIR;
+    const baseDir = resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, DEFAULT_DRAWING_DIR);
     const empty: DrawingDocument = {
       format: "maca-drawing",
       version: "1.0",
@@ -686,6 +778,7 @@ export default function App() {
     try {
       const svg = await renderPlantUml(DEFAULT_PLANTUML_SOURCE);
       const added = addPlantUmlToDocument(doc, DEFAULT_PLANTUML_SOURCE, svg, "PlantUML", {
+        baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
         markdownPath: markdownFile?.path,
         cursor,
       });
@@ -728,6 +821,7 @@ export default function App() {
     try {
       const svg = await renderMermaid(DEFAULT_MERMAID_SOURCE);
       const added = addMermaidToDocument(doc, DEFAULT_MERMAID_SOURCE, svg, "Mermaid", {
+        baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
         markdownPath: markdownFile?.path,
         cursor,
       });
@@ -782,6 +876,7 @@ export default function App() {
     const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
     const placeholderSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"></svg>';
     const added = addMathJaxToDocument(doc, DEFAULT_MATHJAX_SOURCE, placeholderSvg, "MathJax", {
+      baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
       markdownPath: markdownFile?.path,
       cursor,
     });
@@ -820,7 +915,7 @@ export default function App() {
     let next = doc;
     const addedPaths: string[] = [];
     for (const image of images) {
-      const added = addImage(next, image.file_name, image.base64);
+      const added = addImage(next, image.file_name, image.base64, markdownFile?.path ?? doc.entrypoint);
       next = added.state;
       addedPaths.push(added.path);
     }
@@ -862,7 +957,7 @@ export default function App() {
     let next = doc;
     const addedPaths: string[] = [];
     for (const attachment of attachments) {
-      const added = addAttachment(next, attachment.file_name, attachment.base64);
+      const added = addAttachment(next, attachment.file_name, attachment.base64, markdownFile?.path ?? doc.entrypoint);
       next = added.state;
       addedPaths.push(added.path);
     }
@@ -950,27 +1045,22 @@ export default function App() {
   };
 
   const isRenameablePath = (path: string | null) => path !== null && (
-    /\.(png|jpe?g|gif|webp|bmp)$/i.test(path) ||
-    /^attachments\/[^/]+$/i.test(path) ||
-    doc?.manifest.resources instanceof Array && doc.manifest.resources.some((item) =>
-      typeof item === "object" && item !== null &&
-      ((item as { source?: string }).source === path || (item as { rendered?: string }).rendered === path))
+    doc?.files.some((file) => file.path === path) === true ||
+    doc?.directories?.includes(path) === true
   );
   const handleRename = (path: string | null = selectedPath) => {
     if (!doc || !path || !isRenameablePath(path)) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
-    const currentName = fileName.replace(/\.draw\.json$|\.[^.]+$/i, "");
-    const requested = window.prompt("New name", currentName);
-    if (requested === null || requested.trim() === "" || requested === currentName) return;
+    const requested = window.prompt("New name", fileName);
+    if (requested === null || requested.trim() === "" || requested === fileName) return;
+    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const destination = parent ? `${parent}/${requested}` : requested;
     try {
-      const renamed = renameAsset(doc, path, requested);
-      setDoc(renamed.state);
-      setSelectedPath(renamed.path);
-      if (drawingPath === path) setDrawingPath(renamed.path);
-      if (plantUmlPath === path) setPlantUmlPath(renamed.path);
-      if (mermaidPath === path) setMermaidPath(renamed.path);
-      if (mathJaxPath === path) setMathJaxPath(renamed.path);
-      setStatus(`Renamed to ${renamed.path}`);
+      const renamed = movePath(doc, path, destination);
+      recordDocumentOperation(renamed, `rename ${path}`);
+      setSelectedPath(destination);
+      setMode("preview");
+      setStatus(`Renamed to ${destination}; Markdown links were updated`);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -978,13 +1068,68 @@ export default function App() {
     }
   };
 
-  const handleDelete = (path: string | null = selectedPath) => {
-    if (!doc || !path || !isDeletableAsset(doc, path)) return;
-    const fileName = path.slice(path.lastIndexOf("/") + 1);
-    if (!window.confirm(`Delete ${fileName}?`)) return;
+  const applyMove = (path: string, destination: string) => {
+    if (!doc) return;
+    if (destination === path) return;
     try {
-      const next = deleteAsset(doc, path);
-      setDoc(next);
+      const moved = movePath(doc, path, destination);
+      const mapPath = (current: string | null) => current === path
+        ? destination
+        : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
+      recordDocumentOperation(moved, `move ${path}`);
+      setSelectedPath((current) => mapPath(current));
+      setDrawingPath((current) => mapPath(current));
+      setPlantUmlPath((current) => mapPath(current));
+      setMermaidPath((current) => mapPath(current));
+      setMathJaxPath((current) => mapPath(current));
+      setStatus(`Moved to ${destination}; Markdown links were updated`); setError(null);
+    } catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleMove = (path: string) => {
+    const destination = window.prompt("Destination path", path);
+    if (!destination) return;
+    applyMove(path, destination);
+  };
+
+  const contextDirectory = (contextPath?: string): string => {
+    if (!doc || !contextPath) return "";
+    const isDirectory = doc.directories?.includes(contextPath) === true ||
+      (!doc.files.some((file) => file.path === contextPath) &&
+        doc.files.some((file) => file.path.startsWith(`${contextPath}/`)));
+    if (isDirectory) return contextPath;
+    return contextPath.includes("/") ? contextPath.slice(0, contextPath.lastIndexOf("/")) : "";
+  };
+
+  const handleAddMarkdown = (contextPath?: string) => {
+    if (!doc) return;
+    const directory = contextDirectory(contextPath);
+    const requested = window.prompt("Markdown path", `${directory ? `${directory}/` : ""}untitled.md`);
+    if (!requested) return;
+    try {
+      const next = addMarkdown(doc, requested, `# ${requested.slice(requested.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "")}\n`);
+      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); setError(null);
+      setStatus(`Added ${requested}`);
+    } catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleAddFolder = (contextPath?: string) => {
+    if (!doc) return;
+    const directory = contextDirectory(contextPath);
+    const requested = window.prompt("Folder path (empty folders are not saved)", `${directory ? `${directory}/` : ""}folder`);
+    if (!requested) return;
+    try { setDoc(addDirectory(doc, requested)); setStatus(`Added ${requested}; empty folders are not saved`); setError(null); }
+    catch (reason) { setError(String(reason)); setStatus("Error"); }
+  };
+
+  const handleDelete = (path: string | null = selectedPath) => {
+    if (!doc || !path) return;
+    const fileName = path.slice(path.lastIndexOf("/") + 1);
+    const references = pathReferenceCount(doc, path);
+    if (!window.confirm(`Delete ${fileName}? ${references} Markdown reference${references === 1 ? "" : "s"} will remain unchanged.`)) return;
+    try {
+      const next = deletePath(doc, path);
+      recordDocumentOperation(next, `delete ${path}`);
       setSelectedPath(next.entrypoint);
       if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
         setDrawingDoc(null);
@@ -1003,7 +1148,7 @@ export default function App() {
         setMathJaxPath(null);
         setMode("preview");
       }
-      setStatus(`Deleted ${fileName}`);
+      setStatus(`Deleted ${fileName}; Markdown links were not updated`);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -1095,9 +1240,13 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSaveShortcut(event)) return;
-      event.preventDefault();
-      void handleSave();
+      if (isPackageSearchShortcut(event) && doc) {
+        event.preventDefault();
+        setPackageSearchOpen(true);
+      } else if (isSaveShortcut(event)) {
+        event.preventDefault();
+        void handleSave();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1111,6 +1260,21 @@ export default function App() {
       ? selectedFile.path.slice(0, selectedFile.path.lastIndexOf("/"))
       : ""
     : entrypointDir();
+
+  const handlePackagePathDrop = (path: string, position: number) => {
+    if (!doc || !displayFile || !displayIsMarkdown || displayFile.content === null) return;
+    try {
+      const link = packageFileMarkdownLink(displayFile.path, path, doc.files, doc.manifest);
+      const inserted = insertMarkdownBlock(displayFile.content, position, link);
+      setDoc(updateFileContent(doc, displayFile.path, inserted.content));
+      editorCursorRef.current = inserted.cursor;
+      setStatus(`Inserted link to ${path}`);
+      setError(null);
+    } catch (reason) {
+      setError(String(reason));
+      setStatus("Error");
+    }
+  };
 
   useEffect(() => {
     const area = documentAreaRef.current;
@@ -1155,6 +1319,15 @@ export default function App() {
         onImport={handleImport}
         onExport={handleExport}
         onExportPackage={handleExportPackage}
+        onValidatePackage={() => setPackageDiagnosticsOpen(true)}
+        onUndoFileOperation={undoFileOperation}
+        onRedoFileOperation={redoFileOperation}
+        canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
+        canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
+        onEditManifest={() => setManifestEditorOpen(true)}
+        onSearchPackage={() => setPackageSearchOpen(true)}
+        onAddMarkdown={handleAddMarkdown}
+        onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
@@ -1187,14 +1360,32 @@ export default function App() {
               <div className="sidebar-tree">
                 <FileTree
                   files={doc?.files ?? []}
+                  manifest={doc?.manifest}
+                  directories={doc?.directories}
                   selectedPath={selectedPath}
                   onSelect={handleSelect}
                   onEditMarkdown={handleEditMarkdown}
                   onDropImages={handleDropImages}
+                  imageDropDirectory={resourceDirectoryForMarkdown(
+                    selectedFile && /\.(md|markdown)$/i.test(selectedFile.path) ? selectedFile.path : doc?.entrypoint ?? "index.md",
+                    "images",
+                  )}
                   canRename={isRenameablePath}
                   onRename={handleRename}
-                  canDelete={(path) => doc !== null && isDeletableAsset(doc, path)}
+                  canDelete={(path) => doc !== null && !(doc.entrypoint === path || doc.entrypoint.startsWith(`${path}/`))}
                   onDelete={handleDelete}
+                  canMove={() => doc !== null}
+                  onMove={handleMove}
+                  canSetEntrypoint={(path) => path !== doc?.entrypoint && /\.(md|markdown)$/i.test(path)}
+                  onSetEntrypoint={(path) => {
+                    if (!doc) return;
+                    try { recordDocumentOperation(setEntrypoint(doc, path), `set entrypoint to ${path}`); setStatus(`Entrypoint set to ${path}`); setError(null); }
+                    catch (reason) { setError(String(reason)); setStatus("Error"); }
+                  }}
+                  onAddMarkdown={handleAddMarkdown}
+                  onAddFolder={handleAddFolder}
+                  onDropPath={applyMove}
+                  onShowReferences={setBacklinksTarget}
                 />
               </div>
             )}
@@ -1312,6 +1503,7 @@ export default function App() {
                     onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                     onDownloadAttachment={handleDownloadAttachment}
+                    onNavigateMarkdown={(path) => { setSelectedPath(path); setMode("preview"); }}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
                     Edit
@@ -1321,13 +1513,27 @@ export default function App() {
               {mode === "split" && (
                 <SynchronizedScrollView>
                   <MarkdownEditor
+                    key={displayFile.path}
                     value={displayContent}
                     onChange={handleContentChange}
                     onCursorChange={(position) => { editorCursorRef.current = position; }}
+                    cursorPosition={navigationPosition}
+                    diagnosticRanges={diagnosePackage(doc)
+                      .filter((item) => item.path === displayFile.path && item.offset !== undefined &&
+                        ["missing-link", "outside-package-link", "link-case-mismatch"].includes(item.code))
+                      .map((item) => ({ from: item.offset!, to: item.offset! + (item.target?.length ?? 1) }))}
                     onSelectionChange={handleSelectionChange}
                     onAiSelection={handleAiSelection}
                     vimMode={vimMode}
                     onSave={handleSave}
+                    onPackagePathDrop={handlePackagePathDrop}
+                    onMarkdownLinkOpen={(destination) => {
+                      const target = resolveMarkdownLink(displayFile.path, destination, doc.files);
+                      if (target && isMarkdownPath(target)) {
+                        setSelectedPath(target);
+                        setMode("split");
+                      }
+                    }}
                   />
                   <MarkdownPreview
                     markdown={displayContent}
@@ -1345,6 +1551,7 @@ export default function App() {
                     onEditMathJax={handleEditMathJaxFromPreview}
                     onEditTable={(start, end) => handleEditTable(displayFile.path, start, end)}
                     onDownloadAttachment={handleDownloadAttachment}
+                    onNavigateMarkdown={(path) => { setSelectedPath(path); setMode("preview"); }}
                   />
                 </SynchronizedScrollView>
               )}
@@ -1411,6 +1618,100 @@ export default function App() {
           text={thirdPartyLicenses}
           onClose={() => setThirdPartyLicensesOpen(false)}
         />
+      )}
+      {packageDiagnosticsOpen && doc && (
+        <PackageDiagnosticsDialog
+          diagnostics={diagnosePackage(doc)}
+          onNavigate={(path) => {
+            if (doc.files.some((file) => file.path === path)) {
+              setSelectedPath(path);
+              if (isMarkdownPath(path)) setMode("split");
+            }
+            setPackageDiagnosticsOpen(false);
+          }}
+          onClose={() => setPackageDiagnosticsOpen(false)}
+        />
+      )}
+      {backlinksTarget && doc && (
+        <BacklinksDialog
+          target={backlinksTarget}
+          backlinks={findBacklinks(backlinksTarget, doc.files)}
+          onNavigate={(path, offset) => {
+            editorCursorRef.current = offset;
+            setNavigationPosition(offset);
+            setSelectedPath(path);
+            setMode("split");
+            setBacklinksTarget(null);
+          }}
+          onClose={() => setBacklinksTarget(null)}
+        />
+      )}
+      {manifestEditorOpen && doc && (
+        <ManifestEditorDialog manifest={doc.manifest} files={doc.files.map((file) => file.path)}
+          onSave={(values) => {
+            try {
+              recordDocumentOperation(updateManifestMetadata(doc, values), "edit manifest");
+              setManifestEditorOpen(false); setStatus("Manifest updated"); setError(null);
+            } catch (reason) { setError(String(reason)); setStatus("Error"); }
+          }}
+          onClose={() => setManifestEditorOpen(false)} />
+      )}
+      {pendingInferredFolder && (
+        <InferredManifestDialog
+          files={pendingInferredFolder.info.files.map((file) => file.path)}
+          manifest={pendingInferredFolder.inference.manifest}
+          warnings={pendingInferredFolder.inference.warnings}
+          confirmLabel={pendingInferredFolder.destination ? "Create Package" : "Open Folder"}
+          onConfirm={(manifest) => {
+            const pending = pendingInferredFolder;
+            void (async () => {
+              try {
+                if (pending.destination) {
+                  await savePackage({ path: pending.destination, manifest, files: pending.info.files });
+                  const imported = await openPackage(pending.destination);
+                  setDoc(createDocumentState(imported, pending.destination));
+                  setStatus(`Imported ${pending.path}`);
+                } else {
+                  const generatedInfo = { ...pending.info, manifest, entrypoint: manifest.entrypoint };
+                  const next = createFolderDocumentState(generatedInfo, pending.path);
+                  setDoc({ ...next, dirty: true, folderSnapshot: folderInfoFingerprint(pending.info) });
+                  setStatus(`Opened folder ${pending.path}; manifest.json will be created on save`);
+                }
+                setSelectedPath(manifest.entrypoint);
+                setMode("preview");
+                setDrawingDoc(null);
+                setDrawingPath(null);
+                setPlantUmlPath(null);
+                setMermaidPath(null);
+                setMathJaxPath(null);
+                setPendingInferredFolder(null);
+                setError(null);
+              } catch (reason) {
+                setError(String(reason));
+                setStatus("Error");
+              }
+            })();
+          }}
+          onCancel={() => {
+            setPendingInferredFolder(null);
+            setStatus("Open folder cancelled");
+          }}
+        />
+      )}
+      {v1MigrationOpen && doc && (
+        <V1MigrationDialog entrypoint={doc.entrypoint}
+          onOverwrite={() => { setV1MigrationOpen(false); void performSave(); }}
+          onSaveAs={() => { setV1MigrationOpen(false); void performSaveAs(); }}
+          onCancel={() => setV1MigrationOpen(false)} />
+      )}
+      {packageSearchOpen && doc && (
+        <PackageSearchDialog files={doc.files}
+          onNavigate={(path, offset) => {
+            setNavigationPosition(offset); setSelectedPath(path);
+            setMode(isMarkdownPath(path) ? "split" : "preview");
+            setPackageSearchOpen(false);
+          }}
+          onClose={() => setPackageSearchOpen(false)} />
       )}
       <StatusBar
         message={status}

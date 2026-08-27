@@ -10,6 +10,89 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("shows icons for folders and each file kind", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[
+        { path: "docs/guide.md", is_text: true, content: "", base64: null },
+        { path: "images/photo.png", is_text: false, content: null, base64: "AA==" },
+        { path: "diagrams/flow.puml", is_text: true, content: "", base64: null },
+        { path: "diagrams/flow.svg", is_text: true, content: "", base64: null },
+        { path: "attachments/spec.pdf", is_text: false, content: null, base64: "AA==" },
+      ]}
+      manifest={{ resources: [{
+        type: "plantuml", source: "diagrams/flow.puml", rendered: "diagrams/flow.svg",
+      }] }}
+      selectedPath={null} onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()} />));
+
+    const iconKind = (name: string) => [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent?.trim().endsWith(name))
+      ?.querySelector<HTMLElement>(".tree-item-icon")?.dataset.iconKind;
+    expect(iconKind("docs")).toBe("folder");
+    expect(iconKind("guide.md")).toBe("markdown");
+    expect(iconKind("photo.png")).toBe("image");
+    expect(iconKind("flow.puml")).toBe("diagram");
+    expect(iconKind("flow.svg")).toBe("diagram");
+    expect(iconKind("spec.pdf")).toBe("other");
+    act(() => root.unmount());
+  });
+
+  test("moves a package file into a folder by drag and drop", () => {
+    const onDropPath = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[
+        { path: "guide.md", is_text: true, content: "", base64: null },
+        { path: "docs/index.md", is_text: true, content: "", base64: null },
+        { path: "archive/index.md", is_text: true, content: "", base64: null },
+      ]}
+      selectedPath="guide.md" onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+      onDropPath={onDropPath} />));
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      files: [], dropEffect: "none", effectAllowed: "all",
+      setData: (type: string, value: string) => values.set(type, value),
+      getData: (type: string) => values.get(type) ?? "",
+    };
+    const guide = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    const docs = [...container.querySelectorAll(".tree-dir")]
+      .find((item) => item.textContent?.trim().endsWith("docs")) as HTMLDivElement;
+    const dragStart = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(dragStart, "dataTransfer", { value: dataTransfer });
+    act(() => guide.dispatchEvent(dragStart));
+    expect(dataTransfer.effectAllowed).toBe("copyMove");
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: dataTransfer });
+    act(() => docs.dispatchEvent(drop));
+    expect(onDropPath).toHaveBeenCalledWith("guide.md", "docs/guide.md");
+    const archive = [...container.querySelectorAll(".tree-dir")]
+      .find((item) => item.textContent?.trim().endsWith("archive")) as HTMLDivElement;
+    const folderDragStart = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(folderDragStart, "dataTransfer", { value: dataTransfer });
+    act(() => docs.dispatchEvent(folderDragStart));
+    const folderDrop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(folderDrop, "dataTransfer", { value: dataTransfer });
+    act(() => archive.dispatchEvent(folderDrop));
+    expect(onDropPath).toHaveBeenCalledWith("docs", "archive/docs");
+    act(() => root.unmount());
+  });
+
+  test("shows transient empty directories", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree files={[]} directories={["guides/drafts"]} selectedPath={null}
+      onSelect={vi.fn()} onDropImages={vi.fn()} canRename={() => false} onRename={vi.fn()}
+      canDelete={() => false} onDelete={vi.fn()} />));
+    expect(container.textContent).toContain("guides");
+    expect(container.textContent).toContain("drafts");
+    act(() => root.unmount());
+  });
+
   test("shows the attachments directory even before a file is added", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -96,7 +179,7 @@ describe("FileTree", () => {
       bubbles: true, cancelable: true, clientX: 40, clientY: 50,
     })));
 
-    expect(onSelect).toHaveBeenCalledWith("images/photo.png");
+    expect(onSelect).not.toHaveBeenCalled();
     const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
     expect(menu.style.left).toBe("40px");
     expect(menu.style.top).toBe("50px");
@@ -161,6 +244,78 @@ describe("FileTree", () => {
     act(() => rename.click());
     expect(onRename).toHaveBeenCalledWith("images/photo.png");
     expect(document.querySelector(".file-tree-context-menu")).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test("offers move and entrypoint actions for markdown", () => {
+    const onMove = vi.fn(); const onSetEntrypoint = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[{ path: "guide.md", is_text: true, content: "", base64: null }]}
+      selectedPath={null} onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => true} onRename={vi.fn()} canDelete={() => true} onDelete={vi.fn()}
+      canMove={() => true} onMove={onMove} canSetEntrypoint={(path) => path === "guide.md"}
+      onSetEntrypoint={onSetEntrypoint} />));
+    const file = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    act(() => file.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
+    act(() => buttons.find((button) => button.textContent === "Move")!.click());
+    expect(onMove).toHaveBeenCalledWith("guide.md");
+    act(() => file.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])
+      .find((button) => button.textContent === "Set as entrypoint")!.click());
+    expect(onSetEntrypoint).toHaveBeenCalledWith("guide.md");
+    act(() => root.unmount());
+  });
+
+  test("offers references for a package path", () => {
+    const onShowReferences = vi.fn(); const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree files={[{ path: "guide.md", is_text: true, content: "", base64: null }]}
+      selectedPath={null} onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+      onShowReferences={onShowReferences} />));
+    const guide = [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent === "guide.md") as HTMLDivElement;
+    act(() => guide
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    const button = [...document.querySelectorAll(".file-tree-context-menu button")]
+      .find((item) => item.textContent === "Show References") as HTMLButtonElement;
+    act(() => button.click());
+    expect(onShowReferences).toHaveBeenCalledWith("guide.md");
+    act(() => root.unmount());
+  });
+
+  test("offers add actions without changing the current selection", () => {
+    const onSelect = vi.fn(); const onAddMarkdown = vi.fn(); const onAddFolder = vi.fn();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[{ path: "docs/guide.md", is_text: true, content: "", base64: null }]}
+      selectedPath="docs/guide.md" onSelect={onSelect} onDropImages={vi.fn()}
+      canRename={() => true} onRename={vi.fn()} canDelete={() => true} onDelete={vi.fn()}
+      canMove={() => true} onMove={vi.fn()}
+      onAddMarkdown={onAddMarkdown} onAddFolder={onAddFolder} />));
+    const docs = [...container.querySelectorAll(".tree-dir")]
+      .find((item) => item.textContent?.trim().endsWith("docs")) as HTMLDivElement;
+    act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    expect(onSelect).not.toHaveBeenCalled();
+    const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
+    const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "Rename", "Move", "Delete", "Add Markdown", "Add Folder",
+    ]);
+    expect([...menu.children].map((child) => child.textContent)).toEqual([
+      "Rename", "Move", "Delete", "", "Add Markdown", "Add Folder",
+    ]);
+    expect(menu.children[3].className).toBe("file-tree-context-menu-divider");
+    act(() => buttons[3].click());
+    expect(onAddMarkdown).toHaveBeenCalledWith("docs");
+    act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])[4].click());
+    expect(onAddFolder).toHaveBeenCalledWith("docs");
     act(() => root.unmount());
   });
 });

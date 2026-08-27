@@ -1,18 +1,48 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { File as FileIcon, FileText, Folder, FolderOpen, Image as ImageIcon, Workflow, type LucideIcon } from "lucide-react";
 import type { FileInfo } from "../types";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
+import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { fileTreeIconKind, type FileTreeIconKind } from "../lib/fileTreeIcons";
 
 interface Props {
   files: FileInfo[];
+  manifest?: Record<string, unknown>;
+  directories?: string[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
   onEditMarkdown?: (path: string) => void;
   onDropImages: (files: File[]) => void;
+  imageDropDirectory?: string;
   canRename: (path: string) => boolean;
   onRename: (path: string) => void;
   canDelete: (path: string) => boolean;
   onDelete: (path: string) => void;
+  canMove?: (path: string) => boolean;
+  onMove?: (path: string) => void;
+  canSetEntrypoint?: (path: string) => boolean;
+  onSetEntrypoint?: (path: string) => void;
+  onAddMarkdown?: (contextPath: string) => void;
+  onAddFolder?: (contextPath: string) => void;
+  onDropPath?: (sourcePath: string, destinationPath: string) => void;
+  onShowReferences?: (path: string) => void;
+}
+
+const fileIcons: Record<FileTreeIconKind, LucideIcon> = {
+  markdown: FileText,
+  image: ImageIcon,
+  diagram: Workflow,
+  other: FileIcon,
+};
+
+function TreeIcon({ kind, open }: { kind: FileTreeIconKind | "folder"; open?: boolean }) {
+  const Icon = kind === "folder" ? (open ? FolderOpen : Folder) : fileIcons[kind];
+  const label = kind === "folder" ? "Folder" : kind === "markdown" ? "Markdown"
+    : kind === "image" ? "Image" : kind === "diagram" ? "Diagram" : "File";
+  return <span className="tree-item-icon" data-icon-kind={kind} role="img" aria-label={label}>
+    <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
+  </span>;
 }
 
 function TreeItem({
@@ -23,6 +53,9 @@ function TreeItem({
   depth,
   onDropImages,
   onContextMenu,
+  imageDropDirectory,
+  onDropPath,
+  manifest,
 }: {
   node: TreeNode;
   selectedPath: string | null;
@@ -31,6 +64,9 @@ function TreeItem({
   depth: number;
   onDropImages: (files: File[]) => void;
   onContextMenu: (event: React.MouseEvent, path: string) => void;
+  imageDropDirectory: string;
+  onDropPath?: (sourcePath: string, destinationPath: string) => void;
+  manifest: Record<string, unknown>;
 }) {
   const [open, setOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
@@ -47,8 +83,14 @@ function TreeItem({
           onEditMarkdown?.(node.path);
         }}
         onContextMenu={(event) => onContextMenu(event, node.path)}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "copyMove";
+          event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
+        }}
       >
-        {node.name}
+        <TreeIcon kind={fileTreeIconKind(node.path, manifest)} />
+        <span className="tree-item-name">{node.name}</span>
       </div>
     );
   }
@@ -59,21 +101,41 @@ function TreeItem({
         className={`tree-item tree-dir ${dragOver ? "drop-target" : ""}`}
         style={{ paddingLeft: depth * 12 + 8 }}
         onClick={() => setOpen((o) => !o)}
+        onContextMenu={(event) => onContextMenu(event, node.path)}
+        draggable
+        onDragStart={(event) => {
+          event.stopPropagation();
+          event.dataTransfer.effectAllowed = "copyMove";
+          event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
+        }}
         onDragOver={(event) => {
-          if (node.path !== "images") return;
+          if (!onDropPath && node.path !== imageDropDirectory) return;
           event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(event) => {
-          if (node.path !== "images") return;
+          const sourcePath = event.dataTransfer.getData(PACKAGE_PATH_DRAG_TYPE);
+          if (sourcePath && onDropPath) {
+            event.preventDefault();
+            event.stopPropagation();
+            setDragOver(false);
+            const name = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+            onDropPath(sourcePath, `${node.path}/${name}`);
+            return;
+          }
+          if (node.path !== imageDropDirectory) return;
           event.preventDefault();
+          event.stopPropagation();
           setDragOver(false);
           onDropImages(Array.from(event.dataTransfer.files));
         }}
       >
-        {open ? "▾" : "▸"} {node.name}
+        <span className="tree-item-disclosure">{open ? "▾ " : "▸ "}</span>
+        <TreeIcon kind="folder" open={open} />
+        <span className="tree-item-name">{node.name}</span>
       </div>
       {open &&
         node.children.map((child) => (
@@ -86,6 +148,9 @@ function TreeItem({
             depth={depth + 1}
             onDropImages={onDropImages}
             onContextMenu={onContextMenu}
+            imageDropDirectory={imageDropDirectory}
+            onDropPath={onDropPath}
+            manifest={manifest}
           />
         ))}
     </div>
@@ -93,12 +158,16 @@ function TreeItem({
 }
 
 export function FileTree({
-  files, selectedPath, onSelect, onEditMarkdown, onDropImages,
-  canRename, onRename, canDelete, onDelete,
+  files, manifest = {}, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages, imageDropDirectory = "images",
+  canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
+  canSetEntrypoint = () => false, onSetEntrypoint = () => {},
+  onAddMarkdown, onAddFolder,
+  onDropPath,
+  onShowReferences,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const paths = files.map((f) => f.path);
-  const tree = buildFileTree(paths, ["images", "attachments"]);
+  const tree = buildFileTree(paths, [...new Set(["images", "attachments", ...directories])]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -112,14 +181,22 @@ export function FileTree({
   }, [contextMenu]);
 
   const openContextMenu = (event: React.MouseEvent, path: string) => {
-    if (!canRename(path) && !canDelete(path)) return;
+    if (!onAddMarkdown && !onAddFolder && !onShowReferences && !canRename(path) && !canDelete(path) && !canMove(path) && !canSetEntrypoint(path)) return;
     event.preventDefault();
-    onSelect(path);
     setContextMenu({ path, x: event.clientX, y: event.clientY });
   };
 
   return (
-    <div className="file-tree">
+    <div className="file-tree"
+      onDragOver={(event) => { if (onDropPath) event.preventDefault(); }}
+      onDrop={(event) => {
+        const sourcePath = event.dataTransfer.getData(PACKAGE_PATH_DRAG_TYPE);
+        if (!sourcePath || !onDropPath) return;
+        event.preventDefault();
+        const name = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+        onDropPath(sourcePath, name);
+      }}
+    >
       {tree.map((node) => (
         <TreeItem
           key={node.path}
@@ -130,6 +207,9 @@ export function FileTree({
           depth={0}
           onDropImages={onDropImages}
           onContextMenu={openContextMenu}
+          imageDropDirectory={imageDropDirectory}
+          onDropPath={onDropPath}
+          manifest={manifest}
         />
       ))}
       {contextMenu && createPortal(
@@ -145,11 +225,45 @@ export function FileTree({
               setContextMenu(null);
             }}>Rename</button>
           )}
+          {canMove(contextMenu.path) && (
+            <button type="button" onClick={() => {
+              onMove(contextMenu.path);
+              setContextMenu(null);
+            }}>Move</button>
+          )}
+          {canSetEntrypoint(contextMenu.path) && (
+            <button type="button" onClick={() => {
+              onSetEntrypoint(contextMenu.path);
+              setContextMenu(null);
+            }}>Set as entrypoint</button>
+          )}
+          {onShowReferences && (
+            <button type="button" onClick={() => {
+              onShowReferences(contextMenu.path);
+              setContextMenu(null);
+            }}>Show References</button>
+          )}
           {canDelete(contextMenu.path) && (
             <button type="button" onClick={() => {
               onDelete(contextMenu.path);
               setContextMenu(null);
             }}>Delete</button>
+          )}
+          {(onAddMarkdown || onAddFolder) && (
+            canRename(contextMenu.path) || canMove(contextMenu.path) ||
+            canSetEntrypoint(contextMenu.path) || canDelete(contextMenu.path) || onShowReferences
+          ) && <div className="file-tree-context-menu-divider" />}
+          {onAddMarkdown && (
+            <button type="button" onClick={() => {
+              onAddMarkdown(contextMenu.path);
+              setContextMenu(null);
+            }}>Add Markdown</button>
+          )}
+          {onAddFolder && (
+            <button type="button" onClick={() => {
+              onAddFolder(contextMenu.path);
+              setContextMenu(null);
+            }}>Add Folder</button>
           )}
         </div>,
         document.body,

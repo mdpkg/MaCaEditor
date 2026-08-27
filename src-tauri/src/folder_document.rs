@@ -26,6 +26,7 @@ pub struct FolderDocument {
     pub root: PathBuf,
     pub manifest: Manifest,
     pub files: Vec<PackageFile>,
+    pub manifest_was_generated: bool,
 }
 
 pub fn create_empty_folder(path: &Path) -> Result<FolderDocument, FolderError> {
@@ -53,20 +54,20 @@ pub fn create_empty_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     fs::create_dir(&root)?;
     let result = (|| {
         let manifest = Manifest::parse(
-            r#"{"format":"mdpkg","version":"1.0","entrypoint":"README.md","title":"Untitled"}"#,
+            r#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md","title":"Untitled"}"#,
         )
         .map_err(|e| FolderError::Invalid(e.to_string()))?;
         let manifest_json = serde_json::to_vec_pretty(&manifest)
             .map_err(|e| FolderError::Invalid(e.to_string()))?;
         atomic_save(&root.join("manifest.json"), &manifest_json)
             .map_err(|e| FolderError::Invalid(e.to_string()))?;
-        atomic_save(&root.join("README.md"), b"# Untitled\n")
+        atomic_save(&root.join("index.md"), b"# Untitled\n")
             .map_err(|e| FolderError::Invalid(e.to_string()))?;
         load_folder(&root)
     })();
     if result.is_err() {
         let _ = fs::remove_file(root.join("manifest.json"));
-        let _ = fs::remove_file(root.join("README.md"));
+        let _ = fs::remove_file(root.join("index.md"));
         let _ = fs::remove_dir(&root);
     }
     result
@@ -95,19 +96,44 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
         return Err(FolderError::Invalid("selected path is not a folder".into()));
     }
     let manifest_path = root.join("manifest.json");
-    if !manifest_path.is_file() {
-        return Err(FolderError::MissingManifest);
-    }
-    reject_link(&manifest_path)?;
-    let manifest_text = fs::read_to_string(&manifest_path)
-        .map_err(|e| FolderError::Invalid(format!("manifest.json cannot be read: {e}")))?;
-    let manifest =
-        Manifest::parse(&manifest_text).map_err(|e| FolderError::Invalid(e.to_string()))?;
+    let manifest_exists = manifest_path.is_file();
+    let mut files = Vec::new();
+    collect(&root, &root, &mut files, !manifest_exists)?;
+    let (manifest, manifest_was_generated) = if manifest_exists {
+        reject_link(&manifest_path)?;
+        let manifest_text = fs::read_to_string(&manifest_path)
+            .map_err(|e| FolderError::Invalid(format!("manifest.json cannot be read: {e}")))?;
+        (
+            Manifest::parse(&manifest_text).map_err(|e| FolderError::Invalid(e.to_string()))?,
+            false,
+        )
+    } else {
+        let mut markdown_paths = files
+            .iter()
+            .filter(|file| {
+                file.is_text()
+                    && (file.path.to_ascii_lowercase().ends_with(".md")
+                        || file.path.to_ascii_lowercase().ends_with(".markdown"))
+            })
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        markdown_paths.sort();
+        let entrypoint = markdown_paths
+            .iter()
+            .find(|path| path.as_str() == "index.md")
+            .or_else(|| markdown_paths.iter().find(|path| path.as_str() == "README.md"))
+            .or_else(|| markdown_paths.first())
+            .ok_or(FolderError::MissingManifest)?;
+        let json = serde_json::json!({
+            "format": "mdpkg", "version": "2.0", "entrypoint": entrypoint
+        });
+        (
+            Manifest::parse(&json.to_string()).map_err(|e| FolderError::Invalid(e.to_string()))?,
+            true,
+        )
+    };
     validate_manifest(&manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
     validate_paths(&manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
-
-    let mut files = Vec::new();
-    collect(&root, &root, &mut files)?;
     let paths = files.iter().map(|f| f.path.clone()).collect::<Vec<_>>();
     validate_entrypoint_exists(&manifest, &paths)
         .map_err(|e| FolderError::Invalid(e.to_string()))?;
@@ -115,10 +141,23 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
         root,
         manifest,
         files,
+        manifest_was_generated,
     })
 }
 
-fn collect(root: &Path, dir: &Path, files: &mut Vec<PackageFile>) -> Result<(), FolderError> {
+fn ignored_inference_directory(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".git" | ".hg" | ".svn" | ".next" | "node_modules" | "target" | "dist" | "build" | "coverage")
+    )
+}
+
+fn collect(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<PackageFile>,
+    ignore_generated_directories: bool,
+) -> Result<(), FolderError> {
     reject_link(dir)?;
     ensure_inside(root, dir)?;
     for entry in fs::read_dir(dir)? {
@@ -127,7 +166,10 @@ fn collect(root: &Path, dir: &Path, files: &mut Vec<PackageFile>) -> Result<(), 
         reject_link(&path)?;
         ensure_inside(root, &path)?;
         if entry.file_type()?.is_dir() {
-            collect(root, &path, files)?;
+            if ignore_generated_directories && ignored_inference_directory(&path) {
+                continue;
+            }
+            collect(root, &path, files, ignore_generated_directories)?;
         } else if entry.file_type()?.is_file() {
             let rel = path
                 .strip_prefix(root)
@@ -312,12 +354,37 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_and_invalid_manifest() {
+    fn loads_a_markdown_folder_without_manifest_using_a_generated_v2_manifest() {
         let missing = temp("missing-manifest");
-        assert!(matches!(
-            load_folder(&missing),
-            Err(FolderError::MissingManifest)
-        ));
+        fs::write(missing.join("README.md"), "# Read me").unwrap();
+        fs::write(missing.join("index.md"), "# Index").unwrap();
+        let loaded = load_folder(&missing).unwrap();
+        assert!(loaded.manifest_was_generated);
+        assert_eq!(loaded.manifest.version, "2.0");
+        assert_eq!(loaded.manifest.entrypoint, "index.md");
+        fs::remove_dir_all(missing).unwrap();
+    }
+
+    #[test]
+    fn skips_generated_dependency_directories_when_inferring_a_manifest() {
+        let dir = temp("manifest-inference-ignored-directories");
+        fs::write(dir.join("index.md"), "# Index").unwrap();
+        fs::create_dir_all(dir.join("node_modules/dependency")).unwrap();
+        fs::write(dir.join("node_modules/dependency/README.md"), "# Dependency").unwrap();
+        fs::create_dir_all(dir.join("target/debug")).unwrap();
+        fs::write(dir.join("target/debug/output.bin"), [0_u8; 64]).unwrap();
+
+        let loaded = load_folder(&dir).unwrap();
+
+        assert_eq!(loaded.files.len(), 1);
+        assert_eq!(loaded.files[0].path, "index.md");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_manifestless_folders_without_markdown_and_invalid_manifests() {
+        let missing = temp("missing-manifest-and-markdown");
+        assert!(load_folder(&missing).is_err());
         fs::remove_dir_all(missing).unwrap();
         let invalid = temp("invalid-manifest");
         fs::write(invalid.join("manifest.json"), "not json").unwrap();
@@ -345,9 +412,10 @@ mod tests {
             created.root,
             fs::canonicalize(parent.join("my-document")).unwrap()
         );
-        assert_eq!(created.manifest.entrypoint, "README.md");
+        assert_eq!(created.manifest.version, "2.0");
+        assert_eq!(created.manifest.entrypoint, "index.md");
         assert_eq!(
-            fs::read_to_string(created.root.join("README.md")).unwrap(),
+            fs::read_to_string(created.root.join("index.md")).unwrap(),
             "# Untitled\n"
         );
         assert!(created.root.join("manifest.json").is_file());

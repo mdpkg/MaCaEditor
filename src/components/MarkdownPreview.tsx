@@ -8,6 +8,7 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
 import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
 import { resolvePackagePath } from "../lib/markdown";
@@ -19,6 +20,7 @@ import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
 import { findMathJaxResourceByRendered } from "../lib/mathjax/docIntegration";
 import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
 import { remarkRspressContainers } from "../lib/remarkRspressContainers";
+import { remarkFrontmatterTable } from "../lib/remarkFrontmatterTable";
 
 interface Props {
   markdown: string;
@@ -31,6 +33,7 @@ interface Props {
   onEditMathJax?: (sourcePath: string) => void;
   onEditTable?: (start: number, end: number) => void;
   onDownloadAttachment?: (file: FileInfo) => void;
+  onNavigateMarkdown?: (path: string) => void;
   showToc?: boolean;
   rspressMode?: boolean;
   scrollRestoreKey?: string;
@@ -103,13 +106,14 @@ export function MarkdownPreview({
   onEditMathJax,
   onEditTable,
   onDownloadAttachment,
+  onNavigateMarkdown,
   showToc = false,
   rspressMode = false,
   scrollRestoreKey,
   initialScrollRatio = 0,
   onScrollRatioChange,
 }: Props) {
-  const tocPrefixLength = showToc ? "## 目次\n\n".length : 0;
+  const tocPrefixLength = 0;
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
@@ -243,11 +247,12 @@ export function MarkdownPreview({
       const end = previewEnd === undefined || previewEnd < tocPrefixLength
         ? undefined
         : previewEnd - tocPrefixLength;
+      const editable = Boolean(onEditTable && start !== undefined && end !== undefined);
       return <table
         {...props}
-        className={onEditTable ? "editable-markdown-table" : undefined}
-        role={onEditTable ? "button" : undefined}
-        tabIndex={onEditTable ? 0 : undefined}
+        className={[props.className, editable ? "editable-markdown-table" : ""].filter(Boolean).join(" ") || undefined}
+        role={editable ? "button" : undefined}
+        tabIndex={editable ? 0 : undefined}
         onClick={() => {
           if (start !== undefined && end !== undefined) onEditTable?.(start, end);
         }}
@@ -346,8 +351,11 @@ export function MarkdownPreview({
     },
     a({ href = "", ...props }) {
       const packagePath = decodePackageUrl(href);
-      const attachment = files.find((file) =>
-        file.path === packagePath && file.path.startsWith("attachments/"));
+      const resolvedPath = files.some((file) => file.path === packagePath)
+        ? packagePath
+        : resolvePackagePath(baseDir, packagePath);
+      const attachment = files.find((file) => file.path === resolvedPath &&
+        /(^|\/)attachments\//.test(file.path));
       if (attachment) {
         const fileName = attachment.path.slice(attachment.path.lastIndexOf("/") + 1);
         return <a
@@ -362,19 +370,27 @@ export function MarkdownPreview({
           }}
         />;
       }
+      const markdown = files.find((file) => file.path === resolvedPath && /\.(md|markdown)$/i.test(file.path));
+      if (markdown) {
+        return <a {...props} href={markdown.path} onClick={(event) => {
+          if (!onNavigateMarkdown) return;
+          event.preventDefault();
+          onNavigateMarkdown(markdown.path);
+        }} />;
+      }
       return <a {...props} href={packageUrl(baseDir, href)} />;
     },
   };
   const urlTransform: UrlTransform = (url, key) =>
     key === "href" ? packageUrl(baseDir, url) : url;
   const compatibleMarkdown = normalizeLegacyImageDestinations(markdown, baseDir, files);
-  const previewMarkdown = showToc
-    ? `## 目次\n\n${compatibleMarkdown}`
-    : compatibleMarkdown;
+  const previewMarkdown = compatibleMarkdown;
   const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
+    remarkFrontmatter,
     remarkGfm,
     ...(rspressMode ? [remarkRspressContainers] : []),
     remarkGitHubAlerts,
+    [remarkFrontmatterTable, { showToc }],
     [remarkToc, { heading: "目次" }],
   ];
 

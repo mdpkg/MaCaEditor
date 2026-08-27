@@ -9,6 +9,7 @@ export interface PackageInfo {
   manifest: Record<string, unknown>;
   entrypoint: string;
   files: FileInfo[];
+  manifest_generated?: boolean;
 }
 
 export interface FileContent {
