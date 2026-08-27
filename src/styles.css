@@ -226,11 +226,32 @@ body {
 }
 
 .tree-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 8px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.tree-item-icon {
+  display: inline-flex;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.tree-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-item-disclosure {
+  flex: 0 0 9px;
 }
 
 .tree-item:hover {

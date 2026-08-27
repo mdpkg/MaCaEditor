@@ -1360,6 +1360,7 @@ export default function App() {
               <div className="sidebar-tree">
                 <FileTree
                   files={doc?.files ?? []}
+                  manifest={doc?.manifest}
                   directories={doc?.directories}
                   selectedPath={selectedPath}
                   onSelect={handleSelect}

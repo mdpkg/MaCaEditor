@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { File as FileIcon, FileText, Folder, FolderOpen, Image as ImageIcon, Workflow, type LucideIcon } from "lucide-react";
 import type { FileInfo } from "../types";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { fileTreeIconKind, type FileTreeIconKind } from "../lib/fileTreeIcons";
 
 interface Props {
   files: FileInfo[];
+  manifest?: Record<string, unknown>;
   directories?: string[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
@@ -26,6 +29,22 @@ interface Props {
   onShowReferences?: (path: string) => void;
 }
 
+const fileIcons: Record<FileTreeIconKind, LucideIcon> = {
+  markdown: FileText,
+  image: ImageIcon,
+  diagram: Workflow,
+  other: FileIcon,
+};
+
+function TreeIcon({ kind, open }: { kind: FileTreeIconKind | "folder"; open?: boolean }) {
+  const Icon = kind === "folder" ? (open ? FolderOpen : Folder) : fileIcons[kind];
+  const label = kind === "folder" ? "Folder" : kind === "markdown" ? "Markdown"
+    : kind === "image" ? "Image" : kind === "diagram" ? "Diagram" : "File";
+  return <span className="tree-item-icon" data-icon-kind={kind} role="img" aria-label={label}>
+    <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
+  </span>;
+}
+
 function TreeItem({
   node,
   selectedPath,
@@ -36,6 +55,7 @@ function TreeItem({
   onContextMenu,
   imageDropDirectory,
   onDropPath,
+  manifest,
 }: {
   node: TreeNode;
   selectedPath: string | null;
@@ -46,6 +66,7 @@ function TreeItem({
   onContextMenu: (event: React.MouseEvent, path: string) => void;
   imageDropDirectory: string;
   onDropPath?: (sourcePath: string, destinationPath: string) => void;
+  manifest: Record<string, unknown>;
 }) {
   const [open, setOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
@@ -68,7 +89,8 @@ function TreeItem({
           event.dataTransfer.setData(PACKAGE_PATH_DRAG_TYPE, node.path);
         }}
       >
-        {node.name}
+        <TreeIcon kind={fileTreeIconKind(node.path, manifest)} />
+        <span className="tree-item-name">{node.name}</span>
       </div>
     );
   }
@@ -111,7 +133,9 @@ function TreeItem({
           onDropImages(Array.from(event.dataTransfer.files));
         }}
       >
-        {open ? "▾" : "▸"} {node.name}
+        <span className="tree-item-disclosure">{open ? "▾ " : "▸ "}</span>
+        <TreeIcon kind="folder" open={open} />
+        <span className="tree-item-name">{node.name}</span>
       </div>
       {open &&
         node.children.map((child) => (
@@ -126,6 +150,7 @@ function TreeItem({
             onContextMenu={onContextMenu}
             imageDropDirectory={imageDropDirectory}
             onDropPath={onDropPath}
+            manifest={manifest}
           />
         ))}
     </div>
@@ -133,7 +158,7 @@ function TreeItem({
 }
 
 export function FileTree({
-  files, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages, imageDropDirectory = "images",
+  files, manifest = {}, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages, imageDropDirectory = "images",
   canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
   onAddMarkdown, onAddFolder,
@@ -184,6 +209,7 @@ export function FileTree({
           onContextMenu={openContextMenu}
           imageDropDirectory={imageDropDirectory}
           onDropPath={onDropPath}
+          manifest={manifest}
         />
       ))}
       {contextMenu && createPortal(

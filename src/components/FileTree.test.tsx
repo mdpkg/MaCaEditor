@@ -10,6 +10,35 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("shows icons for folders and each file kind", () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<FileTree
+      files={[
+        { path: "docs/guide.md", is_text: true, content: "", base64: null },
+        { path: "images/photo.png", is_text: false, content: null, base64: "AA==" },
+        { path: "diagrams/flow.puml", is_text: true, content: "", base64: null },
+        { path: "diagrams/flow.svg", is_text: true, content: "", base64: null },
+        { path: "attachments/spec.pdf", is_text: false, content: null, base64: "AA==" },
+      ]}
+      manifest={{ resources: [{
+        type: "plantuml", source: "diagrams/flow.puml", rendered: "diagrams/flow.svg",
+      }] }}
+      selectedPath={null} onSelect={vi.fn()} onDropImages={vi.fn()}
+      canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()} />));
+
+    const iconKind = (name: string) => [...container.querySelectorAll(".tree-item")]
+      .find((item) => item.textContent?.trim().endsWith(name))
+      ?.querySelector<HTMLElement>(".tree-item-icon")?.dataset.iconKind;
+    expect(iconKind("docs")).toBe("folder");
+    expect(iconKind("guide.md")).toBe("markdown");
+    expect(iconKind("photo.png")).toBe("image");
+    expect(iconKind("flow.puml")).toBe("diagram");
+    expect(iconKind("flow.svg")).toBe("diagram");
+    expect(iconKind("spec.pdf")).toBe("other");
+    act(() => root.unmount());
+  });
+
   test("moves a package file into a folder by drag and drop", () => {
     const onDropPath = vi.fn();
     const container = document.createElement("div"); document.body.appendChild(container);
