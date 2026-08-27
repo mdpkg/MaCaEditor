@@ -1,4 +1,6 @@
 use std::io::Read;
+use std::collections::HashSet;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::manifest::{Manifest, ManifestError};
 use crate::package_file::PackageFile;
@@ -21,6 +23,44 @@ pub enum LoadError {
     UnsafePath(String),
     #[error("failed to read entry \"{0}\": {1}")]
     ReadFailed(String, String),
+    #[error("duplicate or Unicode-colliding path \"{0}\"")]
+    DuplicatePath(String),
+    #[error("archive contains too many entries: {0}")]
+    TooManyEntries(usize),
+    #[error("archive entry is too large: {0} bytes")]
+    FileTooLarge(u64),
+    #[error("archive expands beyond the size limit: {0} bytes")]
+    ArchiveTooLarge(u64),
+    #[error("archive contains a suspicious compression ratio")]
+    SuspiciousCompressionRatio,
+}
+
+const MAX_ARCHIVE_ENTRIES: usize = 10_000;
+const MAX_FILE_UNCOMPRESSED_SIZE: u64 = 128 * 1024 * 1024;
+const MAX_ARCHIVE_UNCOMPRESSED_SIZE: u64 = 512 * 1024 * 1024;
+const MIN_RATIO_CHECK_SIZE: u64 = 1024 * 1024;
+const MAX_COMPRESSION_RATIO: u64 = 1_000;
+
+fn validate_archive_limits(sizes: &[(u64, u64)]) -> Result<(), LoadError> {
+    if sizes.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(LoadError::TooManyEntries(sizes.len()));
+    }
+    let mut total = 0_u64;
+    for &(uncompressed, compressed) in sizes {
+        if uncompressed > MAX_FILE_UNCOMPRESSED_SIZE {
+            return Err(LoadError::FileTooLarge(uncompressed));
+        }
+        total = total.saturating_add(uncompressed);
+        if total > MAX_ARCHIVE_UNCOMPRESSED_SIZE {
+            return Err(LoadError::ArchiveTooLarge(total));
+        }
+        if uncompressed >= MIN_RATIO_CHECK_SIZE &&
+            (compressed == 0 || uncompressed / compressed > MAX_COMPRESSION_RATIO)
+        {
+            return Err(LoadError::SuspiciousCompressionRatio);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -34,8 +74,15 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(LoadError::NotZip)?;
 
+    let sizes = (0..archive.len()).map(|index| {
+        let entry = archive.by_index(index).map_err(LoadError::NotZip)?;
+        Ok((entry.size(), entry.compressed_size()))
+    }).collect::<Result<Vec<_>, LoadError>>()?;
+    validate_archive_limits(&sizes)?;
+
     // まずエントリ名をすべて検証してから読み込む
     let mut entries: Vec<(usize, String)> = Vec::new();
+    let mut normalized_paths = HashSet::new();
     for i in 0..archive.len() {
         let entry = archive.by_index(i).map_err(LoadError::NotZip)?;
         let name = entry.name().to_string();
@@ -45,6 +92,10 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
                 LoadError::UnsafePath(name.clone())
             }
         })?;
+        let collision_key = path_to_validate.replace('\\', "/").nfc().collect::<String>();
+        if !normalized_paths.insert(collision_key) {
+            return Err(LoadError::DuplicatePath(name));
+        }
         if !entry.is_dir() {
             entries.push((i, name));
         }
@@ -305,5 +356,61 @@ mod tests {
         let loaded = load_package(&buf).unwrap();
         assert_eq!(loaded.files.len(), 1);
         assert_eq!(loaded.files[0].path, "index.md");
+    }
+
+    #[test]
+    fn rejects_paths_that_collide_after_separator_normalization() {
+        let manifest = br#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md"}"#;
+        let zip = build_zip(&[
+            ("manifest.json", manifest),
+            ("index.md", b"# Index"),
+            ("docs\\guide.md", b"# First"),
+            ("docs/guide.md", b"# Second"),
+        ]);
+        assert!(matches!(load_package(&zip), Err(LoadError::DuplicatePath(_))));
+    }
+
+    #[test]
+    fn rejects_paths_that_collide_after_unicode_normalization() {
+        let manifest = br#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md"}"#;
+        let zip = build_zip(&[
+            ("manifest.json", manifest),
+            ("index.md", b"# Index"),
+            ("images/\u{00e9}.png", b"one"),
+            ("images/e\u{0301}.png", b"two"),
+        ]);
+        assert!(matches!(load_package(&zip), Err(LoadError::DuplicatePath(_))));
+    }
+
+    #[test]
+    fn rejects_archives_with_too_many_entries() {
+        let entries = vec![(1_u64, 1_u64); MAX_ARCHIVE_ENTRIES + 1];
+        assert!(matches!(validate_archive_limits(&entries), Err(LoadError::TooManyEntries(_))));
+    }
+
+    #[test]
+    fn rejects_oversized_files_and_archives() {
+        assert!(matches!(
+            validate_archive_limits(&[(MAX_FILE_UNCOMPRESSED_SIZE + 1, 1)]),
+            Err(LoadError::FileTooLarge(_))
+        ));
+        assert!(matches!(
+            validate_archive_limits(&[
+                (MAX_FILE_UNCOMPRESSED_SIZE, MAX_FILE_UNCOMPRESSED_SIZE),
+                (MAX_FILE_UNCOMPRESSED_SIZE, MAX_FILE_UNCOMPRESSED_SIZE),
+                (MAX_FILE_UNCOMPRESSED_SIZE, MAX_FILE_UNCOMPRESSED_SIZE),
+                (MAX_FILE_UNCOMPRESSED_SIZE, MAX_FILE_UNCOMPRESSED_SIZE),
+                (1, 1),
+            ]),
+            Err(LoadError::ArchiveTooLarge(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_suspicious_compression_ratios() {
+        assert!(matches!(
+            validate_archive_limits(&[(MIN_RATIO_CHECK_SIZE, MIN_RATIO_CHECK_SIZE / (MAX_COMPRESSION_RATIO + 1))]),
+            Err(LoadError::SuspiciousCompressionRatio)
+        ));
     }
 }
