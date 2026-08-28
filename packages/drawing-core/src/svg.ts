@@ -1,3 +1,4 @@
+/** Deterministic static SVG renderer. */
 import type {
   ArrowObject,
   AutoShapeObject,

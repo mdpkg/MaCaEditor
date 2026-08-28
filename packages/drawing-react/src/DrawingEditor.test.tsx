@@ -1,7 +1,9 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { DrawingDocument } from "../lib/drawing/model";
+
+// Component behavior belongs to the React package boundary.
+import type { DrawingDocument } from "@maca/drawing-core";
 import { DrawingEditor } from "./DrawingEditor";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

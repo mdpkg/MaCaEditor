@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+
+// Package-level regression tests stay next to the extracted core.
 import type { DrawingDocument, DrawingObject, ImageObject } from "./model";
 import { copyObjects, pasteObjects } from "./clipboard";
 

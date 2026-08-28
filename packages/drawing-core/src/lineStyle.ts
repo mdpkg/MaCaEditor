@@ -1,5 +1,7 @@
 import type { LineDashStyle, ObjectStyle } from "./model";
 
+/** SVG line-style conversion and editor-friendly presets. */
+
 export const LINE_WEIGHT_OPTIONS = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 
 export const LINE_DASH_OPTIONS: ReadonlyArray<{ value: LineDashStyle; label: string }> = [

@@ -50,36 +50,33 @@ MaCa Editor
 ## Drawing レイヤー（v2）
 
 ```
-Drawing Domain Model (lib/drawing/model.ts)
-        ↕
-Drawing UI Adapter (components/DrawingEditor.tsx)
-        ↕
-Canvas Library (SVG ベースの軽量 Canvas)
+MaCa Editor integration (src/lib/drawing)
+        ↓ public API only
+@maca/drawing-react (packages/drawing-react)
+        ↓
+@maca/drawing-core (packages/drawing-core)
 ```
 
 ```
-Drawing Domain Model
-   ↓ SVG Renderer (lib/drawing/svg.ts)
-   ↓ JSON Serializer (lib/drawing/drawing.ts)
+Drawing Domain Model (@maca/drawing-core)
+   ↓ SVG Renderer (packages/drawing-core/src/svg.ts)
+   ↓ JSON Serializer (packages/drawing-core/src/drawing.ts)
 ```
 
 ### 責務
 
 | モジュール | 責務 |
 |---|---|
-| `model.ts` | Drawing Domain Model（discriminated union） |
-| `drawing.ts` | `.draw.json` の parse / validate / serialize |
-| `svg.ts` | Drawing → 静的 SVG の deterministic 生成 |
-| `edit.ts` | move / resize / delete / z-order / align / history |
-| `clipboard.ts` | copy / paste（Connector 参照 ID の再マッピング） |
-| `factory.ts` | ツール別オブジェクト生成 |
-| `integration.ts` | `.draw.json` + `.svg` のファイル生成 |
-| `docIntegration.ts` | Document / manifest / Markdown への統合 |
+| `packages/drawing-core` | model、validate、編集、幾何計算、SVG生成 |
+| `packages/drawing-react` | DrawingEditor、ShapePicker、React integration contract |
+| `src/lib/drawing/integration.ts` | `.draw.json` + `.svg` のファイル生成 |
+| `src/lib/drawing/docIntegration.ts` | Document / manifest / Markdown への統合 |
 
 ### 設計原則
 
 - `.draw.json` が source of truth。`.svg` はそこから完全再生成される一方向関係
-- Drawing Library の内部データ形式を `.draw.json` に保存しない（domain model と分離）
+- アプリ側は`@maca/drawing-core`と`@maca/drawing-react`の公開APIだけを利用する
+- coreはReact、DOM、Tauri、MaCa Document Modelへ依存しない
 - Selection / Zoom / Pan などの UI state は `.draw.json` に保存しない
 - SVG は JavaScript を含まない静的・deterministic な出力
 

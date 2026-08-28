@@ -1,10 +1,10 @@
 import type { DocumentState } from "../document";
-import type { DrawingDocument } from "./model";
+import type { DrawingDocument } from "@maca/drawing-core";
 import { DEFAULT_DRAWING_DIR, generateDrawingFiles, nextDrawingName } from "./integration";
 import { insertMarkdownImages } from "../markdown";
 
 export { DEFAULT_DRAWING_DIR };
-import { parseAndValidate } from "./drawing";
+import { parseAndValidate } from "@maca/drawing-core";
 
 export interface DrawingResource {
   source: string;

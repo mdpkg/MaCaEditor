@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { AutoShapeObject } from "../lib/drawing/model";
 import {
   getShapeDefinition,
+  type AutoShapeObject,
   type ShapeCategory,
-} from "../lib/drawing/shapeRegistry";
-import type { ToolKind } from "../lib/drawing/factory";
+  type ToolKind,
+} from "@maca/drawing-core";
 
+/** A tool entry displayed by the reusable shape picker. */
 export interface ShapePickerItem {
   id: ToolKind;
   label: string;

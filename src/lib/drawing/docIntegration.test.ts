@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DocumentState } from "../document";
-import type { DrawingDocument } from "./model";
+import type { DrawingDocument } from "@maca/drawing-core";
 import {
   DEFAULT_DRAWING_DIR,
   addDrawingToDocument,

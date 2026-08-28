@@ -60,33 +60,6 @@ export function sanitizeHtml(html: string): string {
   return doc.body.innerHTML;
 }
 
-/**
- * 画像オブジェクトの src を検証・サニタイズする。
- * data:image のみ許可し、それ以外（javascript: 等）は空文字に置き換える。
- */
-export function sanitizeImageSrc(src: string): string {
-  if (!src || src.length === 0) return "";
-  const trimmed = src.trim();
-  if (trimmed.length === 0) return "";
-  try {
-    const url = new URL(trimmed);
-    // 許可するスキーム: http, https（スラッシュなしの http: 形式は拒否）
-    if (/^https?:$/.test(url.protocol) && /^https?:\/\//i.test(trimmed)) {
-      return trimmed;
-    }
-    // data:image は URL パース可能かつ実データを持つ場合のみ許可
-    if (/^data:image\//i.test(trimmed)) {
-      // "data:image/..." の後ろに実データ（MIME 指定後のコンテンツ）が存在するか
-      const dataUrl = trimmed;
-      const commaIndex = dataUrl.indexOf(",");
-      const hasContent = commaIndex >= 0 && dataUrl.slice(commaIndex + 1).length > 0;
-      // プレフィックスのみ（data:image/）は拒否
-      const hasType = /^data:image\/[^/]+/i.test(dataUrl);
-      if (hasType && hasContent) return trimmed;
-    }
-    return "";
-  } catch {
-    // 不正な URL（ホストなし・空白含む等）は拒否
-    return "";
-  }
-}
+// Backward-compatible application export. The implementation belongs to the
+// framework-independent drawing package.
+export { sanitizeImageSrc } from "@maca/drawing-core";

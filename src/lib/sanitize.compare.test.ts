@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { sanitizeHtml } from "./sanitize";
-import { renderSvg } from "./drawing/svg";
-import type { DrawingDocument } from "./drawing/model";
+import { renderSvg, type DrawingDocument } from "@maca/drawing-core";
 
 function doc(objects: DrawingDocument["objects"]): DrawingDocument {
   return {

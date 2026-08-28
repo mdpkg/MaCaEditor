@@ -10,7 +10,7 @@ import type {
   RectangleObject,
   TextObject,
 } from "./model";
-import { sanitizeImageSrc } from "../sanitize";
+import { sanitizeImageSrc } from "./sanitizeImageSrc";
 import { isAutoShapePreset } from "./shapeRegistry";
 
 export const DRAWING_FORMAT = "maca-drawing";

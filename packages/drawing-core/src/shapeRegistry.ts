@@ -1,5 +1,7 @@
 import type { AutoShapeObject } from "./model";
 
+/** Built-in shape definitions and geometry. */
+
 export type ShapeCategory = "Basic" | "Flowchart" | "Arrows";
 
 export interface ShapeDefinition {

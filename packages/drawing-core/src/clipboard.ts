@@ -1,5 +1,7 @@
 import type { DrawingDocument, DrawingObject } from "./model";
 
+/** Framework-independent drawing clipboard operations. */
+
 /** 選択中のオブジェクトをコピーする。 */
 export function copyObjects(
   doc: DrawingDocument,

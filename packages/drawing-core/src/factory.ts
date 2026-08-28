@@ -1,5 +1,5 @@
 import type { DrawingDocument, DrawingObject } from "./model";
-import { sanitizeImageSrc } from "../sanitize";
+import { sanitizeImageSrc } from "./sanitizeImageSrc";
 import { getShapeDefinition } from "./shapeRegistry";
 
 /** 新しい一意 ID を生成する。 */

@@ -1,3 +1,4 @@
+/** Stateless viewport calculations. */
 export interface Size {
   width: number;
   height: number;

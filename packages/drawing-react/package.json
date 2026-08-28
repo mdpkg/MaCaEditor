@@ -1,0 +1,22 @@
+{
+  "name": "@maca/drawing-react",
+  "version": "0.1.0",
+  "description": "Reusable React UI for @maca/drawing-core",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["src"],
+  "sideEffects": false,
+  "dependencies": {
+    "@maca/drawing-core": "file:../drawing-core"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

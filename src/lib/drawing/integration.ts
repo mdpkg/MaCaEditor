@@ -1,6 +1,8 @@
-import type { DrawingDocument } from "./model";
-import { renderSvg } from "./svg";
-import { serializeDrawingDocument } from "./drawing";
+import {
+  renderSvg,
+  serializeDrawingDocument,
+  type DrawingDocument,
+} from "@maca/drawing-core";
 
 export interface DrawingFiles {
   drawPath: string;

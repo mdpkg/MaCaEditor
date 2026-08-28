@@ -1,3 +1,4 @@
+/** Immutable drawing edit operations. */
 import type {
   ConnectorEndMarker,
   DrawingDocument,
