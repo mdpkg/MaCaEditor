@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ConnectorEndMarker, DrawingDocument, DrawingObject, LineDashStyle, ObjectStyle } from "../lib/drawing/model";
-import { renderSvg } from "../lib/drawing/svg";
-import { createConnector, createObject, type ToolKind } from "../lib/drawing/factory";
 import {
   alignObjects,
   bringForward,
@@ -20,8 +17,6 @@ import {
   selectObjectsInRect,
   sendBackward,
   sendToBack,
-  type AlignKind,
-  type History,
   updateConnectorEnds,
   updateConnectorCurveOffset,
   updateAutoShapeAdjustment,
@@ -31,14 +26,33 @@ import {
   ungroupObjects,
   updateShapeText,
   updateShapeTextAlignment,
-} from "../lib/drawing/edit";
-import { copyObjects, pasteObjects } from "../lib/drawing/clipboard";
-import { clientToCanvasPoint, drawingViewport } from "../lib/drawing/viewport";
-import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS } from "../lib/drawing/lineStyle";
-import { connectorGeometry, isPointOnConnector } from "../lib/drawing/connector";
-import { getArcArrowGeometry, getBraceTailPoint, getCalloutTailPoint, SHAPE_DEFINITIONS } from "../lib/drawing/shapeRegistry";
+  copyObjects,
+  pasteObjects,
+  clientToCanvasPoint,
+  drawingViewport,
+  LINE_DASH_OPTIONS,
+  LINE_WEIGHT_OPTIONS,
+  connectorGeometry,
+  isPointOnConnector,
+  getArcArrowGeometry,
+  getBraceTailPoint,
+  getCalloutTailPoint,
+  SHAPE_DEFINITIONS,
+  createConnector,
+  createObject,
+  renderSvg,
+  type AlignKind,
+  type ConnectorEndMarker,
+  type DrawingDocument,
+  type DrawingObject,
+  type History,
+  type LineDashStyle,
+  type ObjectStyle,
+  type ToolKind,
+} from "@maca/drawing-core";
 import { ShapePicker, type ShapePickerItem } from "./ShapePicker";
 
+/** Host integration contract for the reusable React drawing editor. */
 export interface DrawingEditorProps {
   doc: DrawingDocument;
   onChange: (doc: DrawingDocument) => void;

@@ -1,4 +1,4 @@
-/** MaCa Editor Drawing Domain Model */
+/** Framework-agnostic drawing domain model. */
 
 export interface CanvasConfig {
   width: number;

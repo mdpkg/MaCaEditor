@@ -1,5 +1,7 @@
 import type { ConnectorObject, DrawingObject } from "./model";
 
+/** Connector geometry primitives. */
+
 export interface Point { x: number; y: number }
 interface ConnectionSite { point: Point; outward: Point }
 export interface ConnectorGeometry {

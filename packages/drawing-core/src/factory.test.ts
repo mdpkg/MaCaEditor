@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+
+// Package-level regression tests stay next to the extracted core.
 import type { DrawingDocument } from "./model";
 import { createConnector, createCurvedConnector, createImageObject, createObject, createRectangleObject, createEllipseObject } from "./factory";
 

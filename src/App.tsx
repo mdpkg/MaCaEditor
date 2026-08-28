@@ -57,7 +57,7 @@ import {
   stopWatchingFolder,
   onFolderChanged,
 } from "./lib/tauri";
-import type { DrawingDocument } from "./lib/drawing/model";
+import type { DrawingDocument } from "@maca/drawing-core";
 import {
   DEFAULT_DRAWING_DIR,
   addDrawingToDocument,
@@ -125,7 +125,7 @@ const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((mo
 const MarkdownPreview = lazy(() => import("./components/MarkdownPreview").then((module) => ({
   default: module.MarkdownPreview,
 })));
-const DrawingEditor = lazy(() => import("./components/DrawingEditor").then((module) => ({
+const DrawingEditor = lazy(() => import("@maca/drawing-react").then((module) => ({
   default: module.DrawingEditor,
 })));
 const PlantUmlEditor = lazy(() => import("./components/PlantUmlEditor").then((module) => ({

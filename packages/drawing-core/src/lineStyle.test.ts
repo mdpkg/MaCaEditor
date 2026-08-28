@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+
+// Package-level regression tests stay next to the extracted core.
 import { LINE_DASH_OPTIONS, LINE_WEIGHT_OPTIONS, svgLineStyle } from "./lineStyle";
 
 describe("PowerPoint-compatible line styles", () => {

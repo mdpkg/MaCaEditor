@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+
+// Package-level regression tests stay next to the extracted core.
 import type { ConnectorObject, DrawingObject } from "./model";
 import { connectorGeometry, isPointOnConnector } from "./connector";
 
