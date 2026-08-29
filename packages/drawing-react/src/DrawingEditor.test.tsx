@@ -677,12 +677,26 @@ describe("DrawingEditor", () => {
     const endMenu = container.querySelector('select[aria-label="Connector end"]') as HTMLSelectElement;
     expect(startMenu.value).toBe("none");
     expect(endMenu.value).toBe("arrow");
+    const startSize = container.querySelector('select[aria-label="Connector start size"]') as HTMLSelectElement;
+    const endSize = container.querySelector('select[aria-label="Connector end size"]') as HTMLSelectElement;
+    expect(startSize.value).toBe("medium");
+    expect(endSize.value).toBe("medium");
     act(() => {
       startMenu.value = "crowFoot";
       startMenu.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const withCrowFoot = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
     expect(withCrowFoot.objects[2]).toMatchObject({ startMarker: "crowFoot", endMarker: "arrow" });
+    act(() => {
+      startSize.value = "small";
+      startSize.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    act(() => {
+      endSize.value = "large";
+      endSize.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const withSizes = onDirty.mock.calls[onDirty.mock.calls.length - 1]?.[0] as DrawingDocument;
+    expect(withSizes.objects[2]).toMatchObject({ startMarkerSize: "small", endMarkerSize: "large" });
     act(() => root.unmount());
   });
 

@@ -18,6 +18,7 @@ import {
   sendBackward,
   sendToBack,
   updateConnectorEnds,
+  updateConnectorEndSizes,
   updateConnectorCurveOffset,
   updateAutoShapeAdjustment,
   updateAutoShapeEnds,
@@ -43,6 +44,7 @@ import {
   renderSvg,
   type AlignKind,
   type ConnectorEndMarker,
+  type ConnectorEndMarkerSize,
   type DrawingDocument,
   type DrawingObject,
   type History,
@@ -884,6 +886,16 @@ export function DrawingEditor({
     ));
   };
 
+  const updateConnectorEndSize = (end: "start" | "end", size: ConnectorEndMarkerSize) => {
+    if (!selected || selected.type !== "connector") return;
+    commit(updateConnectorEndSizes(
+      doc,
+      selected.id,
+      end === "start" ? size : selected.startMarkerSize ?? "medium",
+      end === "end" ? size : selected.endMarkerSize ?? "medium",
+    ));
+  };
+
   const updateRotation = (rotation: number) => {
     if (!selected) return;
     commit(updateObjectRotation(doc, selected.id, rotation));
@@ -1464,11 +1476,27 @@ export function DrawingEditor({
                 </select>
               </div>
               <div className="inspector-row">
+                <label>Start size</label>
+                <select aria-label="Connector start size" value={object.startMarkerSize ?? "medium"}
+                  onChange={(event) => updateConnectorEndSize("start", event.target.value as ConnectorEndMarkerSize)}>
+                  <option value="small">Small</option><option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+              <div className="inspector-row">
                 <label>End</label>
                 <select value={object.endMarker ?? "arrow"}
                   onChange={(event) => updateConnectorEnd("end", event.target.value as ConnectorEndMarker)}>
                   <option value="none">None</option><option value="arrow">Arrow</option>
                   <option value="crowFoot">Crow's Foot</option>
+                </select>
+              </div>
+              <div className="inspector-row">
+                <label>End size</label>
+                <select aria-label="Connector end size" value={object.endMarkerSize ?? "medium"}
+                  onChange={(event) => updateConnectorEndSize("end", event.target.value as ConnectorEndMarkerSize)}>
+                  <option value="small">Small</option><option value="medium">Medium</option>
+                  <option value="large">Large</option>
                 </select>
               </div>
             </>}
@@ -1613,6 +1641,18 @@ export function DrawingEditor({
                   </select>
                 </div>
                 <div className="inspector-row">
+                  <label>Start size</label>
+                  <select
+                    aria-label="Connector start size"
+                    value={selected.startMarkerSize ?? "medium"}
+                    onChange={(e) => updateConnectorEndSize("start", e.target.value as ConnectorEndMarkerSize)}
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
+                </div>
+                <div className="inspector-row">
                   <label>End</label>
                   <select
                     aria-label="Connector end"
@@ -1622,6 +1662,18 @@ export function DrawingEditor({
                     <option value="none">None</option>
                     <option value="arrow">Arrow</option>
                     <option value="crowFoot">Crow's Foot</option>
+                  </select>
+                </div>
+                <div className="inspector-row">
+                  <label>End size</label>
+                  <select
+                    aria-label="Connector end size"
+                    value={selected.endMarkerSize ?? "medium"}
+                    onChange={(e) => updateConnectorEndSize("end", e.target.value as ConnectorEndMarkerSize)}
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
                   </select>
                 </div>
               </>

@@ -1,6 +1,7 @@
 /** Immutable drawing edit operations. */
 import type {
   ConnectorEndMarker,
+  ConnectorEndMarkerSize,
   DrawingDocument,
   DrawingObject,
   GroupObject,
@@ -57,6 +58,22 @@ export function updateConnectorEnds(
     objects: doc.objects.map((object) =>
       object.id === id && object.type === "connector"
         ? { ...object, startMarker, endMarker }
+        : object,
+    ),
+  };
+}
+
+export function updateConnectorEndSizes(
+  doc: DrawingDocument,
+  id: string,
+  startMarkerSize: ConnectorEndMarkerSize,
+  endMarkerSize: ConnectorEndMarkerSize,
+): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((object) =>
+      object.id === id && object.type === "connector"
+        ? { ...object, startMarkerSize, endMarkerSize }
         : object,
     ),
   };

@@ -485,6 +485,21 @@ describe("svg renderer", () => {
     expect(svg).toContain('marker-end="url(#arrowhead)"');
   });
 
+  test("renders independently sized connector end markers", () => {
+    const svg = renderSvg(doc([
+      {
+        id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 2,
+        from: { objectId: "a" }, to: { objectId: "b" }, startMarker: "arrow", endMarker: "crowFoot",
+        startMarkerSize: "small", endMarkerSize: "large", style: {},
+      },
+      { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+      { id: "b", type: "rectangle", x: 300, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
+    ]));
+
+    expect(svg).toContain('marker-start="url(#arrowhead-small)"');
+    expect(svg).toContain('marker-end="url(#crow-foot-large)"');
+  });
+
   test("keeps the legacy connector default of no start and an arrow end", () => {
     const svg = renderSvg(doc([
       { id: "c1", type: "connector", x: 0, y: 0, width: 0, height: 0, rotation: 0, zIndex: 2, from: { objectId: "a" }, to: { objectId: "b" }, style: {} },

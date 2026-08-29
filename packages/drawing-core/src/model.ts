@@ -131,10 +131,15 @@ export interface ConnectorObject extends BaseObject {
   elbow?: boolean;
   startMarker?: ConnectorEndMarker;
   endMarker?: ConnectorEndMarker;
+  /** 始点マーカーの大きさ。未指定は medium（従来サイズ）。 */
+  startMarkerSize?: ConnectorEndMarkerSize;
+  /** 終点マーカーの大きさ。未指定は medium（従来サイズ）。 */
+  endMarkerSize?: ConnectorEndMarkerSize;
   style: ObjectStyle;
 }
 
 export type ConnectorEndMarker = "none" | "arrow" | "crowFoot";
+export type ConnectorEndMarkerSize = "small" | "medium" | "large";
 
 export interface GroupObject extends BaseObject {
   type: "group";
