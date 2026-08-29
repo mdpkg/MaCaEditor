@@ -2,6 +2,7 @@
 import type {
   ConnectorEndMarker,
   ConnectorEndMarkerSize,
+  ConnectorAnchor,
   DrawingDocument,
   DrawingObject,
   GroupObject,
@@ -76,6 +77,23 @@ export function updateConnectorEndSizes(
         ? { ...object, startMarkerSize, endMarkerSize }
         : object,
     ),
+  };
+}
+
+export function updateConnectorEndpoint(
+  doc: DrawingDocument,
+  id: string,
+  end: "from" | "to",
+  objectId: string,
+  anchor?: ConnectorAnchor,
+): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((object) => mapObjectById(object, id, (current) =>
+      current.type === "connector"
+        ? { ...current, [end]: { objectId, ...(anchor ? { anchor } : {}) } }
+        : current,
+    )),
   };
 }
 

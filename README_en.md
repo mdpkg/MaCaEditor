@@ -58,7 +58,8 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 - Group, ungroup, and create nested groups
 - Double-click to select individual objects inside a group
 - Fill color, stroke color, opacity, stroke width, and line style
-- Configure arrowheads and crow's feet at either end of connectors
+- Configure arrowheads, crow's feet, and small/medium/large endpoint sizes independently at either end of connectors
+- Freely position connector attachment points along shape outlines and reattach them to other shapes
 - Adjust callout tails and curved-arrow angles/endpoints using GUI handles
 - Multi-line text inside shapes with horizontal and vertical alignment
 - Add images to SVG diagrams
@@ -203,6 +204,15 @@ Select a shape, line, connector, text, or image tool from the toolbar, then clic
 - Drag the rotation handle above the selection frame to rotate it.
 - Use Properties or the context menu to change colors, strokes, opacity, text alignment, and front/back ordering.
 - Multiple selected objects can be moved, aligned, and grouped together.
+
+### Editing Connectors
+
+- Selecting a connector displays white attachment handles at its start and end.
+- Drag an attachment handle to position it freely along the outline of its connected shape. The relative attachment position is preserved when the shape is moved, resized, or rotated.
+- Drag an attachment handle onto another shape to reattach that end of the connector.
+- Double-click an attachment handle to clear its custom position and return to automatic attachment.
+- In Properties or the context menu, use **Start** and **End** to select an arrowhead or crow's foot, and use **Start size** and **End size** to select **Small**, **Medium**, or **Large** independently for each end.
+- Attachment positions and endpoint settings work consistently with straight, curved, and elbow connectors.
 
 ## Keyboard Shortcuts
 

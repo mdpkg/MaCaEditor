@@ -19,6 +19,7 @@ import {
   sendToBack,
   updateConnectorEnds,
   updateConnectorEndSizes,
+  updateConnectorEndpoint,
   updateConnectorCurveOffset,
   updateAutoShapeAdjustment,
   updateAutoShapeEnds,
@@ -34,6 +35,7 @@ import {
   LINE_DASH_OPTIONS,
   LINE_WEIGHT_OPTIONS,
   connectorGeometry,
+  connectorAnchorForPoint,
   isPointOnConnector,
   getArcArrowGeometry,
   getBraceTailPoint,
@@ -164,7 +166,7 @@ export function DrawingEditor({
     y: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
-    type: "move" | "resize" | "rotate" | "curveAdjust" | "arcAdjust" | "calloutAdjust" | "braceAdjust" | "create" | "canvasResize" | "marquee";
+    type: "move" | "resize" | "rotate" | "connectorEndpoint" | "curveAdjust" | "arcAdjust" | "calloutAdjust" | "braceAdjust" | "create" | "canvasResize" | "marquee";
     id?: string;
     ids?: string[];
     startX: number;
@@ -327,6 +329,21 @@ export function DrawingEditor({
       return;
     }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
+    const connectorEndpoint = (e.target as SVGElement).dataset.connectorEndpoint;
+    const connectorObjectId = (e.target as SVGElement).dataset.objectId;
+    if ((connectorEndpoint === "from" || connectorEndpoint === "to") && connectorObjectId) {
+      setSelectedIds([connectorObjectId]);
+      setDragging({
+        type: "connectorEndpoint",
+        id: connectorObjectId,
+        handle: connectorEndpoint,
+        startX: x,
+        startY: y,
+        before: doc,
+      });
+      dragPreviewRef.current = doc;
+      return;
+    }
     const curveObjectId = (e.target as SVGElement).dataset.curveAdjust;
     if (curveObjectId) {
       setSelectedIds([curveObjectId]);
@@ -632,6 +649,32 @@ export function DrawingEditor({
       return;
     }
 
+    if (dragging.type === "connectorEndpoint" && dragging.id && dragging.handle && dragging.before) {
+      const connector = findObjectById(dragging.before.objects, dragging.id);
+      if (!connector || connector.type !== "connector") return;
+      const end = dragging.handle as "from" | "to";
+      const currentEndpoint = connector[end];
+      const hovered = hitInObjects(
+        dragging.before.objects.filter((object) => object.type !== "connector"),
+        x,
+        y,
+      );
+      const target = hovered && hovered.id !== connector[end === "from" ? "to" : "from"].objectId
+        ? hovered
+        : findObjectById(dragging.before.objects, currentEndpoint.objectId);
+      if (!target || target.type === "connector") return;
+      const next = updateConnectorEndpoint(
+        dragging.before,
+        connector.id,
+        end,
+        target.id,
+        connectorAnchorForPoint(target, { x, y }),
+      );
+      dragPreviewRef.current = next;
+      onChange(next);
+      return;
+    }
+
     if (dragging.type === "calloutAdjust" && dragging.id && dragging.before) {
       const object = findObjectById(dragging.before.objects, dragging.id);
       if (!object || object.type !== "autoShape" || object.preset !== "callout") return;
@@ -709,7 +752,7 @@ export function DrawingEditor({
       setRedoStack([]);
       onChange(after);
       onDirty(after);
-    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "curveAdjust" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust" || dragging?.type === "braceAdjust") && dragging.before) {
+    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "connectorEndpoint" || dragging?.type === "curveAdjust" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust" || dragging?.type === "braceAdjust") && dragging.before) {
       const after = dragPreviewRef.current ?? doc;
       setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
       setRedoStack([]);
@@ -799,6 +842,20 @@ export function DrawingEditor({
 
   const handleDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
+    const connectorEndpoint = (e.target as SVGElement).dataset.connectorEndpoint;
+    const connectorObjectId = (e.target as SVGElement).dataset.objectId;
+    if ((connectorEndpoint === "from" || connectorEndpoint === "to") && connectorObjectId) {
+      const connector = findObjectById(doc.objects, connectorObjectId);
+      if (connector?.type === "connector") {
+        commit(updateConnectorEndpoint(
+          doc,
+          connector.id,
+          connectorEndpoint,
+          connector[connectorEndpoint].objectId,
+        ));
+      }
+      return;
+    }
     const { x, y } = toCanvasPoint(e.clientX, e.clientY);
     if (selectedIds.length === 1) {
       const selected = findObjectById(doc.objects, selectedIds[0]);
@@ -1136,20 +1193,26 @@ export function DrawingEditor({
                   strokeDasharray: `${6 / zoom} ${3 / zoom}`,
                   pointerEvents: "none" as const,
                 };
-                if (geometry.points) {
-                  return <polyline
-                    key={id}
+                const selection = geometry.points
+                  ? <polyline
                     points={geometry.points.map((point) => `${point.x},${point.y}`).join(" ")}
                     {...selectionProps}
-                  />;
-                }
-                if (geometry.c1 && geometry.c2) {
-                  return <g key={id}>
-                    <path
+                  />
+                  : geometry.c1 && geometry.c2
+                    ? <path
                       d={`M ${geometry.from.x} ${geometry.from.y} C ${geometry.c1.x} ${geometry.c1.y} ${geometry.c2.x} ${geometry.c2.y} ${geometry.to.x} ${geometry.to.y}`}
                       {...selectionProps}
                     />
-                    {geometry.curveHandle && <circle
+                    : <line
+                      x1={geometry.from.x}
+                      y1={geometry.from.y}
+                      x2={geometry.to.x}
+                      y2={geometry.to.y}
+                      {...selectionProps}
+                    />;
+                return <g key={id}>
+                  {selection}
+                  {geometry.curveHandle && <circle
                       className="curve-connector-adjust-handle"
                       data-curve-adjust={id}
                       aria-label="Curve connector adjustment handle"
@@ -1159,17 +1222,21 @@ export function DrawingEditor({
                       fill="#ffc000"
                       stroke="#7f6000"
                       strokeWidth={2 / zoom}
-                    />}
-                  </g>;
-                }
-                return <line
-                  key={id}
-                  x1={geometry.from.x}
-                  y1={geometry.from.y}
-                  x2={geometry.to.x}
-                  y2={geometry.to.y}
-                  {...selectionProps}
-                />;
+                  />}
+                  {(["from", "to"] as const).map((end) => <circle
+                    key={end}
+                    className="connector-endpoint-handle"
+                    data-connector-endpoint={end}
+                    data-object-id={id}
+                    aria-label={`Connector ${end} endpoint handle`}
+                    cx={geometry[end].x}
+                    cy={geometry[end].y}
+                    r={7 / zoom}
+                    fill="#ffffff"
+                    stroke="#2d6cdf"
+                    strokeWidth={2 / zoom}
+                  />)}
+                </g>;
               }
               if (
                 !obj ||

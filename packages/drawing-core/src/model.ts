@@ -121,8 +121,8 @@ export interface ImageObject extends BaseObject {
 
 export interface ConnectorObject extends BaseObject {
   type: "connector";
-  from: { objectId: string };
-  to: { objectId: string };
+  from: ConnectorEndpoint;
+  to: ConnectorEndpoint;
   /** true の場合は曲線コネクタとして描画する。 */
   curve?: boolean;
   /** 曲線の中央調整ハンドルの、両端の中点からの相対位置。 */
@@ -140,6 +140,12 @@ export interface ConnectorObject extends BaseObject {
 
 export type ConnectorEndMarker = "none" | "arrow" | "crowFoot";
 export type ConnectorEndMarkerSize = "small" | "medium" | "large";
+export interface ConnectorAnchor { x: number; y: number }
+export interface ConnectorEndpoint {
+  objectId: string;
+  /** シェイプ内の 0〜1 の相対座標。未指定の場合は接続位置を自動計算する。 */
+  anchor?: ConnectorAnchor;
+}
 
 export interface GroupObject extends BaseObject {
   type: "group";

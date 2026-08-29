@@ -1793,6 +1793,10 @@ body {
   cursor: move;
 }
 
+.connector-endpoint-handle {
+  cursor: crosshair;
+}
+
 .canvas-resize-handle {
   fill: transparent;
   stroke: none;

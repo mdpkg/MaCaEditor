@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 // Package-level regression tests stay next to the extracted core.
 import type { ConnectorObject, DrawingObject } from "./model";
-import { connectorGeometry, isPointOnConnector } from "./connector";
+import { connectorAnchorForPoint, connectorGeometry, isPointOnConnector } from "./connector";
 
 const shapes: DrawingObject[] = [
   { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
@@ -95,5 +95,26 @@ describe("connector hit testing", () => {
       x: 75,
       y: 25,
     });
+  });
+
+  it("uses independently positioned relative anchors", () => {
+    const anchored = {
+      ...connector(false),
+      from: { objectId: "a", anchor: { x: 1, y: 0.8 } },
+      to: { objectId: "b", anchor: { x: 0.25, y: 0 } },
+    };
+
+    expect(connectorGeometry(anchored, shapes)).toMatchObject({
+      from: { x: 100, y: 40 },
+      to: { x: 325, y: 200 },
+    });
+  });
+
+  it("projects points onto rectangle and ellipse outlines", () => {
+    expect(connectorAnchorForPoint(shapes[0], { x: 70, y: 40 })).toEqual({ x: 0.7, y: 1 });
+    const ellipse: DrawingObject = { ...shapes[0], type: "ellipse" };
+    const anchor = connectorAnchorForPoint(ellipse, { x: 100, y: 25 });
+    expect(anchor.x).toBeCloseTo(1);
+    expect(anchor.y).toBeCloseTo(0.5);
   });
 });

@@ -1,4 +1,4 @@
-import type { ConnectorObject, DrawingObject } from "./model";
+import type { ConnectorAnchor, ConnectorObject, DrawingObject } from "./model";
 
 /** Connector geometry primitives. */
 
@@ -77,12 +77,67 @@ function connectionSite(object: DrawingObject, toward: Point): ConnectionSite {
   };
 }
 
+function anchoredConnectionSite(object: DrawingObject, anchor: ConnectorAnchor): ConnectionSite {
+  const own = center(object);
+  const x = object.x + Math.max(0, Math.min(1, anchor.x)) * object.width;
+  const y = object.y + Math.max(0, Math.min(1, anchor.y)) * object.height;
+  let outward: Point;
+  if (object.type === "ellipse") {
+    const nx = (x - own.x) / Math.max(object.width / 2, 0.001);
+    const ny = (y - own.y) / Math.max(object.height / 2, 0.001);
+    const length = Math.max(Math.hypot(nx, ny), 0.001);
+    outward = { x: nx / length, y: ny / length };
+  } else {
+    const distances = [anchor.x, 1 - anchor.x, anchor.y, 1 - anchor.y];
+    const side = distances.indexOf(Math.min(...distances));
+    outward = side === 0 ? { x: -1, y: 0 }
+      : side === 1 ? { x: 1, y: 0 }
+        : side === 2 ? { x: 0, y: -1 }
+          : { x: 0, y: 1 };
+  }
+  return {
+    point: rotatePoint({ x, y }, own, object.rotation),
+    outward: rotateVector(outward, object.rotation),
+  };
+}
+
+/** 任意のキャンバス座標を、シェイプ輪郭上の相対アンカーへ射影する。 */
+export function connectorAnchorForPoint(object: DrawingObject, point: Point): ConnectorAnchor {
+  const local = rotatePoint(point, center(object), -object.rotation);
+  const width = Math.max(object.width, 0.001);
+  const height = Math.max(object.height, 0.001);
+  let x = (local.x - object.x) / width;
+  let y = (local.y - object.y) / height;
+  if (object.type === "ellipse") {
+    const dx = x - 0.5;
+    const dy = y - 0.5;
+    const scale = 0.5 / Math.max(Math.hypot(dx, dy), 0.001);
+    return { x: 0.5 + dx * scale, y: 0.5 + dy * scale };
+  }
+  const inside = x >= 0 && x <= 1 && y >= 0 && y <= 1;
+  x = Math.max(0, Math.min(1, x));
+  y = Math.max(0, Math.min(1, y));
+  if (inside) {
+    const distances = [x, 1 - x, y, 1 - y];
+    const side = distances.indexOf(Math.min(...distances));
+    if (side === 0) x = 0;
+    else if (side === 1) x = 1;
+    else if (side === 2) y = 0;
+    else y = 1;
+  }
+  return { x, y };
+}
+
 export function connectorGeometry(connector: ConnectorObject, objects: DrawingObject[]): ConnectorGeometry | null {
   const fromObject = findObject(objects, connector.from.objectId);
   const toObject = findObject(objects, connector.to.objectId);
   if (!fromObject || !toObject) return null;
-  const fromSite = connectionSite(fromObject, center(toObject));
-  const toSite = connectionSite(toObject, center(fromObject));
+  const fromSite = connector.from.anchor
+    ? anchoredConnectionSite(fromObject, connector.from.anchor)
+    : connectionSite(fromObject, center(toObject));
+  const toSite = connector.to.anchor
+    ? anchoredConnectionSite(toObject, connector.to.anchor)
+    : connectionSite(toObject, center(fromObject));
   const geometry: ConnectorGeometry = { from: fromSite.point, to: toSite.point };
   if (connector.elbow) {
     const fromHorizontal = fromSite.outward.x !== 0;

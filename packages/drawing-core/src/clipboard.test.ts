@@ -88,8 +88,8 @@ describe("clipboard", () => {
         height: 0,
         rotation: 0,
         zIndex: 0,
-        from: { objectId: "r1" },
-        to: { objectId: "r2" },
+        from: { objectId: "r1", anchor: { x: 1, y: 0.25 } },
+        to: { objectId: "r2", anchor: { x: 0, y: 0.75 } },
         style: {},
       },
     ]);
@@ -108,5 +108,7 @@ describe("clipboard", () => {
     const ids = pasted.objects.map((o) => o.id);
     expect(ids).toContain(conn!.from.objectId);
     expect(ids).toContain(conn!.to.objectId);
+    expect(conn!.from).toMatchObject({ anchor: { x: 1, y: 0.25 } });
+    expect(conn!.to).toMatchObject({ anchor: { x: 0, y: 0.75 } });
   });
 });

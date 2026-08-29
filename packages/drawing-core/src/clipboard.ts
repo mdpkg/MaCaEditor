@@ -51,8 +51,8 @@ export function pasteObjects(
       };
       return {
         ...moved,
-        from: { objectId: idMap.get(conn.from.objectId) ?? conn.from.objectId },
-        to: { objectId: idMap.get(conn.to.objectId) ?? conn.to.objectId },
+        from: { ...conn.from, objectId: idMap.get(conn.from.objectId) ?? conn.from.objectId },
+        to: { ...conn.to, objectId: idMap.get(conn.to.objectId) ?? conn.to.objectId },
       };
     }
     return moved;

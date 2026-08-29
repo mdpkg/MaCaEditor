@@ -747,6 +747,57 @@ describe("DrawingEditor", () => {
     act(() => root.unmount());
   });
 
+  test("drags connector endpoints along shape outlines and resets to automatic", () => {
+    const onDirty = vi.fn();
+    const starting: DrawingDocument = {
+      ...initial,
+      objects: [
+        initial.objects[0],
+        { ...initial.objects[0], id: "rect-2", x: 300, y: 200, zIndex: 2 },
+        {
+          id: "connector-1", type: "connector", x: 0, y: 0, width: 0, height: 0,
+          rotation: 0, zIndex: 3, from: { objectId: "rect-1" },
+          to: { objectId: "rect-2" }, style: {},
+        },
+      ],
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Harness() {
+      const [doc, setDoc] = useState(starting);
+      return <DrawingEditor doc={doc} onChange={setDoc} onDirty={onDirty} />;
+    }
+    act(() => root.render(<Harness />));
+    const canvas = container.querySelector("svg.drawing-canvas") as SVGSVGElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+
+    act(() => canvas.dispatchEvent(pointerEvent("pointerdown", 240, 170)));
+    const fromHandle = container.querySelector('[aria-label="Connector from endpoint handle"]') as SVGCircleElement;
+    expect(fromHandle).not.toBeNull();
+    act(() => fromHandle.dispatchEvent(pointerEvent("pointerdown", 180, 120)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointermove", 140, 105)));
+    act(() => canvas.dispatchEvent(pointerEvent("pointerup", 140, 105)));
+
+    const anchored = onDirty.mock.lastCall?.[0] as DrawingDocument;
+    expect(anchored.objects[2]).toMatchObject({
+      from: { objectId: "rect-1", anchor: { x: 0.5, y: 0 } },
+    });
+
+    const updatedHandle = container.querySelector('[aria-label="Connector from endpoint handle"]') as SVGCircleElement;
+    act(() => updatedHandle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })));
+    const reset = onDirty.mock.lastCall?.[0] as DrawingDocument;
+    expect(reset.objects[2]).toMatchObject({ from: { objectId: "rect-1" } });
+    expect((reset.objects[2] as { from: { anchor?: unknown } }).from.anchor).toBeUndefined();
+    act(() => root.unmount());
+  });
+
   test("groups selected shapes and ungroups the selected group", () => {
     const onDirty = vi.fn();
     const second = {
