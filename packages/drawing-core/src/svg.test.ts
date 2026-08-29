@@ -481,8 +481,8 @@ describe("svg renderer", () => {
       { id: "b", type: "rectangle", x: 300, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1, style: {} },
     ]));
 
-    expect(svg).toContain('marker-start="url(#crow-foot)"');
-    expect(svg).toContain('marker-end="url(#arrowhead)"');
+    expect(svg).toContain('marker-start="url(#crow-foot-medium)"');
+    expect(svg).toContain('marker-end="url(#arrowhead-medium)"');
   });
 
   test("renders independently sized connector end markers", () => {
@@ -508,7 +508,7 @@ describe("svg renderer", () => {
     ]));
 
     expect(svg).not.toContain("marker-start=");
-    expect(svg).toContain('marker-end="url(#arrowhead)"');
+    expect(svg).toContain('marker-end="url(#arrowhead-medium)"');
   });
 
   test("connects vertical shapes at their nearest edges", () => {

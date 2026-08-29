@@ -250,7 +250,7 @@ function renderConnector(
   ) => {
     if (marker === "none") return null;
     const base = marker === "arrow" ? "arrowhead" : "crow-foot";
-    return size === "medium" ? base : `${base}-${size}`;
+    return `${base}-${size}`;
   };
   const startMarker = markerId(obj.startMarker ?? "none", obj.startMarkerSize ?? "medium");
   const endMarker = markerId(obj.endMarker ?? "arrow", obj.endMarkerSize ?? "medium");
@@ -323,26 +323,33 @@ export function renderSvg(
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewX} ${viewY} ${width} ${height}">
 <defs>
-<marker id="arrowhead-small" markerWidth="7" markerHeight="7" refX="6.3" refY="2.1" orient="auto-start-reverse" markerUnits="strokeWidth">
-<polygon points="0 0, 7 2.1, 0 4.2" fill="#000000" />
+<marker id="arrowhead-small" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
+<polygon points="0 0, 10 3, 0 6" fill="#000000" />
 </marker>
 <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
 <polygon points="0 0, 10 3, 0 6" fill="#000000" />
 </marker>
-<marker id="arrowhead-large" markerWidth="14" markerHeight="14" refX="12.6" refY="4.2" orient="auto-start-reverse" markerUnits="strokeWidth">
+<marker id="arrowhead-medium" markerWidth="14" markerHeight="14" refX="12.6" refY="4.2" orient="auto-start-reverse" markerUnits="strokeWidth">
 <polygon points="0 0, 14 4.2, 0 8.4" fill="#000000" />
 </marker>
-<marker id="crow-foot-small" markerWidth="8.4" markerHeight="7" refX="6.3" refY="2.1" orient="auto-start-reverse" markerUnits="strokeWidth">
-<polyline points="0,0 6.3,2.1 0,4.2" fill="none" stroke="#000000" />
-<line x1="0" y1="2.1" x2="6.3" y2="2.1" stroke="#000000" />
+<marker id="arrowhead-large" markerWidth="20" markerHeight="20" refX="18" refY="6" orient="auto-start-reverse" markerUnits="strokeWidth">
+<polygon points="0 0, 20 6, 0 12" fill="#000000" />
+</marker>
+<marker id="crow-foot-small" markerWidth="12" markerHeight="10" refX="9" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
+<polyline points="0,0 9,3 0,6" fill="none" stroke="#000000" />
+<line x1="0" y1="3" x2="9" y2="3" stroke="#000000" />
 </marker>
 <marker id="crow-foot" markerWidth="12" markerHeight="10" refX="9" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
 <polyline points="0,0 9,3 0,6" fill="none" stroke="#000000" />
 <line x1="0" y1="3" x2="9" y2="3" stroke="#000000" />
 </marker>
-<marker id="crow-foot-large" markerWidth="16.8" markerHeight="14" refX="12.6" refY="4.2" orient="auto-start-reverse" markerUnits="strokeWidth">
+<marker id="crow-foot-medium" markerWidth="16.8" markerHeight="14" refX="12.6" refY="4.2" orient="auto-start-reverse" markerUnits="strokeWidth">
 <polyline points="0,0 12.6,4.2 0,8.4" fill="none" stroke="#000000" />
 <line x1="0" y1="4.2" x2="12.6" y2="4.2" stroke="#000000" />
+</marker>
+<marker id="crow-foot-large" markerWidth="24" markerHeight="20" refX="18" refY="6" orient="auto-start-reverse" markerUnits="strokeWidth">
+<polyline points="0,0 18,6 0,12" fill="none" stroke="#000000" />
+<line x1="0" y1="6" x2="18" y2="6" stroke="#000000" />
 </marker>
 </defs>
 ${body}
