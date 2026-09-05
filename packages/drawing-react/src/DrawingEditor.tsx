@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   alignObjects,
+  distributeObjects,
+  smartGuideMove,
+  type SmartGuide,
+  updateConnectorLabel,
   bringForward,
   bringToFront,
   deleteObjects,
@@ -35,6 +39,7 @@ import {
   LINE_DASH_OPTIONS,
   LINE_WEIGHT_OPTIONS,
   connectorGeometry,
+  connectorLabelLayout,
   connectorAnchorForPoint,
   isPointOnConnector,
   getArcArrowGeometry,
@@ -149,6 +154,8 @@ export function DrawingEditor({
   const [zoom, setZoom] = useState(1);
   const [gridVisible, setGridVisible] = useState(true);
   const [snap, setSnap] = useState(true);
+  const [smartGuidesEnabled, setSmartGuidesEnabled] = useState(true);
+  const [smartGuides, setSmartGuides] = useState<SmartGuide[]>([]);
   const [undoStack, setUndoStack] = useState<History>([]);
   const [redoStack, setRedoStack] = useState<History>([]);
   const [clipboard, setClipboard] = useState<DrawingObject[]>([]);
@@ -280,6 +287,10 @@ export function DrawingEditor({
           const geometry = connectorGeometry(obj, doc.objects);
           const tolerance = Math.max(12 / zoom, (obj.style.strokeWidth ?? 1) / 2 + 6 / zoom);
           if (geometry && isPointOnConnector(geometry, x, y, tolerance)) return obj;
+          if (geometry && obj.label) {
+            const label = connectorLabelLayout(obj.label, geometry);
+            if (x >= label.x && x <= label.x + label.width && y >= label.y && y <= label.y + label.height) return obj;
+          }
           continue;
         }
         if (obj.type === "line" || obj.type === "arrow") {
@@ -704,7 +715,7 @@ export function DrawingEditor({
       const start = { x: dragging.startX, y: dragging.startY };
       const current = { x, y };
       const ids = dragging.ids ?? [dragging.id];
-      const next = snap
+      let next = snap
         ? moveObjectsFromDragStartSnapped(
           original,
           ids,
@@ -714,6 +725,18 @@ export function DrawingEditor({
           doc.canvas.gridSize,
         )
         : moveObjectsFromDragStart(original, ids, start, current);
+      if (smartGuidesEnabled && !e.altKey) {
+        const guided = smartGuideMove(original, ids, { x: x - start.x, y: y - start.y }, 6 / zoom);
+        const anchor = findObjectById(original.objects, dragging.id)!;
+        const gridAnchor = findObjectById(next.objects, dragging.id)!;
+        next = moveObjectsFromDragStart(original, ids, start, {
+          x: start.x + (guided.guides.some(g => g.axis === "x") ? guided.delta.x : gridAnchor.x - anchor.x),
+          y: start.y + (guided.guides.some(g => g.axis === "y") ? guided.delta.y : gridAnchor.y - anchor.y),
+        });
+        setSmartGuides(guided.guides);
+      } else {
+        setSmartGuides([]);
+      }
       dragPreviewRef.current = next;
       onChange(next);
       return;
@@ -737,6 +760,7 @@ export function DrawingEditor({
   };
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    setSmartGuides([]);
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -868,7 +892,7 @@ export function DrawingEditor({
       }
     }
     const hit = hitTest(x, y);
-    if (!hit || (!isTextShapeType(hit.type) && hit.type !== "text")) return;
+    if (!hit || (!isTextShapeType(hit.type) && hit.type !== "text" && hit.type !== "connector")) return;
     setSelectedIds([hit.id]);
     setTextFocusRequest((request) => request + 1);
   };
@@ -1144,6 +1168,11 @@ export function DrawingEditor({
         <button onClick={() => setSnap((s) => !s)} title="Toggle Snap">
           Snap {snap ? "On" : "Off"}
         </button>
+        <button aria-label="Smart guides" aria-pressed={smartGuidesEnabled}
+          title="Align to shape edges and centers (Alt to bypass)"
+          onClick={() => { setSmartGuidesEnabled(value => !value); setSmartGuides([]); }}>
+          Guides {smartGuidesEnabled ? "On" : "Off"}
+        </button>
       </div>
       <div className="drawing-canvas-wrap">
         <svg
@@ -1155,6 +1184,14 @@ export function DrawingEditor({
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onPointerCancel={(event) => {
+            if (dragging?.before) onChange(dragging.before);
+            dragPreviewRef.current = null;
+            setDragging(null);
+            setSelectionMarquee(null);
+            setSmartGuides([]);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
           onContextMenu={handleContextMenu}
           onDoubleClick={handleDoubleClick}
           onWheel={handleWheel}
@@ -1180,6 +1217,13 @@ export function DrawingEditor({
             ))}
           <g>
             <g dangerouslySetInnerHTML={{ __html: svg.replace(/<svg[^>]*>|<\/svg>/g, "") }} />
+            {smartGuides.map((guide, i) => <line key={i} data-smart-guide={guide.axis}
+              x1={guide.axis === "x" ? guide.value : guide.start - 8 / zoom}
+              y1={guide.axis === "y" ? guide.value : guide.start - 8 / zoom}
+              x2={guide.axis === "x" ? guide.value : guide.end + 8 / zoom}
+              y2={guide.axis === "y" ? guide.value : guide.end + 8 / zoom}
+              stroke="#d63384" strokeWidth={1 / zoom} strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+              pointerEvents="none" />)}
             {selectedIds.map((id) => {
               const obj = findObjectById(doc.objects, id);
               if (obj?.type === "connector") {
@@ -1696,6 +1740,12 @@ export function DrawingEditor({
             {selected.type === "connector" && (
               <>
                 <div className="inspector-row">
+                  <label htmlFor="connector-label-input">Label</label>
+                  <textarea ref={shapeTextRef} id="connector-label-input" aria-label="Connector label" rows={3}
+                    value={selected.label ?? ""}
+                    onChange={event => commit(updateConnectorLabel(doc, selected.id, event.target.value))} />
+                </div>
+                <div className="inspector-row">
                   <label>Start</label>
                   <select
                     aria-label="Connector start"
@@ -1885,6 +1935,12 @@ export function DrawingEditor({
             <button onClick={() => applyAlign("top")}>T</button>
             <button onClick={() => applyAlign("middle")}>M</button>
             <button onClick={() => applyAlign("bottom")}>B</button>
+            <button aria-label="Distribute horizontally" title="Equal horizontal gaps"
+              disabled={selectedObjects.filter(o => o.type !== "connector").length < 3}
+              onClick={() => commit(distributeObjects(doc, selectedIds, "horizontal"))}>H gaps</button>
+            <button aria-label="Distribute vertically" title="Equal vertical gaps"
+              disabled={selectedObjects.filter(o => o.type !== "connector").length < 3}
+              onClick={() => commit(distributeObjects(doc, selectedIds, "vertical"))}>V gaps</button>
           </div>
         )}
         <div className="inspector-group">

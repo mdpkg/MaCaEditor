@@ -60,6 +60,9 @@ export function validateDrawingDocument(doc: DrawingDocument): void {
         throw new DrawingError(`unknown object type: ${obj.type}`);
       }
       validateNumeric(obj);
+      if (obj.type === "connector" && obj.label !== undefined && typeof obj.label !== "string") {
+        throw new DrawingError(`connector "${obj.id}" label must be a string`);
+      }
       if (obj.type === "autoShape" && !isAutoShapePreset(obj.preset)) {
         throw new DrawingError(`unknown auto shape preset: ${obj.preset}`);
       }
