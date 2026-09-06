@@ -63,7 +63,7 @@ test("distributes selected shapes and undoes the whole operation", () => {
 
 test("shows alignment guides while dragging, snaps and clears guides on release", () => {
   const ui = mount();
-  ui.click('[title="Toggle Snap"]');
+  expect(ui.container.querySelector('[title="Toggle Snap"]')?.textContent).toContain("Off");
   ui.pointer("pointerdown", 140, 120);
   ui.pointer("pointermove", 337, 170);
   expect(ui.doc().objects[0].x).toBe(300);
@@ -76,7 +76,6 @@ test("shows alignment guides while dragging, snaps and clears guides on release"
 
 test("can disable smart guides independently of grid snapping", () => {
   const ui = mount();
-  ui.click('[title="Toggle Snap"]');
   ui.click('[aria-label="Smart guides"]');
   ui.pointer("pointerdown", 140, 120);
   ui.pointer("pointermove", 337, 170);
@@ -115,4 +114,34 @@ test("cancelling a drag restores the document and removes guides", () => {
   ui.pointer("pointercancel", 337, 170);
   expect(ui.doc().objects[0].x).toBe(100);
   expect(ui.container.querySelector('[data-smart-guide]')).toBeNull();
+});
+
+test("restores host preferences on reopening and reports toggles without dirtying the drawing", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  const onDirty = vi.fn();
+  const onChange = vi.fn();
+  const preferencesChanged = vi.fn();
+  let reopen: () => void;
+  function Harness() {
+    const [preferences, setPreferences] = useState({ gridVisible: false, snap: false, smartGuidesEnabled: false });
+    const [key, setKey] = useState(0);
+    reopen = () => setKey(value => value + 1);
+    return <DrawingEditor key={key} doc={{ format: "maca-drawing", version: "1.0",
+      canvas: { width: 800, height: 600, gridSize: 10 }, objects: [] }}
+      onChange={onChange} onDirty={onDirty} preferences={preferences}
+      onPreferencesChange={next => { preferencesChanged(next); setPreferences(next); }} />;
+  }
+  act(() => root.render(<Harness />));
+  const selectors = ['[title="Toggle Grid"]', '[title="Toggle Snap"]', '[aria-label="Smart guides"]'];
+  for (const selector of selectors) {
+    expect(container.querySelector(selector)?.textContent).toContain("Off");
+    act(() => (container.querySelector(selector) as HTMLButtonElement).click());
+  }
+  expect(preferencesChanged).toHaveBeenLastCalledWith({ gridVisible: true, snap: true, smartGuidesEnabled: true });
+  act(() => reopen());
+  for (const selector of selectors) expect(container.querySelector(selector)?.textContent).toContain("On");
+  expect(onDirty).not.toHaveBeenCalled();
+  expect(onChange).not.toHaveBeenCalled();
 });

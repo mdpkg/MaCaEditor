@@ -107,12 +107,15 @@ import {
 import { EMPTY_2X2_MARKDOWN_TABLE } from "./lib/markdownTable";
 import {
   loadRspressMode,
+  loadDrawingPreferences,
+  saveDrawingPreferences,
   loadShowToc,
   loadVimMode,
   saveRspressMode,
   saveShowToc,
   saveVimMode,
 } from "./lib/editorPreferences";
+import type { DrawingPreferences } from "@maca/drawing-react";
 import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { diagnosePackage } from "./lib/packageDiagnostics";
@@ -173,6 +176,9 @@ export default function App() {
   const [rspressMode, setRspressMode] = useState(false);
   const [fileListOpen, setFileListOpen] = useState(true);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [drawingPreferences, setDrawingPreferences] = useState<DrawingPreferences>({
+    gridVisible: true, snap: false, smartGuidesEnabled: true,
+  });
   const [notifications, setNotifications] = useState<BannerNotice[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
@@ -248,15 +254,17 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([loadVimMode(), loadShowToc(), loadRspressMode()]).then(([
+    void Promise.all([loadVimMode(), loadShowToc(), loadRspressMode(), loadDrawingPreferences()]).then(([
       storedVimMode,
       storedShowToc,
       storedRspressMode,
+      storedDrawingPreferences,
     ]) => {
       if (!active) return;
       setVimMode(storedVimMode);
       setShowToc(storedShowToc);
       setRspressMode(storedRspressMode);
+      setDrawingPreferences(storedDrawingPreferences);
       setPreferencesLoaded(true);
     });
     return () => { active = false; };
@@ -389,6 +397,10 @@ export default function App() {
   useEffect(() => {
     if (preferencesLoaded) void saveRspressMode(rspressMode);
   }, [preferencesLoaded, rspressMode]);
+
+  useEffect(() => {
+    if (preferencesLoaded) void saveDrawingPreferences(drawingPreferences);
+  }, [preferencesLoaded, drawingPreferences]);
 
   useEffect(() => {
     if (doc && !selectedPath) {
@@ -1406,13 +1418,15 @@ export default function App() {
               <p>Markdown Package を開くか、新規作成してください。</p>
             </div>
           )}
-          {doc && mode === "drawing" && drawingDoc && drawingPath && (
+          {doc && mode === "drawing" && drawingDoc && drawingPath && preferencesLoaded && (
             <DrawingEditor
               doc={drawingDoc}
               onChange={handleDrawingChange}
               onDirty={handleDrawingDirty}
               onRequestImage={handleDrawingImageRequest}
               propertiesPanelId="drawing-properties-panel"
+              preferences={drawingPreferences}
+              onPreferencesChange={setDrawingPreferences}
             />
           )}
           {doc && mode === "plantuml" && plantUmlPath && (() => {

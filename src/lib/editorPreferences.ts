@@ -1,8 +1,10 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
+import type { DrawingPreferences } from "@maca/drawing-react";
 
 const VIM_MODE_KEY = "vimMode";
 const SHOW_TOC_KEY = "showToc";
 const RSPRESS_MODE_KEY = "rspressMode";
+const DRAWING_PREFERENCES_KEY = "drawingPreferences";
 
 export interface PreferenceStore {
   get<T>(key: string): Promise<T | null | undefined>;
@@ -10,6 +12,31 @@ export interface PreferenceStore {
 }
 
 const settingsStore = new LazyStore("settings.json");
+
+export async function loadDrawingPreferences(store: PreferenceStore = settingsStore): Promise<DrawingPreferences> {
+  let stored: Partial<DrawingPreferences> | null | undefined;
+  try {
+    stored = await store.get<Partial<DrawingPreferences>>(DRAWING_PREFERENCES_KEY);
+  } catch {
+    // Retain defaults if storage is unavailable.
+  }
+  return {
+    gridVisible: typeof stored?.gridVisible === "boolean" ? stored.gridVisible : true,
+    snap: typeof stored?.snap === "boolean" ? stored.snap : false,
+    smartGuidesEnabled: typeof stored?.smartGuidesEnabled === "boolean" ? stored.smartGuidesEnabled : true,
+  };
+}
+
+export async function saveDrawingPreferences(
+  preferences: DrawingPreferences,
+  store: PreferenceStore = settingsStore,
+): Promise<void> {
+  try {
+    await store.set(DRAWING_PREFERENCES_KEY, preferences);
+  } catch {
+    // Keep editing available when persistent storage is unavailable.
+  }
+}
 
 async function loadBooleanPreference(
   key: string,

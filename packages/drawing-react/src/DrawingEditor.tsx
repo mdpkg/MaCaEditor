@@ -60,6 +60,7 @@ import {
   type ToolKind,
 } from "@maca/drawing-core";
 import { ShapePicker, type ShapePickerItem } from "./ShapePicker";
+import { DEFAULT_DRAWING_PREFERENCES, type DrawingPreferences } from "./preferences";
 
 /** Host integration contract for the reusable React drawing editor. */
 export interface DrawingEditorProps {
@@ -68,6 +69,8 @@ export interface DrawingEditorProps {
   onDirty: (doc: DrawingDocument) => void;
   onRequestImage?: () => Promise<string | null>;
   propertiesPanelId?: string;
+  preferences?: DrawingPreferences;
+  onPreferencesChange?: (preferences: DrawingPreferences) => void;
 }
 
 type Tool = ToolKind;
@@ -148,13 +151,20 @@ export function DrawingEditor({
   onDirty,
   onRequestImage,
   propertiesPanelId,
+  preferences,
+  onPreferencesChange,
 }: DrawingEditorProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
-  const [gridVisible, setGridVisible] = useState(true);
-  const [snap, setSnap] = useState(true);
-  const [smartGuidesEnabled, setSmartGuidesEnabled] = useState(true);
+  const [localPreferences, setLocalPreferences] = useState(DEFAULT_DRAWING_PREFERENCES);
+  const viewPreferences = preferences ?? localPreferences;
+  const { gridVisible, snap, smartGuidesEnabled } = viewPreferences;
+  const togglePreference = (key: keyof DrawingPreferences) => {
+    const next = { ...viewPreferences, [key]: !viewPreferences[key] };
+    setLocalPreferences(next);
+    onPreferencesChange?.(next);
+  };
   const [smartGuides, setSmartGuides] = useState<SmartGuide[]>([]);
   const [undoStack, setUndoStack] = useState<History>([]);
   const [redoStack, setRedoStack] = useState<History>([]);
@@ -1162,15 +1172,15 @@ export function DrawingEditor({
         <span className="drawing-toolbar-spacer" />
         <button onClick={() => setZoom(1)} title="Reset Zoom">100%</button>
         <button onClick={() => setZoom(1)} title="Fit to Canvas">Fit</button>
-        <button onClick={() => setGridVisible((g) => !g)} title="Toggle Grid">
+        <button onClick={() => togglePreference("gridVisible")} title="Toggle Grid">
           Grid {gridVisible ? "On" : "Off"}
         </button>
-        <button onClick={() => setSnap((s) => !s)} title="Toggle Snap">
+        <button onClick={() => togglePreference("snap")} title="Toggle Snap">
           Snap {snap ? "On" : "Off"}
         </button>
         <button aria-label="Smart guides" aria-pressed={smartGuidesEnabled}
           title="Align to shape edges and centers (Alt to bypass)"
-          onClick={() => { setSmartGuidesEnabled(value => !value); setSmartGuides([]); }}>
+          onClick={() => { togglePreference("smartGuidesEnabled"); setSmartGuides([]); }}>
           Guides {smartGuidesEnabled ? "On" : "Off"}
         </button>
       </div>
