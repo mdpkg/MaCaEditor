@@ -64,6 +64,15 @@ export function updateConnectorEnds(
   };
 }
 
+export function updateConnectorLabel(doc: DrawingDocument, id: string, label: string): DrawingDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map(object => mapObjectById(object, id, current =>
+      current.type === "connector" ? { ...current, label } : current,
+    )),
+  };
+}
+
 export function updateConnectorEndSizes(
   doc: DrawingDocument,
   id: string,

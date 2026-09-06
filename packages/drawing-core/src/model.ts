@@ -121,6 +121,8 @@ export interface ImageObject extends BaseObject {
 
 export interface ConnectorObject extends BaseObject {
   type: "connector";
+  /** Plain text displayed at the center of the connector route. */
+  label?: string;
   from: ConnectorEndpoint;
   to: ConnectorEndpoint;
   /** true の場合は曲線コネクタとして描画する。 */

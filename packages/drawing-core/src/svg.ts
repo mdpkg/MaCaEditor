@@ -16,7 +16,7 @@ import type {
   UserObject,
 } from "./model";
 import { svgLineStyle } from "./lineStyle";
-import { connectorGeometry } from "./connector";
+import { connectorGeometry, connectorLabelLayout, type ConnectorGeometry } from "./connector";
 import { getAutoShapeOutlinePoints, getShapeDefinition } from "./shapeRegistry";
 
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
@@ -84,6 +84,13 @@ function objectBounds(object: DrawingObject): Bounds | null {
 
 function contentBounds(objects: DrawingObject[]): Bounds | null {
   const bounds = objects.map(objectBounds).filter((value): value is Bounds => value !== null);
+  for (const object of objects) {
+    if (object.type !== "connector" || !object.label) continue;
+    const geometry = connectorGeometry(object, objects);
+    if (!geometry) continue;
+    const label = connectorLabelLayout(object.label, geometry);
+    bounds.push({ minX: label.x, minY: label.y, maxX: label.x + label.width, maxY: label.y + label.height });
+  }
   if (bounds.length === 0) return null;
   return {
     minX: Math.min(...bounds.map((value) => value.minX)),
@@ -237,6 +244,15 @@ function renderArrow(obj: ArrowObject): string {
   return `<line x1="${obj.x}" y1="${obj.y}" x2="${obj.x2}" y2="${obj.y2}" ${svgLineStyle(obj.style)} marker-end="url(#arrowhead)" />`;
 }
 
+function renderConnectorLabel(label: string | undefined, geometry: ConnectorGeometry): string {
+  if (!label) return "";
+  const { point, lines } = connectorLabelLayout(label, geometry);
+  const content = lines.map((line, i) =>
+    `<tspan x="${point.x}" y="${point.y + (i - (lines.length - 1) / 2) * 18}">${escapeXml(line)}</tspan>`,
+  ).join("");
+  return `<text class="connector-label" x="${point.x}" y="${point.y}" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" fill="#222222" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${content}</text>`;
+}
+
 function renderConnector(
   obj: ConnectorObject,
   objects: DrawingObject[],
@@ -244,6 +260,7 @@ function renderConnector(
   const geometry = connectorGeometry(obj, objects);
   if (!geometry) return "";
   const { from, to, c1, c2 } = geometry;
+  const label = renderConnectorLabel(obj.label, geometry);
   const markerId = (
     marker: "none" | "arrow" | "crowFoot",
     size: "small" | "medium" | "large",
@@ -257,12 +274,12 @@ function renderConnector(
   const markers = `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
   if (geometry.points) {
     const points = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
-    return `<polyline points="${points}" fill="none" ${svgLineStyle(obj.style)}${markers} />`;
+    return `<polyline points="${points}" fill="none" ${svgLineStyle(obj.style)}${markers} />${label}`;
   }
   if (c1 && c2) {
-    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)}${markers} />`;
+    return `<path d="M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}" fill="none" ${svgLineStyle(obj.style)}${markers} />${label}`;
   }
-  return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)}${markers} />`;
+  return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" ${svgLineStyle(obj.style)}${markers} />${label}`;
 }
 
 function renderObject(object: DrawingObject, siblings: DrawingObject[]): string {

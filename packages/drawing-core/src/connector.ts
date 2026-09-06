@@ -221,6 +221,39 @@ function cubicPoint(geometry: ConnectorGeometry, t: number): Point {
   };
 }
 
+/** Midpoint on the route (half of the traveled distance for elbow connectors). */
+export function connectorLabelPoint(geometry: ConnectorGeometry): Point {
+  if (geometry.points) {
+    const lengths = geometry.points.slice(1).map((point, i) => Math.hypot(
+      point.x - geometry.points![i].x, point.y - geometry.points![i].y,
+    ));
+    let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+    for (let i = 0; i < lengths.length; i++) {
+      if (lengths[i] === 0) continue;
+      if (remaining <= lengths[i]) {
+        const start = geometry.points[i];
+        const end = geometry.points[i + 1];
+        const t = remaining / lengths[i];
+        return { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+      }
+      remaining -= lengths[i];
+    }
+    return geometry.from;
+  }
+  if (geometry.c1 && geometry.c2) return cubicPoint(geometry, 0.5);
+  return { x: (geometry.from.x + geometry.to.x) / 2, y: (geometry.from.y + geometry.to.y) / 2 };
+}
+
+/** Shared layout for SVG output, hit testing, and export bounds. */
+export function connectorLabelLayout(label: string, geometry: ConnectorGeometry) {
+  const point = connectorLabelPoint(geometry);
+  const lines = label.replace(/\r\n?/g, "\n").split("\n");
+  // One em per code point is a conservative estimate, including CJK glyphs.
+  const width = Math.max(...lines.map(line => Array.from(line).length), 1) * 14 + 8;
+  const height = lines.length * 18 + 4;
+  return { point, lines, x: point.x - width / 2, y: point.y - height / 2, width, height };
+}
+
 export function isPointOnConnector(geometry: ConnectorGeometry, x: number, y: number, tolerance: number): boolean {
   const point = { x, y };
   if (geometry.points) {

@@ -4,6 +4,7 @@ export * from "./drawing";
 export * from "./edit";
 export * from "./factory";
 export * from "./lineStyle";
+export * from "./layout";
 export * from "./model";
 export * from "./sanitizeImageSrc";
 export * from "./shapeRegistry";
