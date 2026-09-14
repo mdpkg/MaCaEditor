@@ -9,26 +9,24 @@ export interface MarkdownTableData {
 export const EMPTY_2X2_MARKDOWN_TABLE = "|  |  |\n| --- | --- |\n|  |  |\n|  |  |";
 
 function splitRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  const cells: string[] = [];
-  let current = "";
-  let escaped = false;
-  for (const character of trimmed) {
-    if (escaped) {
-      current += character;
-      escaped = false;
-    } else if (character === "\\") {
-      escaped = true;
+  const trimmed = line.trim();
+  const cells = [""];
+  let endsWithDelimiter = false;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const character = trimmed[index];
+    endsWithDelimiter = false;
+    if (character === "\\" && /[\\|]/.test(trimmed[index + 1] || "")) {
+      cells[cells.length - 1] += trimmed[++index];
     } else if (character === "|") {
-      cells.push(current.trim().replace(/<br\s*\/?>/gi, "\n"));
-      current = "";
+      cells.push("");
+      endsWithDelimiter = true;
     } else {
-      current += character;
+      cells[cells.length - 1] += character;
     }
   }
-  if (escaped) current += "\\";
-  cells.push(current.trim().replace(/<br\s*\/?>/gi, "\n"));
-  return cells;
+  if (trimmed.startsWith("|")) cells.shift();
+  if (endsWithDelimiter) cells.pop();
+  return cells.map((cell) => cell.trim().replace(/<br\s*\/?\s*>/gi, "\n"));
 }
 
 function parseAlignment(value: string): TableAlignment {
@@ -39,7 +37,7 @@ function parseAlignment(value: string): TableAlignment {
 }
 
 export function parseMarkdownTable(markdown: string): MarkdownTableData {
-  const lines = markdown.trim().split(/\r?\n/);
+  const lines = markdown.trim().split(/\r\n|\r|\n/);
   if (lines.length < 2) throw new Error("A Markdown table needs a header and separator row");
   const headers = splitRow(lines[0]);
   const aligns = splitRow(lines[1]).map(parseAlignment);
@@ -51,6 +49,18 @@ export function parseMarkdownTable(markdown: string): MarkdownTableData {
     ...Array(Math.max(0, headers.length - row.length)).fill(""),
   ]);
   return { headers, aligns, rows };
+}
+
+// Detect clipboard tables strictly so ordinary multiline text still falls back to TSV.
+export function parseClipboardMarkdownTable(value: string): MarkdownTableData | null {
+  const lines = value.trim().split(/\r\n|\r|\n/);
+  if (lines.length < 2 || !lines[0].includes("|") || !lines[1].includes("|")) return null;
+  const headers = splitRow(lines[0]);
+  const markers = splitRow(lines[1]);
+  if (headers.length !== markers.length || !markers.every((marker) => /^:?-{3,}:?$/.test(marker))) {
+    return null;
+  }
+  return parseMarkdownTable(value);
 }
 
 function escapeCell(value: string): string {

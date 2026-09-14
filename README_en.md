@@ -22,6 +22,7 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 - `:::` container rendering in Rspress mode
 - Toggleable table of contents (TOC)
 - Click tables in the preview to edit them with a GUI
+- Insert table rows and columns at any position; paste TSV or Markdown tables, including column alignment
 - Support for image filenames containing Japanese characters or spaces
 - GitHub-style preview
 - Double-click Markdown files in the file tree to edit them

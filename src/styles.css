@@ -1008,6 +1008,7 @@ body {
 
 .markdown-table-wrap {
   overflow: auto;
+  padding: 16px;
 }
 
 .markdown-table-editor table {
@@ -1029,6 +1030,7 @@ body {
 }
 
 .markdown-table-editor textarea {
+  text-align: inherit;
   display: block;
   width: 100%;
   min-height: 3em;
@@ -1090,6 +1092,42 @@ body {
 
 .markdown-table-editor .table-add-row-cell {
   border-bottom: 2px solid var(--accent);
+}
+
+.markdown-table-editor .table-column-actions,
+.markdown-table-editor .table-row-actions,
+.markdown-table-editor .table-add-row-cell {
+  position: relative;
+}
+
+.markdown-table-editor button.table-insert-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--panel);
+  font-size: 1rem;
+  font-weight: 700;
+  transform: translate(-50%, -50%);
+}
+
+.markdown-table-editor .table-insert-column-end {
+  left: 100%;
+}
+
+.markdown-table-editor .table-insert-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .markdown-preview table th {

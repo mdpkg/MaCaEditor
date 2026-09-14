@@ -22,6 +22,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 - Rspressモードでの`:::`コンテナ表示
 - チェックボックスで切り替えられる目次（TOC）表示
 - プレビュー上のテーブルをクリックしてGUIで編集
+- テーブルの任意位置に行・列を挿入、TSV・Markdownテーブルの貼り付け（列の配置も反映）
 - 日本語や空白を含む画像ファイル名への対応
 - GitHub風のプレビュースタイル
 - ファイルツリーのMarkdownファイルをダブルクリックして編集

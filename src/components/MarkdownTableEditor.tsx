@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   parseMarkdownTable,
+  parseClipboardMarkdownTable,
   serializeMarkdownTable,
   type MarkdownTableData,
   type TableAlignment,
@@ -24,6 +25,15 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
   const [table, setTable] = useState(() => parseMarkdownTable(source));
   const [status, setStatus] = useState("");
   const undoStack = useRef<MarkdownTableData[]>([]);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (pendingFocus.current) {
+      editorRef.current?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${pendingFocus.current}"]`)?.focus();
+      pendingFocus.current = null;
+    }
+  }, [table]);
 
   const commit = (next: MarkdownTableData, message = "") => {
     undoStack.current.push(clone(table));
@@ -40,11 +50,12 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
     commit(next);
   };
 
-  const pasteTsv = (event: React.ClipboardEvent, row: number, column: number) => {
+  const pasteTable = (event: React.ClipboardEvent, row: number, column: number) => {
     const text = event.clipboardData.getData("text/plain");
     if (!text.includes("\t") && !/[\r\n]/.test(text)) return;
     event.preventDefault();
-    const values = text.replace(/\r\n?/g, "\n").replace(/\n$/, "")
+    const markdownTable = parseClipboardMarkdownTable(text);
+    const values = markdownTable ? [markdownTable.headers, ...markdownTable.rows] : text.replace(/\r\n?/g, "\n").replace(/\n$/, "")
       .split("\n").map((line) => line.split("\t"));
     const next = clone(table);
     const neededColumns = column + Math.max(...values.map((line) => line.length));
@@ -53,6 +64,9 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
       next.aligns.push("left");
       next.rows.forEach((current) => current.push(""));
     }
+    markdownTable?.aligns.forEach((alignment, offset) => {
+      next.aligns[column + offset] = alignment;
+    });
     const firstDataRow = row < 0 ? 0 : row;
     const dataCount = row < 0 ? values.length - 1 : values.length;
     while (next.rows.length < firstDataRow + dataCount) {
@@ -66,7 +80,30 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
         else next.rows[targetRow][column + columnOffset] = value;
       });
     });
-    commit(next, "TSV を貼り付けました");
+    commit(next, markdownTable ? "Markdown テーブルを貼り付けました" : "TSV を貼り付けました");
+  };
+
+  const insertRow = (row: number) => {
+    const next = clone(table);
+    next.rows.splice(row, 0, Array(next.headers.length).fill(""));
+    pendingFocus.current = `Row ${row + 1}, column 1`;
+    commit(next, `${row + 1} 行目に行を挿入しました`);
+  };
+
+  const insertColumn = (column: number) => {
+    const next = clone(table);
+    next.headers.splice(column, 0, `列 ${next.headers.length + 1}`);
+    next.aligns.splice(column, 0, "left");
+    next.rows.forEach((row) => row.splice(column, 0, ""));
+    pendingFocus.current = `Header column ${column + 1}`;
+    commit(next, `${column + 1} 列目に列を挿入しました`);
+  };
+
+  const insertButton = (axis: "row" | "column", index: number, end = false) => {
+    const label = `${index + 1} ${axis === "column" ? "列目に列" : "行目に行"}を挿入`;
+    return <button type="button" className={`table-insert-button${end ? " table-insert-column-end" : ""}`}
+      aria-label={label} title={label}
+      onClick={() => axis === "column" ? insertColumn(index) : insertRow(index)}>+</button>;
   };
 
   const setAlignment = (column: number, alignment: TableAlignment) => {
@@ -100,6 +137,7 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
 
   return (
     <div
+      ref={editorRef}
       className="markdown-table-editor"
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
@@ -115,7 +153,9 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
       <section className="markdown-table-panel">
         <h2>テーブル編集</h2>
         <p className="markdown-table-help">
-          セルを直接編集できます。TSVを貼り付けると、そのセルを起点に展開します。
+          表の上・左の境目にある + で、その位置に列・行を挿入できます。
+          TSV または Markdown テーブルを貼り付けると、そのセルを起点に展開します。
+          Markdown の区切り行は列の配置に反映します。Ctrl+Z / Cmd+Z で操作を戻せます。
         </p>
         <div className="markdown-table-wrap">
           <table>
@@ -127,19 +167,15 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
                     <button type="button" className="danger" onClick={() => deleteColumn(column)}>
                       削除
                     </button>
+                    {insertButton("column", column)}
+                    {column === table.headers.length - 1 && insertButton("column", table.headers.length, true)}
                   </th>
                 ))}
                 <th rowSpan={table.rows.length + 3} className="table-add-column-cell">
                   <button
                     type="button"
                     aria-label="列を追加"
-                    onClick={() => {
-                      const next = clone(table);
-                      next.headers.push(`列 ${next.headers.length + 1}`);
-                      next.aligns.push("left");
-                      next.rows.forEach((row) => row.push(""));
-                      commit(next, "列を追加しました");
-                    }}
+                    onClick={() => insertColumn(table.headers.length)}
                   >+</button>
                 </th>
               </tr>
@@ -167,7 +203,7 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
                       value={header}
                       aria-label={`Header column ${column + 1}`}
                       onChange={(event) => updateCell(-1, column, event.target.value)}
-                      onPaste={(event) => pasteTsv(event, -1, column)}
+                      onPaste={(event) => pasteTable(event, -1, column)}
                     />
                   </th>
                 ))}
@@ -183,6 +219,7 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
                       if (next.rows.length === 0) next.rows.push(Array(next.headers.length).fill(""));
                       commit(next, "行を削除しました");
                     }}>削除</button>
+                    {insertButton("row", rowIndex)}
                   </td>
                   {row.map((value, column) => (
                     <td key={`cell-${rowIndex}-${column}`} style={{ textAlign: table.aligns[column] }}>
@@ -190,7 +227,7 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
                         value={value}
                         aria-label={`Row ${rowIndex + 1}, column ${column + 1}`}
                         onChange={(event) => updateCell(rowIndex, column, event.target.value)}
-                        onPaste={(event) => pasteTsv(event, rowIndex, column)}
+                        onPaste={(event) => pasteTable(event, rowIndex, column)}
                       />
                     </td>
                   ))}
@@ -198,11 +235,8 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
               ))}
               <tr>
                 <td className="table-add-row-cell" colSpan={table.headers.length + 1}>
-                  <button type="button" aria-label="行を追加" onClick={() => {
-                    const next = clone(table);
-                    next.rows.push(Array(next.headers.length).fill(""));
-                    commit(next, "行を追加しました");
-                  }}>+</button>
+                  <button type="button" aria-label="行を追加" onClick={() => insertRow(table.rows.length)}>+</button>
+                  {insertButton("row", table.rows.length)}
                 </td>
               </tr>
             </tbody>

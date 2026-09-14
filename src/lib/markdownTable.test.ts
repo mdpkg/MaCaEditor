@@ -1,7 +1,17 @@
 import { describe, expect, test } from "vitest";
-import { EMPTY_2X2_MARKDOWN_TABLE, parseMarkdownTable, serializeMarkdownTable } from "./markdownTable";
+import { EMPTY_2X2_MARKDOWN_TABLE, parseClipboardMarkdownTable, parseMarkdownTable, serializeMarkdownTable } from "./markdownTable";
 
 describe("Markdown table model", () => {
+  test("detects clipboard Markdown, normalizes body width, and preserves escaped content", () => {
+    expect(parseClipboardMarkdownTable("A | B\r:---: | ---:\rx\\| | C:\\temp<br />next | ignored\ry")).toEqual({
+      headers: ["A", "B"], aligns: ["center", "right"],
+      rows: [["x|", "C:\\temp\nnext"], ["y", ""]],
+    });
+    expect(parseClipboardMarkdownTable("| A |\n| --- |")?.rows).toEqual([]);
+    for (const text of ["A\tB\n1\t2", "A | B\n--- | nope", "A | B\n| --- |", "ordinary text"]) {
+      expect(parseClipboardMarkdownTable(text)).toBeNull();
+    }
+  });
   test("provides an empty two-column, two-row table with a header", () => {
     expect(EMPTY_2X2_MARKDOWN_TABLE).toBe("|  |  |\n| --- | --- |\n|  |  |\n|  |  |");
   });
