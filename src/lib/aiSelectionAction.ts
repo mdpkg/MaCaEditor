@@ -1,11 +1,11 @@
-import type { AiConfig, AiStreamEvent } from "../types";
+import type { AiConfig, AiError, AiStreamEvent } from "../types";
 import {
   cancelAiRequest,
   loadAiConfig,
   startAiSelectionAction,
 } from "./tauri";
 import type { AiSelectionSnapshot, AiTaskKind } from "./aiSelection";
-import { aiErrorMessage, type AiErrorKind } from "./aiSelection";
+import { readAiError } from "./aiSelection";
 
 /// ストリーミングの状態。
 export type AiStreamState =
@@ -21,7 +21,7 @@ export class AiSelectionActionService {
   private state: AiStreamState = "idle";
   private requestId: string | null = null;
   private result = "";
-  private errorKind: AiErrorKind | null = null;
+  private error: AiError | null = null;
   private listeners = new Set<(state: AiStreamState) => void>();
 
   getState(): AiStreamState {
@@ -32,12 +32,8 @@ export class AiSelectionActionService {
     return this.result;
   }
 
-  getErrorKind(): AiErrorKind | null {
-    return this.errorKind;
-  }
-
-  getErrorMessage(): string | null {
-    return this.errorKind ? aiErrorMessage(this.errorKind) : null;
+  getError(): AiError | null {
+    return this.error;
   }
 
   isRunning(): boolean {
@@ -65,7 +61,7 @@ export class AiSelectionActionService {
   ): Promise<void> {
     if (this.isRunning()) return;
     this.result = "";
-    this.errorKind = null;
+    this.error = null;
     this.requestId = null;
     this.setState("running");
     try {
@@ -82,8 +78,8 @@ export class AiSelectionActionService {
         (event) => this.handleEvent(event),
       );
       this.requestId = requestId;
-    } catch {
-      this.errorKind = "Unknown";
+    } catch (reason) {
+      this.error = readAiError(reason);
       this.setState("error");
     }
   }
@@ -98,7 +94,7 @@ export class AiSelectionActionService {
 
   discard() {
     this.result = "";
-    this.errorKind = null;
+    this.error = null;
     this.requestId = null;
     this.setState("idle");
   }
@@ -115,7 +111,7 @@ export class AiSelectionActionService {
         this.setState("cancelled");
         break;
       case "error":
-        this.errorKind = event.error.kind;
+        this.error = readAiError(event.error);
         this.setState("error");
         break;
       case "started":

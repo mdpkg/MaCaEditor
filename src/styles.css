@@ -1627,6 +1627,11 @@ body {
   color: #d73a49;
 }
 
+.ai-connection-error {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
 .ai-connection-error .error-details {
   margin-top: 4px;
   color: var(--text);

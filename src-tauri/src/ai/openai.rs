@@ -140,7 +140,7 @@ fn delta_content_from_chunk(
     chunk: &async_openai::types::chat::CreateChatCompletionStreamResponse,
 ) -> Option<String> {
     let content = chunk.choices.first()?.delta.content.clone()?;
-    if content.trim().is_empty() {
+    if content.is_empty() {
         return None;
     }
     Some(content)
@@ -360,6 +360,18 @@ mod tests {
         let chunk: async_openai::types::chat::CreateChatCompletionStreamResponse =
             serde_json::from_str(json).unwrap();
         assert_eq!(delta_content_from_chunk(&chunk), None);
+    }
+
+    #[test]
+    fn preserves_whitespace_only_content() {
+        let chunk = serde_json::from_value(serde_json::json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "qwen2.5",
+            "choices": [{"index": 0, "delta": {"content": "\n  "}, "finish_reason": null}]
+        })).unwrap();
+        assert_eq!(delta_content_from_chunk(&chunk).as_deref(), Some("\n  "));
     }
 
     #[test]

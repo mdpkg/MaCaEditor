@@ -46,7 +46,9 @@ describe("AiDiagramEditService", () => {
     const { service, start, send } = harness();
     await service.run(config, "mermaid", "flowchart LR\nA --> B", "Add C");
     send({ type: "error", request_id: "request-1", error: { kind: "ServerError", message: "failed" } });
+    expect(service.getState().error).toEqual({ kind: "ServerError", message: "failed" });
     await service.run(config, "mermaid", "flowchart LR\nA --> D", "Add C");
     expect(start.mock.calls[1][0].currentSource).toBe("flowchart LR\nA --> D");
+    expect(service.getState().error).toBeNull();
   });
 });

@@ -160,8 +160,7 @@ mod tests {
                 Err(_) => {}
             }
         }
-        // " " は trim で空扱いになるためスキップされる
-        assert_eq!(contents, vec!["hello", "world"]);
+        assert_eq!(contents, vec!["hello", " ", "world"]);
     }
 
     #[tokio::test]

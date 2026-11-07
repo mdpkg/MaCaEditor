@@ -1,5 +1,6 @@
 /// AI エラー。
 #[derive(Debug, Clone, PartialEq, thiserror::Error, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", content = "message")]
 pub enum AiError {
     #[error("AI configuration is invalid: {0}")]
     InvalidConfiguration(String),
@@ -44,6 +45,18 @@ pub fn classify_http_status(status: u16, message: &str) -> AiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serializes_ai_errors_for_the_frontend() {
+        assert_eq!(
+            serde_json::to_value(AiError::Timeout("request timeout".to_string())).unwrap(),
+            serde_json::json!({"kind": "Timeout", "message": "request timeout"}),
+        );
+        assert_eq!(
+            serde_json::to_value(AiError::Cancelled).unwrap(),
+            serde_json::json!({"kind": "Cancelled"}),
+        );
+    }
 
     #[test]
     fn classifies_http_status() {
