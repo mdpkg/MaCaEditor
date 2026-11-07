@@ -622,6 +622,7 @@ describe("App persistence", () => {
     await click("ファイル");
     await click("開く");
     const diagnose = vi.spyOn(diagnostics, "diagnosePackage");
+    const live = vi.spyOn(diagnostics, "diagnoseRelatedMarkdown");
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await click("編集");
     await edit("[Link](first.md)");
@@ -629,11 +630,16 @@ describe("App persistence", () => {
     await edit("[Link](latest.md)");
     act(() => vi.advanceTimersByTime(299));
     expect(diagnose).not.toHaveBeenCalled();
+    expect(live).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(live).toHaveBeenCalledOnce();
+    expect(live.mock.calls[0][1]).toBe("index.md");
+    expect(diagnose).not.toHaveBeenCalled();
     await click("ファイル");
     await click("パッケージを診断...");
     expect(container.querySelector(".package-diagnostics-dialog")?.textContent).toContain("latest.md");
     expect(diagnose).toHaveBeenCalledTimes(1);
-    act(() => vi.advanceTimersByTime(1));
+    act(() => vi.advanceTimersByTime(300));
     expect(diagnose).toHaveBeenCalledTimes(2);
   });
 
