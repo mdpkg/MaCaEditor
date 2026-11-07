@@ -5,6 +5,8 @@ pub mod folder_document;
 pub mod folder_watcher;
 #[cfg(target_os = "macos")]
 mod macos_menu;
+#[cfg(target_os = "macos")]
+mod macos_print;
 pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
@@ -103,6 +105,8 @@ pub fn run() {
             commands::read_image,
             commands::save_attachment,
             commands::set_image_drop_enabled,
+            #[cfg(target_os = "macos")]
+            macos_print::print_prepared_pages,
             print_monitor::watch_print,
             folder_watcher::watch_folder,
             folder_watcher::stop_watching_folder,
