@@ -19,6 +19,7 @@
     "@maca/drawing-react": "file:packages/drawing-react",
     "@codemirror/lang-markdown": "^6.3.4",
     "@codemirror/search": "^6.7.1",
+    "@humanwhocodes/paged-media": "0.1.1",
     "@plantuml/core": "^1.2026.6",
     "@replit/codemirror-vim": "^6.4.0",
     "@tauri-apps/api": "^2.1.1",

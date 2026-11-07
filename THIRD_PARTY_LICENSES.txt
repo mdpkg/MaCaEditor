@@ -116,6 +116,9 @@ USE OR PERFORMANCE OF THIS SOFTWARE.
 Apache License 2.0 software
 ---------------------------
 
+@humanwhocodes/paged-media 0.1.1
+Copyright 2026 Nicholas C. Zakas
+
 mathjax-full 3.2.2
 
                                  Apache License
