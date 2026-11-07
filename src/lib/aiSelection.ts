@@ -63,6 +63,7 @@ const aiErrorMessages: Record<AiErrorKind, string> = {
   Timeout: "AI のリクエストがタイムアウトしました。",
   ServerError: "AI サーバーでエラーが発生しました。",
   InvalidResponse: "AI の応答が正しくありません。",
+  StreamInterrupted: "AI の応答の受信が途中で中断されました。",
   Cancelled: "AI のリクエストを中止しました。",
   Unknown: "AI の処理で不明なエラーが発生しました。",
 };

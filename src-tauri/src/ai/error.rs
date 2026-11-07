@@ -20,6 +20,8 @@ pub enum AiError {
     ServerError(String),
     #[error("invalid response: {0}")]
     InvalidResponse(String),
+    #[error("stream interrupted: {0}")]
+    StreamInterrupted(String),
     #[error("request cancelled")]
     Cancelled,
     #[error("unknown error: {0}")]

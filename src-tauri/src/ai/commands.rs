@@ -146,10 +146,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let events = events.lock().unwrap().clone();
         assert!(matches!(events[0], AiStreamEvent::Started { .. }));
-        assert!(events.iter().any(|e| matches!(
-            e,
-            AiStreamEvent::Error { request_id, error: AiError::ServerError(_) }
+        assert!(matches!(
+            events.as_slice(),
+            [AiStreamEvent::Started { .. }, AiStreamEvent::Error { request_id, error: AiError::ServerError(_) }]
                 if !request_id.is_empty()
-        )));
+        ));
     }
 }

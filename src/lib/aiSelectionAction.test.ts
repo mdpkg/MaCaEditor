@@ -89,13 +89,36 @@ describe("AiSelectionActionService", () => {
     expect(startMock).toHaveBeenCalledTimes(1);
   });
 
-  test("maps error events to error state", async () => {
+  test("preserves an error and discards partial text even if completion arrives", async () => {
     startMock.mockImplementation(async () => "r1");
     const service = new AiSelectionActionService();
-    await service.run(config, "Rewrite", snapshot);
+    await service.run(config, "Summarize", snapshot);
+    emit({ type: "delta", request_id: "r1", content: "partial" });
     emit({ type: "error", request_id: "r1", error: { kind: "Timeout", message: "slow" } });
+    emit({ type: "completed", request_id: "r1" });
     expect(service.getState()).toBe("error");
     expect(service.getError()).toEqual({ kind: "Timeout", message: "slow" });
+    expect(service.getResult()).toBe("");
+    expect(service.canApply()).toBe(false);
+
+    const oldHandler = startMock.mock.calls[0]![1];
+    startMock.mockResolvedValueOnce("r2");
+    await service.run(config, "Summarize", snapshot);
+    oldHandler({ type: "completed", request_id: "r1" });
+    emit({ type: "delta", request_id: "r2", content: "summary" });
+    emit({ type: "completed", request_id: "r2" });
+    expect(service.canApply()).toBe(true);
+    expect(service.getResult()).toBe("summary");
+  });
+
+  test.each(["", " \n  "])("rejects a blank completed result %j", async (content) => {
+    startMock.mockResolvedValueOnce("r1");
+    const service = new AiSelectionActionService();
+    await service.run(config, "Summarize", snapshot);
+    emit({ type: "delta", request_id: "r1", content });
+    emit({ type: "completed", request_id: "r1" });
+    expect(service.getState()).toBe("error");
+    expect(service.getError()).toEqual({ kind: "InvalidResponse", message: "empty response" });
     expect(service.canApply()).toBe(false);
   });
 

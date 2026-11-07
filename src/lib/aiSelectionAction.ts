@@ -20,6 +20,7 @@ export type AiStreamState =
 export class AiSelectionActionService {
   private state: AiStreamState = "idle";
   private requestId: string | null = null;
+  private runId = 0;
   private result = "";
   private error: AiError | null = null;
   private listeners = new Set<(state: AiStreamState) => void>();
@@ -60,6 +61,7 @@ export class AiSelectionActionService {
     snapshot: AiSelectionSnapshot,
   ): Promise<void> {
     if (this.isRunning()) return;
+    const runId = ++this.runId;
     this.result = "";
     this.error = null;
     this.requestId = null;
@@ -75,12 +77,13 @@ export class AiSelectionActionService {
           connectTimeoutSeconds: config.connect_timeout_seconds ?? null,
           requestTimeoutSeconds: config.request_timeout_seconds ?? null,
         },
-        (event) => this.handleEvent(event),
+        (event) => {
+          if (runId === this.runId && this.isRunning()) this.handleEvent(event);
+        },
       );
-      this.requestId = requestId;
+      if (runId === this.runId && this.isRunning()) this.requestId = requestId;
     } catch (reason) {
-      this.error = readAiError(reason);
-      this.setState("error");
+      if (runId === this.runId && this.isRunning()) this.fail(reason);
     }
   }
 
@@ -99,22 +102,32 @@ export class AiSelectionActionService {
     this.setState("idle");
   }
 
+  private fail(reason: unknown) {
+    this.result = "";
+    this.error = readAiError(reason);
+    this.setState("error");
+  }
+
   private handleEvent(event: AiStreamEvent) {
     switch (event.type) {
       case "delta":
         this.result += event.content;
         break;
       case "completed":
-        this.setState("completed");
+        if (this.result.trim()) {
+          this.setState("completed");
+        } else {
+          this.fail({ kind: "InvalidResponse", message: "empty response" });
+        }
         break;
       case "cancelled":
         this.setState("cancelled");
         break;
       case "error":
-        this.error = readAiError(event.error);
-        this.setState("error");
+        this.fail(event.error);
         break;
       case "started":
+        this.requestId = event.request_id;
         break;
     }
   }
