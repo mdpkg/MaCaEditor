@@ -118,7 +118,7 @@ function ColorPicker({ kind, value, onChange, translate }: {
   kind: "fill" | "stroke"; value: string; onChange: (color: string) => void;
 }) {
   return <div className="color-picker-with-presets">
-    <input aria-label={translate(`${kind === "fill" ? translate("Fill") : translate("Line")} color`)} type="color" value={value}
+    <input aria-label={translate(kind === "fill" ? "Fill color" : "Line color")} type="color" value={value}
       onChange={(event) => onChange(event.target.value)} />
     <div className="color-presets">{COLOR_PRESETS.map((preset) => <button
       key={preset.value} type="button" className="color-preset" data-color-kind={kind}
@@ -1649,16 +1649,18 @@ export function DrawingEditor({
               />
             </div>
             <div className="inspector-row">
-              <label>W</label>
+              <label>{translate("Width")}</label>
               <input
+                aria-label={translate("Width")}
                 type="number"
                 value={selected.width}
                 onChange={(e) => updateSize("width", Number(e.target.value))}
               />
             </div>
             <div className="inspector-row">
-              <label>H</label>
+              <label>{translate("Height")}</label>
               <input
+                aria-label={translate("Height")}
                 type="number"
                 value={selected.height}
                 onChange={(e) => updateSize("height", Number(e.target.value))}

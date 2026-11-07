@@ -1574,6 +1574,7 @@ export default function App() {
   }, [printTitle]);
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
+  const displayPreviewUnavailable = /\.(pdf|zip)$/i.test(displayFile?.path ?? "");
   const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
   const editorScrollTop = displayFile ? editorScrollTopsRef.current.get(displayFile.path) : undefined;
   const editorSession = documentSessionRef.current;
@@ -1938,7 +1939,9 @@ export default function App() {
           )}
           {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "mathjax" && mode !== "table" && displayFile && !displayFile.is_text && (
             <div className="binary-view">
-              {displayFile.base64 && (
+              {displayPreviewUnavailable ? (
+                <p>{uiText("This file cannot be previewed.")}</p>
+              ) : displayFile.base64 && (
                 <img src={`data:${imageMediaType(displayFile.path)};base64,${displayFile.base64}`} alt="" />
               )}
               <p className="file-info">{displayFile.path}</p>
