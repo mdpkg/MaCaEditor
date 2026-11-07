@@ -14,7 +14,7 @@ interface Props {
   initialCursorPosition?: number;
   initialScrollTop?: number;
   onScrollTopChange?: (position: number) => void;
-  navigation?: { offset: number };
+  navigation?: { offset: number; length?: number };
   onNavigationComplete?: () => void;
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }

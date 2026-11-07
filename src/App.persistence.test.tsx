@@ -43,14 +43,15 @@ vi.mock("./components/MarkdownPreview", () => ({
   </>,
 }));
 vi.mock("./components/MarkdownEditor", () => ({
-  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange }: {
+  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange, navigation }: {
     value: string;
     onChange: (value: string) => void;
     initialCursorPosition?: number;
     initialScrollTop?: number;
+    navigation?: { offset: number; length?: number };
     onCursorChange: (position: number) => void;
     onScrollTopChange: (position: number) => void;
-  }) => <textarea value={value} data-cursor={initialCursorPosition} data-scroll={initialScrollTop}
+  }) => <textarea value={value} data-cursor={initialCursorPosition} data-scroll={initialScrollTop} data-navigation={JSON.stringify(navigation)}
     onClick={(event) => onCursorChange(event.currentTarget.selectionStart)}
     onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}
     onChange={(event) => onChange(event.currentTarget.value)} />,
@@ -279,6 +280,61 @@ describe("App persistence", () => {
     await act(async () => finishRead({ file_name: "photo.png", base64: "aGVsbG8=" }));
     expect(container.querySelector("textarea")?.value).toContain("Latest edit");
     expect(container.querySelector('[data-path="images/photo.png"]')).not.toBeNull();
+  });
+
+  test("reports successful, excluded and failed dropped images separately", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    vi.mocked(tauri.readImage).mockImplementation(async (path) => {
+      if (path.endsWith("bad.png")) throw new Error("unreadable");
+      return { file_name: "good.png", base64: "aGVsbG8=" };
+    });
+    await act(async () => nativeDrop(["C:/good.png", "C:/bad.png", "C:/skip.svg"]));
+    expect(container.querySelector('[data-path="images/good.png"]')).not.toBeNull();
+    expect(container.querySelector('[data-path="images/bad.png"]')).toBeNull();
+    const warning = container.querySelector(".notification-banner-warning")!;
+    expect(warning.textContent).toContain("取り込み 1 件: good.png");
+    expect(warning.textContent).toContain("除外 1 件（非対応形式）: skip.svg");
+    expect(warning.textContent).toContain("失敗 1 件: bad.png");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("confirms root drops and offers safe undo without losing later edits", async () => {
+    const info = documentInfo("[Guide](docs/guide.md)");
+    info.files.push({ path: "docs/guide.md", content: "Guide", is_text: true, base64: null });
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    const drop = async () => {
+      const event = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", { value: { getData: () => "docs/guide.md" } });
+      await act(async () => container.querySelector(".file-tree")!.dispatchEvent(event));
+    };
+    await drop(); await click("キャンセル", container.querySelector('[role="dialog"]')!);
+    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    await drop(); await click("移動", container.querySelector('[role="dialog"]')!);
+    expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
+    await click("元に戻す", container.querySelector(".notification-banner")!);
+    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    await drop(); await click("移動", container.querySelector('[role="dialog"]')!);
+    await click("編集"); await edit("Later edit");
+    await click("元に戻す", container.querySelector(".notification-banner")!);
+    expect(container.querySelector("textarea")?.value).toBe("Later edit");
+    expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
+  });
+
+  test("keeps diagnostics open, navigates to the source line, and refreshes after editing", async () => {
+    const content = "First\n\nSecond\n[broken](missing.md)";
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo(content));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await click("ファイル"); await click("パッケージを診断...");
+    const panel = container.querySelector(".package-diagnostics-dialog")!;
+    await act(async () => (panel.querySelector("li button") as HTMLButtonElement).click());
+    expect(JSON.parse(container.querySelector("textarea")!.dataset.navigation!).offset).toBe(content.indexOf("missing.md"));
+    expect(container.querySelector(".package-diagnostics-dialog")).not.toBeNull();
+    await edit("Fixed");
+    await act(async () => vi.advanceTimersByTime(300));
+    expect(panel.textContent).toContain("問題はありません");
   });
 
   test("restores cursor and scroll positions separately for each opened file", async () => {
