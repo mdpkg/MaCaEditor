@@ -143,6 +143,8 @@ const labels: Record<string, string> = {
   "Untitled": "無題",
   "Ready": "準備完了",
   "Loading…": "読み込んでいます…",
+  "Rendering…": "描画しています…",
+  "Diagram rendering failed.": "図の描画に失敗しました。",
   "Saving…": "保存しています…",
   "Exporting package…": "パッケージを書き出しています…",
   "Reloading folder…": "フォルダを読み込み直しています…",

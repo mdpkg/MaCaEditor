@@ -4,6 +4,7 @@ import { renderMermaid } from "../lib/mermaid/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
 import { CodeEditor } from "./CodeEditor";
 import { SvgPreviewOverlay } from "./SvgPreviewOverlay";
+import { DiagramRenderError } from "./DiagramRenderError";
 
 interface Props {
   source: string;
@@ -61,8 +62,8 @@ export function MermaidEditor({
         />
       </div>
       <div className="mermaid-preview-pane">
-        <div className="diagram-pane-title">{uiText("Preview")}{rendering ? " — Rendering…" : ""}</div>
-        {error && <div className="diagram-render-error" role="alert">{error}</div>}
+        <div className="diagram-pane-title">{uiText("Preview")}{rendering && ` — ${uiText("Rendering…")}`}</div>
+        {error && <DiagramRenderError detail={error} />}
         {!error && svg && (
           <div
             className="mermaid-preview"

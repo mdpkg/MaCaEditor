@@ -30,7 +30,7 @@ import {
   type BannerNotice,
   type NotificationTone,
 } from "./components/NotificationBanners";
-import type { DocumentState } from "./lib/document";
+import type { DocumentState, PathMove } from "./lib/document";
 import {
   createDocumentState,
   createFolderDocumentState,
@@ -38,12 +38,15 @@ import {
   addDirectory,
   addImage,
   addMarkdown,
+  applyPathMove,
   deletePath,
   imageMediaType,
   markSaved,
   movePath,
   pathReferenceCount,
+  planPathMove,
   resourceDirectoryForMarkdown,
+  reversePathMove,
   setEntrypoint,
   toSaveRequest,
   updateFileContent,
@@ -170,6 +173,10 @@ interface PendingInferredFolder {
   destination?: string;
 }
 
+type FileOperation =
+  | { kind: "snapshot"; state: DocumentState; label: string }
+  | { kind: "move"; move: PathMove; label: string };
+
 export default function App() {
   const [doc, setDocumentState] = useState<DocumentState | null>(null);
   const [fileTask, setFileTask] = useState<string | null>(null);
@@ -218,8 +225,8 @@ export default function App() {
   const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
   const [packageSearchOpen, setPackageSearchOpen] = useState(false);
   const [pendingInferredFolder, setPendingInferredFolder] = useState<PendingInferredFolder | null>(null);
-  const operationUndoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
-  const operationRedoRef = useRef<Array<{ state: DocumentState; label: string }>>([]);
+  const operationUndoRef = useRef<FileOperation[]>([]);
+  const operationRedoRef = useRef<FileOperation[]>([]);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
@@ -304,35 +311,44 @@ export default function App() {
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
   );
-  const recordDocumentOperation = (next: DocumentState, label: string) => {
+  const recordDocumentOperation = (next: DocumentState, label: string, move?: PathMove) => {
     if (!doc) return;
-    operationUndoRef.current.push({ state: doc, label });
+    const entry: FileOperation = move ? { kind: "move", move, label } : { kind: "snapshot", state: doc, label };
+    operationUndoRef.current.push(entry);
     operationRedoRef.current = [];
     setDoc(next);
     setOperationHistoryRevision((revision) => revision + 1);
+    return entry;
   };
-  const undoFileOperation = () => {
-    if (!doc) return;
-    const entry = operationUndoRef.current.pop();
+  const applyFileOperationHistory = (direction: "undo" | "redo", expectedEntry?: FileOperation) => {
+    const current = documentRef.current;
+    if (!current) return;
+    const undo = direction === "undo";
+    const source = undo ? operationUndoRef.current : operationRedoRef.current;
+    const destination = undo ? operationRedoRef.current : operationUndoRef.current;
+    const entry = source[source.length - 1];
+    if (expectedEntry && expectedEntry !== entry) {
+      showNotification("この移動の後に別のファイル操作が行われたため、通知から取り消せません。", "warning");
+      return;
+    }
     if (!entry) return;
-    operationRedoRef.current.push({ state: doc, label: entry.label });
-    setDoc(entry.state);
-    setSelectedFolder(null);
-    setSelectedPath(entry.state.entrypoint);
-    setMode("preview");
-    setStatus(`${entry.label}を元に戻しました`);
-    setOperationHistoryRevision((revision) => revision + 1);
-  };
-  const redoFileOperation = () => {
-    if (!doc) return;
-    const entry = operationRedoRef.current.pop();
-    if (!entry) return;
-    operationUndoRef.current.push({ state: doc, label: entry.label });
-    setDoc(entry.state);
-    setSelectedPath(entry.state.entrypoint);
-    setMode("preview");
-    setStatus(`${entry.label}をやり直しました`);
-    setOperationHistoryRevision((revision) => revision + 1);
+    const operation = uiText(undo ? "Undo File Operation" : "Redo File Operation");
+    try {
+      const next = entry.kind === "move"
+        ? applyPathMove(current, undo ? reversePathMove(entry.move) : entry.move)
+        : entry.state;
+      source.pop();
+      destination.push(entry.kind === "move" ? entry : { ...entry, state: current });
+      setDoc(next);
+      setSelectedFolder(null);
+      setSelectedPath(next.entrypoint);
+      setMode("preview");
+      clearError(operation);
+      setStatus(`${entry.label}を${undo ? "元に戻しました" : "やり直しました"}`);
+      setOperationHistoryRevision((revision) => revision + 1);
+    } catch (reason) {
+      reportError(operation, reason);
+    }
   };
 
   const entrypointFile: FileInfo | undefined = doc?.files.find(
@@ -619,7 +635,7 @@ export default function App() {
     if (!current) return;
     setDoc(current === snapshot ? saved : applySavedBaseline(current, saved));
     for (const entry of [...operationUndoRef.current, ...operationRedoRef.current]) {
-      entry.state = applySavedBaseline(entry.state, saved);
+      if (entry.kind === "snapshot") entry.state = applySavedBaseline(entry.state, saved);
     }
     clearError(uiText("Save"));
     setStatus(`${saved.path} を保存しました`);
@@ -1254,11 +1270,12 @@ export default function App() {
     if (!doc) return;
     if (destination === path) return;
     try {
-      const moved = movePath(doc, path, destination);
+      const move = planPathMove(doc, path, destination);
+      const moved = applyPathMove(doc, move);
       const mapPath = (current: string | null) => current === path
         ? destination
         : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
-      recordDocumentOperation(moved, `${path} の移動`);
+      const entry = recordDocumentOperation(moved, `${path} の移動`, move);
       setSelectedFolder((current) => mapPath(current));
       setSelectedPath((current) => mapPath(current));
       setDrawingPath((current) => mapPath(current));
@@ -1266,20 +1283,10 @@ export default function App() {
       setMermaidPath((current) => mapPath(current));
       setMathJaxPath((current) => mapPath(current));
       setStatus(`${destination} に移動し、Markdown のリンクを更新しました`); clearError(uiText("Move"));
-      const session = documentSessionRef.current;
       showNotification(`${path} を ${destination} に移動しました。Markdown のリンクも更新しました。`, "success", {
         label: "元に戻す",
         onClick: () => {
-          if (documentSessionRef.current !== session) return;
-          if (documentRef.current !== moved || operationUndoRef.current[operationUndoRef.current.length - 1]?.state !== doc) {
-            showNotification("移動後の編集を保護するため、この通知からは取り消せません。移動メニューから元の場所へ戻してください。", "warning");
-            return;
-          }
-          const entry = operationUndoRef.current.pop()!;
-          operationRedoRef.current.push({ state: moved, label: entry.label });
-          setDoc(entry.state); setSelectedFolder(null); setSelectedPath(entry.state.entrypoint); setMode("preview");
-          setOperationHistoryRevision((revision) => revision + 1);
-          setStatus(`${path} の移動を元に戻しました`);
+          if (entry) applyFileOperationHistory("undo", entry);
         },
       });
     } catch (reason) { reportError(uiText("Move"), reason); }
@@ -1613,8 +1620,8 @@ export default function App() {
         onExport={handleExport}
         onExportPackage={handleExportPackage}
         onValidatePackage={handleValidatePackage}
-        onUndoFileOperation={undoFileOperation}
-        onRedoFileOperation={redoFileOperation}
+        onUndoFileOperation={() => applyFileOperationHistory("undo")}
+        onRedoFileOperation={() => applyFileOperationHistory("redo")}
         canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
         canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
         onEditManifest={() => setManifestEditorOpen(true)}

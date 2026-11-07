@@ -4,6 +4,7 @@ import { renderPlantUml } from "../lib/plantuml/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
 import { CodeEditor } from "./CodeEditor";
 import { SvgPreviewOverlay } from "./SvgPreviewOverlay";
+import { DiagramRenderError } from "./DiagramRenderError";
 
 interface Props {
   source: string;
@@ -69,9 +70,9 @@ export function PlantUmlEditor({
       </div>
       <div className="plantuml-preview-pane">
         <div className="plantuml-pane-title">
-          {uiText("Preview")}{rendering ? " — Rendering…" : ""}
+          {uiText("Preview")}{rendering && ` — ${uiText("Rendering…")}`}
         </div>
-        {error && <div className="plantuml-error" role="alert">{error}</div>}
+        {error && <DiagramRenderError detail={error} />}
         {!error && svg && (
           <div
             className="plantuml-preview"
