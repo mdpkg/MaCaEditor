@@ -1704,6 +1704,23 @@ body {
   opacity: 0.8;
 }
 
+.status-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-error-details {
+  flex: 0 0 auto;
+  font: inherit;
+}
+
+.operation-error-detail {
+  max-block-size: min(50vh, 24rem);
+  overflow: auto;
+}
+
 .status-message,
 .document-origin {
   overflow: hidden;

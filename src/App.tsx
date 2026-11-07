@@ -203,7 +203,12 @@ export default function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("preview");
   const [status, setStatus] = useState(uiText("Ready"));
-  const [error, setError] = useState<{ operation: string; summary: string; detail: string } | null>(null);
+  const [error, setError] = useState<{
+    operation: string;
+    summary: string;
+    detail: string;
+    presentation: "banner" | "dismissed" | "details";
+  } | null>(null);
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
@@ -437,13 +442,17 @@ export default function App() {
     );
     const reasonText = localized ? translated : "詳しくは詳細欄を確認してください。";
     const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
-    setError({ operation, summary, detail });
+    setError({ operation, summary, detail, presentation: "banner" });
     setStatus(summary);
   }, []);
 
   const clearError = useCallback((operation: string) => {
     setError((current) => current?.operation === operation ? null : current);
   }, []);
+
+  const dismissError = () => {
+    setError((current) => current && { ...current, presentation: "dismissed" });
+  };
 
   const showNotification = (message: string, tone: NotificationTone, options?: Pick<BannerNotice, "action" | "detail">) => {
     notificationSequenceRef.current += 1;
@@ -2076,7 +2085,19 @@ export default function App() {
         message={fileTask ?? status}
         mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
         location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
+        onShowErrorDetails={error && error.presentation !== "banner" ? () => {
+          setError((current) => current?.presentation === "dismissed" ? { ...current, presentation: "details" } : current);
+        } : undefined}
       />
+      {error?.presentation === "details" && (
+        <Dialog title={uiText("Error details")} onClose={dismissError}>
+          <p>{error.summary}</p>
+          <div className="error-detail operation-error-detail" tabIndex={0}>{error.detail}</div>
+          <div className="about-dialog-actions">
+            <button type="button" onClick={dismissError}>{uiText("Close")}</button>
+          </div>
+        </Dialog>
+      )}
       {shortcutsOpen && <Dialog title={uiText("Keyboard shortcuts")} onClose={() => setShortcutsOpen(false)}>
         <dl className="shortcut-list">
           <dt>{uiText("Save")}</dt><dd><kbd>Ctrl/Cmd+S</kbd></dd>
@@ -2094,11 +2115,11 @@ export default function App() {
       </Dialog>}
       {actionDialog}
       <NotificationBanners notices={notifications} onDismiss={dismissNotification}>
-        {error && (
+        {error?.presentation === "banner" && (
           <div key={`${error.operation}:${error.detail}`} className="notification-banner notification-banner-error operation-error">
             <div role="alert">{error.summary}</div>
             <ErrorDetails detail={error.detail} />
-            <button type="button" onClick={() => setError(null)}>{uiText("Close error")}</button>
+            <button type="button" onClick={dismissError}>{uiText("Close error")}</button>
           </div>
         )}
       </NotificationBanners>

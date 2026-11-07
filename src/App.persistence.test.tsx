@@ -664,6 +664,23 @@ describe("App persistence", () => {
     expect(container.querySelector("textarea")?.value).toBe("Unsaved edit");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
     expect(confirm).not.toHaveBeenCalled();
+
+    const statusBar = container.querySelector(".status-bar")!;
+    await click("エラーの詳細", statusBar);
+    const reopened = container.querySelector('[role="dialog"]')!;
+    expect(reopened.querySelector("h2")?.textContent).toBe("エラーの詳細");
+    expect(reopened.textContent).toContain(`保存に失敗しました。${summary}`);
+    expect(reopened.querySelector(".error-detail")?.textContent).toBe(detail);
+    await click("閉じる", reopened);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector(".operation-error")).toBeNull();
+
+    await act(async () => saveShortcut());
+    expect(statusBar.querySelector(".status-error-details")).toBeNull();
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [expect.objectContaining({ content: "Unsaved edit" })],
+    }));
   });
 
   test("keeps a save error through unrelated edits and clears it after a successful retry", async () => {
