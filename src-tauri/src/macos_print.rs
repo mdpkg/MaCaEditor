@@ -1,11 +1,11 @@
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool};
-use objc2::{define_class, msg_send, sel, AnyThread, MainThreadMarker};
+use objc2::runtime::{AnyObject, Bool, NSObject};
+use objc2::{define_class, msg_send, sel, AllocAnyThread, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
     NSPaperOrientation, NSPrintHeaderAndFooter, NSPrintInfo, NSPrintJobSavingURL, NSPrintOperation,
     NSPrintSaveJob, NSWindow,
 };
-use objc2_foundation::{NSDictionary, NSNumber, NSObject, NSSize, NSString, NSURL};
+use objc2_foundation::{NSDictionary, NSNumber, NSSize, NSString, NSURL};
 use objc2_pdf_kit::{PDFDocument, PDFPrintScalingMode};
 use objc2_web_kit::WKWebView;
 use std::ffi::c_void;
