@@ -73,6 +73,7 @@ export type AiError =
   | { kind: "InvalidConfiguration"; message: string }
   | { kind: "ConnectionFailed"; message: string }
   | { kind: "AuthenticationFailed"; message: string }
+  | { kind: "InvalidProject"; message: string }
   | { kind: "PermissionDenied"; message: string }
   | { kind: "ModelNotFound"; message: string }
   | { kind: "RateLimited"; message: string }

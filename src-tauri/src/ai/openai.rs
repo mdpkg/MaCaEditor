@@ -2,7 +2,7 @@
 /// `async-openai` はこの実装内部に閉じ込め、
 /// アプリケーション層へは MaCa Editor 独自型のみを公開する。
 use async_openai::config::Config;
-use async_openai::error::{OpenAIError, WrappedError};
+use async_openai::error::{ApiError, OpenAIError, WrappedError};
 use async_openai::middleware::{retry::OpenAIRetryLayer, HttpRequestFactory, ReqwestService};
 use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
@@ -207,15 +207,12 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
         let status = response.status();
         if !status.is_success() {
             let body = read_body(response).await?;
-            let message = if status.is_server_error() {
-                body
-            } else {
-                match serde_json::from_str::<WrappedError>(&body) {
-                    Ok(wrapped) => wrapped.error.message,
-                    Err(error) => return Err(invalid_response(error, &body)),
-                }
-            };
-            return Err(classify_http_status(status.as_u16(), &message));
+            if status.is_server_error() {
+                return Err(classify_http_status(status.as_u16(), &body));
+            }
+            let wrapped = serde_json::from_str::<WrappedError>(&body)
+                .map_err(|error| invalid_response(error, &body))?;
+            return Err(map_api_error(status, wrapped.error));
         }
         let content_type = response.headers().get(reqwest::header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
@@ -283,14 +280,21 @@ fn invalid_response(error: serde_json::Error, body: &str) -> AiError {
     AiError::InvalidResponse(format!("{error}\n\n{body}"))
 }
 
+fn map_api_error(status: reqwest::StatusCode, error: ApiError) -> AiError {
+    let code = error.code.as_deref().filter(|code| !code.is_empty());
+    let detail = match code {
+        Some(code) => format!("{}\n\ncode: {code}", error.message),
+        None => error.message,
+    };
+    if code == Some("invalid_project") {
+        return AiError::InvalidProject(detail);
+    }
+    classify_http_status(status.as_u16(), &detail)
+}
+
 fn map_openai_error(error: OpenAIError) -> AiError {
     match error {
-        OpenAIError::ApiError(api_error) => {
-            classify_http_status(
-                api_error.status_code.as_u16(),
-                &api_error.api_error.message,
-            )
-        }
+        OpenAIError::ApiError(error) => map_api_error(error.status_code, error.api_error),
         OpenAIError::Reqwest(reqwest_error) => {
             if reqwest_error.is_timeout() {
                 AiError::Timeout(reqwest_error.to_string())

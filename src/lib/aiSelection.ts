@@ -57,6 +57,7 @@ const aiErrorMessages: Record<AiErrorKind, string> = {
   InvalidConfiguration: "AI 設定が正しくありません。",
   ConnectionFailed: "AI サーバーへ接続できませんでした。",
   AuthenticationFailed: "AI の認証に失敗しました。API キーを確認してください。",
+  InvalidProject: "AI のプロジェクト指定が無効です。接続先のプロジェクト設定を確認してください。",
   PermissionDenied: "AI のアクセス権限がありません。",
   ModelNotFound: "AI モデルが見つかりませんでした。",
   RateLimited: "AI のリクエスト回数制限に達しました。しばらくしてから再試行してください。",

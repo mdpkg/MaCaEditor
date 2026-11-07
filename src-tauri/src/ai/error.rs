@@ -8,6 +8,8 @@ pub enum AiError {
     ConnectionFailed(String),
     #[error("authentication failed: {0}")]
     AuthenticationFailed(String),
+    #[error("invalid project: {0}")]
+    InvalidProject(String),
     #[error("permission denied: {0}")]
     PermissionDenied(String),
     #[error("model not found: {0}")]
