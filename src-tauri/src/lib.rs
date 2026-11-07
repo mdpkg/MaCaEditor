@@ -3,6 +3,8 @@ pub mod atomic_save;
 pub mod commands;
 pub mod folder_document;
 pub mod folder_watcher;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
@@ -42,6 +44,8 @@ fn should_show_main_window(label: &str, event: tauri::webview::PageLoadEvent) ->
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(macos_menu::build);
     #[cfg(desktop)]
     let builder = builder.plugin(
         tauri_plugin_window_state::Builder::default()
