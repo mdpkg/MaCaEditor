@@ -56,8 +56,13 @@ export async function preparePaginatedPrint(preview: HTMLElement, title: string)
   frame.setAttribute("aria-hidden", "true");
   frame.tabIndex = -1;
   frame.style.cssText = "position: fixed; top: 0; left: -10000px; width: 210mm; height: 297mm; border: 0";
-  document.body.append(frame);
+  // Match the main document's standards mode when measuring table rows and text.
+  frame.srcdoc = "<!doctype html><html><head></head><body></body></html>";
   try {
+    await new Promise<void>((resolve) => {
+      frame.addEventListener("load", () => resolve(), { once: true });
+      document.body.append(frame);
+    });
     const target = frame.contentWindow as PrintWindow | null;
     if (!target) throw new Error("Could not open the print document");
     const printDoc = target.document;
