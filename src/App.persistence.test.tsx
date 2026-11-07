@@ -202,6 +202,39 @@ describe("App persistence", () => {
     expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
+  test("keeps a move collision with a Japanese path in the error details", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    const info = documentInfo("Original");
+    info.manifest.resources = [{ type: "mermaid", source: "origin/diagram.mmd", rendered: "origin/重複.svg" }];
+    info.files.push(
+      { path: "origin/diagram.mmd", content: "flowchart LR\nA --> B", is_text: true, base64: null },
+      { path: "origin/重複.svg", content: "<svg/>", is_text: true, base64: null },
+      { path: "target/重複.svg", content: "<svg/>", is_text: true, base64: null },
+    );
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await click("開く", container.querySelector(".empty-state")!);
+
+    const source = container.querySelector('[data-path="origin/diagram.mmd"]')!;
+    await act(async () => source.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    await click("移動", document.querySelector(".file-tree-context-menu")!);
+    const dialog = container.querySelector('[role="dialog"]')!;
+    await inputValue(dialog.querySelector("select")!, "target");
+    await click("移動", dialog);
+
+    const summary = "移動に失敗しました。詳しくは詳細欄を確認してください。";
+    const banner = container.querySelector(".operation-error")!;
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe(summary);
+    expect(container.querySelector(".status-message")?.textContent).toBe(summary);
+    const details = banner.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe("詳細");
+    act(() => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(details.querySelector(".error-detail")?.textContent).toBe("Path already exists: target/重複.svg");
+    expect(container.querySelector('[data-path="origin/diagram.mmd"]')).not.toBeNull();
+    expect(container.querySelector('[data-path="target/diagram.mmd"]')).toBeNull();
+  });
+
   test("filters files, selects folders, and retains folder collapse across sidebar remounts", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     const info = documentInfo("Original");
