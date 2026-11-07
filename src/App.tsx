@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { FileTree } from "./components/FileTree";
 import { StatusBar } from "./components/StatusBar";
@@ -119,7 +119,7 @@ import {
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
-import { diagnosePackage } from "./lib/packageDiagnostics";
+import { diagnosePackage, type PackageDiagnostic } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
 import { inferManifest, type ManifestInference } from "./lib/manifestInference";
 
@@ -151,6 +151,7 @@ interface TableEditContext {
   path: string;
   start: number;
   end: number;
+  content: string;
 }
 
 interface PendingInferredFolder {
@@ -186,9 +187,13 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
-  const [packageDiagnosticsOpen, setPackageDiagnosticsOpen] = useState(false);
+  const [packageDiagnostics, setPackageDiagnostics] = useState<PackageDiagnostic[] | null>(null);
+  const [liveDiagnostics, setLiveDiagnostics] = useState<{
+    document: DocumentState;
+    diagnostics: PackageDiagnostic[];
+  } | null>(null);
   const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
-  const [navigationPosition, setNavigationPosition] = useState<number | null>(null);
+  const [navigationTarget, setNavigationTarget] = useState<{ path: string; offset: number } | null>(null);
   const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
   const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
   const [packageSearchOpen, setPackageSearchOpen] = useState(false);
@@ -200,7 +205,8 @@ export default function App() {
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
-  const editorCursorRef = useRef<number | null>(null);
+  const editorCursorsRef = useRef(new Map<string, number>());
+  const editorScrollTopsRef = useRef(new Map<string, number>());
   const markdownScrollRatiosRef = useRef(new Map<string, number>());
   const documentAreaRef = useRef<HTMLElement>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
@@ -224,6 +230,12 @@ export default function App() {
 
   const replaceDocument = (next: DocumentState) => {
     documentSessionRef.current += 1;
+    editorCursorsRef.current.clear();
+    editorScrollTopsRef.current.clear();
+    markdownScrollRatiosRef.current.clear();
+    setLiveDiagnostics(null);
+    setPackageDiagnostics(null);
+    setNavigationTarget(null);
     operationUndoRef.current = [];
     operationRedoRef.current = [];
     setFolderConflict(false);
@@ -701,14 +713,14 @@ export default function App() {
   const handleEditMarkdown = (path: string) => {
     if (!/\.(md|markdown)$/i.test(path)) return;
     setAiDiagramEdit(null);
-    editorCursorRef.current = null;
+    setNavigationTarget(null);
     setSelectedPath(path);
     setMode("split");
   };
 
   const handleSelect = (path: string) => {
     setAiDiagramEdit(null);
-    editorCursorRef.current = null;
+    setNavigationTarget(null);
     setTableEdit(null);
     setSelectedPath(path);
     if (path.endsWith(".draw.json")) {
@@ -801,12 +813,15 @@ export default function App() {
     clearError("Apply AI result");
   };
 
+  const insertionCursor = (file: FileInfo | undefined) =>
+    file && file.path === selectedPath ? editorCursorsRef.current.get(file.path) ?? null : null;
+
   const handleInsertDrawing = () => {
     if (!doc) return;
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
-    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     const baseDir = resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, DEFAULT_DRAWING_DIR);
     const empty: DrawingDocument = {
       format: "maca-drawing",
@@ -821,7 +836,7 @@ export default function App() {
       "Drawing",
       { markdownPath: markdownFile?.path, cursor },
     );
-    editorCursorRef.current = insertedCursor;
+    editorCursorsRef.current.set(markdownFile?.path ?? doc.entrypoint, insertedCursor);
     setDoc(state);
     setDrawingDoc(empty);
     setDrawingPath(drawPath);
@@ -836,7 +851,7 @@ export default function App() {
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
-    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     setStatus("Rendering PlantUML…");
     try {
       const svg = await renderPlantUml(DEFAULT_PLANTUML_SOURCE);
@@ -845,7 +860,7 @@ export default function App() {
         markdownPath: markdownFile?.path,
         cursor,
       });
-      editorCursorRef.current = added.cursor;
+      editorCursorsRef.current.set(markdownFile?.path ?? doc.entrypoint, added.cursor);
       setDoc(added.state);
       setSelectedPath(added.sourcePath);
       setPlantUmlPath(added.sourcePath);
@@ -878,7 +893,7 @@ export default function App() {
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
-    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     setStatus("Rendering Mermaid…");
     try {
       const svg = await renderMermaid(DEFAULT_MERMAID_SOURCE);
@@ -887,7 +902,7 @@ export default function App() {
         markdownPath: markdownFile?.path,
         cursor,
       });
-      editorCursorRef.current = added.cursor;
+      editorCursorsRef.current.set(markdownFile?.path ?? doc.entrypoint, added.cursor);
       setDoc(added.state);
       setSelectedPath(added.sourcePath);
       setMermaidPath(added.sourcePath);
@@ -934,14 +949,14 @@ export default function App() {
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
-    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     const placeholderSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"></svg>';
     const added = addMathJaxToDocument(doc, DEFAULT_MATHJAX_SOURCE, placeholderSvg, "MathJax", {
       baseDir: resourceDirectoryForMarkdown(markdownFile?.path ?? doc.entrypoint, "diagrams"),
       markdownPath: markdownFile?.path,
       cursor,
     });
-    editorCursorRef.current = added.cursor;
+    editorCursorsRef.current.set(markdownFile?.path ?? doc.entrypoint, added.cursor);
     setDoc(added.state);
     setSelectedPath(added.sourcePath);
     setMathJaxPath(added.sourcePath);
@@ -971,7 +986,7 @@ export default function App() {
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
-    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     let next = doc;
     const addedPaths: string[] = [];
     for (const image of images) {
@@ -982,7 +997,7 @@ export default function App() {
     if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
       const inserted = insertMarkdownImages(markdownFile.content, cursor, markdownFile.path, addedPaths);
       next = updateFileContent(next, markdownFile.path, inserted.content);
-      editorCursorRef.current = inserted.cursor;
+      editorCursorsRef.current.set(markdownFile.path, inserted.cursor);
     }
     setDoc(next);
     setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
@@ -1012,7 +1027,7 @@ export default function App() {
     const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
       ? selectedFile
       : entrypointFile;
-    const cursor = markdownFile?.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     let next = doc;
     const addedPaths: string[] = [];
     for (const attachment of attachments) {
@@ -1023,7 +1038,7 @@ export default function App() {
     if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
       const inserted = insertMarkdownLinks(markdownFile.content, cursor, markdownFile.path, addedPaths);
       next = updateFileContent(next, markdownFile.path, inserted.content);
-      editorCursorRef.current = inserted.cursor;
+      editorCursorsRef.current.set(markdownFile.path, inserted.cursor);
     }
     setDoc(next);
     setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
@@ -1076,9 +1091,9 @@ export default function App() {
       ? selectedFile
       : entrypointFile;
     if (!markdownFile || markdownFile.content === null) return;
-    const cursor = markdownFile.path === selectedPath ? editorCursorRef.current : null;
+    const cursor = insertionCursor(markdownFile);
     const inserted = insertMarkdownBlock(markdownFile.content, cursor, EMPTY_2X2_MARKDOWN_TABLE);
-    editorCursorRef.current = inserted.cursor;
+    editorCursorsRef.current.set(markdownFile.path, inserted.cursor);
     setDoc(updateFileContent(doc, markdownFile.path, inserted.content));
     setSelectedPath(markdownFile.path);
     setTableEdit(null);
@@ -1265,21 +1280,43 @@ export default function App() {
   };
 
   const handleEditTable = (path: string, start: number, end: number) => {
+    const content = documentRef.current?.files.find((file) => file.path === path)?.content;
+    if (content == null || start >= end || end > content.length) return;
     setSelectedPath(path);
-    setTableEdit({ path, start, end });
+    setTableEdit({ path, start, end, content });
     setMode("table");
   };
 
-  const handleTableChange = (markdown: string) => {
-    if (!tableEdit) return;
-    setDoc((current) => {
-      if (!current) return current;
-      const file = current.files.find((candidate) => candidate.path === tableEdit.path);
-      if (!file?.is_text || file.content === null) return current;
-      const content = `${file.content.slice(0, tableEdit.start)}${markdown}${file.content.slice(tableEdit.end)}`;
-      return updateFileContent(current, tableEdit.path, content);
-    });
-    setTableEdit((current) => current ? { ...current, end: current.start + markdown.length } : current);
+  const closeTableEditor = () => {
+    clearError("Edit table");
+    setTableEdit(null);
+    setMode("split");
+  };
+
+  const handleTableDone = (markdown: string) => {
+    const current = documentRef.current;
+    if (!current || !tableEdit) return;
+    const { path, start, end, content } = tableEdit;
+    const file = current.files.find((candidate) => candidate.path === path);
+    if (file?.content !== content) {
+      reportError("Edit table", "The source file changed. Cancel this draft and reopen the table to edit the latest version.");
+      return;
+    }
+    const next = content.slice(0, start) + markdown + content.slice(end);
+    if (next !== content) setDoc(updateFileContent(current, path, next));
+    closeTableEditor();
+  };
+
+  const navigateToSearchResult = (path: string, offset: number) => {
+    const markdown = isMarkdownPath(path);
+    setNavigationTarget(markdown ? { path, offset } : null);
+    setSelectedPath(path);
+    setMode(markdown ? "split" : "preview");
+  };
+
+  const handleValidatePackage = () => {
+    const current = documentRef.current;
+    if (current) setPackageDiagnostics(diagnosePackage(current));
   };
 
   useEffect(() => {
@@ -1300,6 +1337,25 @@ export default function App() {
   const displayFile = selectedFile ?? entrypointFile;
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
+  const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
+  const editorScrollTop = displayFile ? editorScrollTopsRef.current.get(displayFile.path) : undefined;
+  const editorSession = documentSessionRef.current;
+  const liveDiagnosticsEnabled = mode === "split" && displayIsMarkdown;
+  useEffect(() => {
+    if (!doc || !liveDiagnosticsEnabled) return;
+    const timer = window.setTimeout(() => setLiveDiagnostics({
+      document: doc,
+      diagnostics: diagnosePackage(doc),
+    }), 300);
+    return () => window.clearTimeout(timer);
+  }, [doc, liveDiagnosticsEnabled]);
+
+  const currentDiagnostics = liveDiagnostics?.document === doc ? liveDiagnostics?.diagnostics : undefined;
+  const diagnosticRanges = useMemo(() => (currentDiagnostics ?? [])
+    .filter((item) => item.path === displayFile?.path && item.offset !== undefined &&
+      ["missing-link", "outside-package-link", "link-case-mismatch"].includes(item.code))
+    .map((item) => ({ from: item.offset!, to: item.offset! + (item.target?.length ?? 1) })),
+  [currentDiagnostics, displayFile?.path]);
   const displayBaseDir = selectedFile
     ? selectedFile.path.includes("/")
       ? selectedFile.path.slice(0, selectedFile.path.lastIndexOf("/"))
@@ -1312,7 +1368,7 @@ export default function App() {
       const link = packageFileMarkdownLink(displayFile.path, path, doc.files, doc.manifest);
       const inserted = insertMarkdownBlock(displayFile.content, position, link);
       setDoc(updateFileContent(doc, displayFile.path, inserted.content));
-      editorCursorRef.current = inserted.cursor;
+      editorCursorsRef.current.set(displayFile.path, inserted.cursor);
       setStatus(`Inserted link to ${path}`);
       clearError("Insert link");
     } catch (reason) {
@@ -1365,7 +1421,7 @@ export default function App() {
         onImport={handleImport}
         onExport={handleExport}
         onExportPackage={handleExportPackage}
-        onValidatePackage={() => setPackageDiagnosticsOpen(true)}
+        onValidatePackage={handleValidatePackage}
         onUndoFileOperation={undoFileOperation}
         onRedoFileOperation={redoFileOperation}
         canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
@@ -1526,21 +1582,14 @@ export default function App() {
               />
             ) : null;
           })()}
-          {doc && mode === "table" && tableEdit && (() => {
-            const file = doc.files.find((candidate) => candidate.path === tableEdit.path);
-            const source = file?.content?.slice(tableEdit.start, tableEdit.end);
-            return source ? (
-              <MarkdownTableEditor
-                key={`${tableEdit.path}:${tableEdit.start}`}
-                source={source}
-                onChange={handleTableChange}
-                onDone={() => {
-                  setTableEdit(null);
-                  setMode("split");
-                }}
-              />
-            ) : null;
-          })()}
+          {doc && mode === "table" && tableEdit && (
+            <MarkdownTableEditor
+              key={`${tableEdit.path}:${tableEdit.start}`}
+              source={tableEdit.content.slice(tableEdit.start, tableEdit.end)}
+              onDone={handleTableDone}
+              onCancel={closeTableEditor}
+            />
+          )}
           {doc && mode !== "drawing" && mode !== "plantuml" && mode !== "mermaid" && mode !== "mathjax" && mode !== "table" && displayFile && displayFile.is_text && (
             <>
               {mode === "preview" && (
@@ -1568,15 +1617,20 @@ export default function App() {
               {mode === "split" && (
                 <SynchronizedScrollView>
                   <MarkdownEditor
-                    key={displayFile.path}
+                    key={`${editorSession}:${displayFile.path}`}
                     value={displayContent}
                     onChange={handleContentChange}
-                    onCursorChange={(position) => { editorCursorRef.current = position; }}
-                    cursorPosition={navigationPosition}
-                    diagnosticRanges={diagnosePackage(doc)
-                      .filter((item) => item.path === displayFile.path && item.offset !== undefined &&
-                        ["missing-link", "outside-package-link", "link-case-mismatch"].includes(item.code))
-                      .map((item) => ({ from: item.offset!, to: item.offset! + (item.target?.length ?? 1) }))}
+                    onCursorChange={(position) => {
+                      if (editorSession === documentSessionRef.current) editorCursorsRef.current.set(displayFile.path, position);
+                    }}
+                    initialCursorPosition={editorCursorsRef.current.get(displayFile.path)}
+                    initialScrollTop={editorScrollTop}
+                    onScrollTopChange={(top) => {
+                      if (editorSession === documentSessionRef.current) editorScrollTopsRef.current.set(displayFile.path, top);
+                    }}
+                    navigation={navigation}
+                    onNavigationComplete={() => setNavigationTarget(null)}
+                    diagnosticRanges={diagnosticRanges}
                     onSelectionChange={handleSelectionChange}
                     onAiSelection={handleAiSelection}
                     vimMode={vimMode}
@@ -1592,7 +1646,8 @@ export default function App() {
                   />
                   <MarkdownPreview
                     markdown={displayContent}
-                    scrollRestoreKey={displayFile.path}
+                    scrollRestoreKey={`${editorSession}:${displayFile.path}`}
+                    restoreScroll={editorScrollTop === undefined && !navigation}
                     initialScrollRatio={markdownScrollRatiosRef.current.get(displayFile.path) ?? 0}
                     onScrollRatioChange={(ratio) => markdownScrollRatiosRef.current.set(displayFile.path, ratio)}
                     showToc={showToc && displayIsMarkdown}
@@ -1660,17 +1715,17 @@ export default function App() {
           onClose={() => setThirdPartyLicensesOpen(false)}
         />
       )}
-      {packageDiagnosticsOpen && doc && (
+      {packageDiagnostics && doc && (
         <PackageDiagnosticsDialog
-          diagnostics={diagnosePackage(doc)}
+          diagnostics={packageDiagnostics}
           onNavigate={(path) => {
             if (doc.files.some((file) => file.path === path)) {
               setSelectedPath(path);
               if (isMarkdownPath(path)) setMode("split");
             }
-            setPackageDiagnosticsOpen(false);
+            setPackageDiagnostics(null);
           }}
-          onClose={() => setPackageDiagnosticsOpen(false)}
+          onClose={() => setPackageDiagnostics(null)}
         />
       )}
       {backlinksTarget && doc && (
@@ -1678,10 +1733,7 @@ export default function App() {
           target={backlinksTarget}
           backlinks={findBacklinks(backlinksTarget, doc.files)}
           onNavigate={(path, offset) => {
-            editorCursorRef.current = offset;
-            setNavigationPosition(offset);
-            setSelectedPath(path);
-            setMode("split");
+            navigateToSearchResult(path, offset);
             setBacklinksTarget(null);
           }}
           onClose={() => setBacklinksTarget(null)}
@@ -1746,8 +1798,7 @@ export default function App() {
       {packageSearchOpen && doc && (
         <PackageSearchDialog files={doc.files}
           onNavigate={(path, offset) => {
-            setNavigationPosition(offset); setSelectedPath(path);
-            setMode(isMarkdownPath(path) ? "split" : "preview");
+            navigateToSearchResult(path, offset);
             setPackageSearchOpen(false);
           }}
           onClose={() => setPackageSearchOpen(false)} />

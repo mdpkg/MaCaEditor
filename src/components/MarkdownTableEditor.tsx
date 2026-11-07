@@ -9,8 +9,8 @@ import {
 
 interface Props {
   source: string;
-  onChange: (markdown: string) => void;
-  onDone: () => void;
+  onDone: (markdown: string) => void;
+  onCancel: () => void;
 }
 
 function clone(table: MarkdownTableData): MarkdownTableData {
@@ -21,8 +21,9 @@ function clone(table: MarkdownTableData): MarkdownTableData {
   };
 }
 
-export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
-  const [table, setTable] = useState(() => parseMarkdownTable(source));
+export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
+  const [original] = useState(() => parseMarkdownTable(source));
+  const [table, setTable] = useState(original);
   const [status, setStatus] = useState("");
   const undoStack = useRef<MarkdownTableData[]>([]);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,6 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
     if (undoStack.current.length > 100) undoStack.current.shift();
     setTable(next);
     setStatus(message);
-    onChange(serializeMarkdownTable(next));
   };
 
   const updateCell = (row: number, column: number, value: string) => {
@@ -132,7 +132,6 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
     }
     setTable(previous);
     setStatus("元に戻しました");
-    onChange(serializeMarkdownTable(previous));
   };
 
   return (
@@ -148,7 +147,11 @@ export function MarkdownTableEditor({ source, onChange, onDone }: Props) {
     >
       <div className="markdown-table-toolbar">
         <button type="button" onClick={undo}>元に戻す</button>
-        <button type="button" onClick={onDone}>完了</button>
+        <button type="button" onClick={onCancel}>キャンセル</button>
+        <button type="button" onClick={() => {
+          const markdown = serializeMarkdownTable(table);
+          onDone(markdown === serializeMarkdownTable(original) ? source : markdown);
+        }}>完了</button>
       </div>
       <section className="markdown-table-panel">
         <h2>テーブル編集</h2>

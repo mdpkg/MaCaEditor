@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { DocumentState } from "./document";
+import * as markdownLinks from "./markdownLinks";
 import { diagnosePackage } from "./packageDiagnostics";
 
 function state(overrides: Partial<DocumentState> = {}): DocumentState {
@@ -28,6 +29,24 @@ describe("diagnosePackage", () => {
     expect(diagnosePackage(document).map((item) => item.code)).toEqual([
       "missing-link", "outside-package-link", "link-case-mismatch",
     ]);
+  });
+
+  test("reuses unchanged link parses and resolves targets against the current files", () => {
+    const parse = vi.spyOn(markdownLinks, "markdownLinks");
+    const files = [
+      { path: "index.md", is_text: true, content: "[Guide](guide.md)", base64: null },
+      { path: "guide.md", is_text: true, content: "Guide", base64: null },
+    ];
+    try {
+      expect(diagnosePackage(state({ files }))).toEqual([]);
+      expect(parse).toHaveBeenCalledTimes(2);
+      const changed = [files[0], { ...files[1], path: "renamed.md", content: "[Missing](lost.md)" }];
+      expect(diagnosePackage(state({ files: changed })).map((item) => item.target))
+        .toEqual(["guide.md", "lost.md", undefined]);
+      expect(parse).toHaveBeenCalledTimes(3);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   test("reports missing resource pairs and unreferenced files", () => {

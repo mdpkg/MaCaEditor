@@ -11,11 +11,15 @@ interface Props {
   onAiSelection?: (task: AiTaskKind) => void;
   onPackagePathDrop?: (path: string, position: number) => void;
   onMarkdownLinkOpen?: (destination: string) => void;
-  cursorPosition?: number | null;
+  initialCursorPosition?: number;
+  initialScrollTop?: number;
+  onScrollTopChange?: (position: number) => void;
+  navigation?: { offset: number };
+  onNavigationComplete?: () => void;
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
-export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, cursorPosition, diagnosticRanges }: Props) {
+export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
@@ -30,7 +34,11 @@ export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionCha
       onAiSelection={onAiSelection}
       onPackagePathDrop={onPackagePathDrop}
       onMarkdownLinkOpen={onMarkdownLinkOpen}
-      cursorPosition={cursorPosition}
+      initialCursorPosition={initialCursorPosition}
+      initialScrollTop={initialScrollTop}
+      onScrollTopChange={onScrollTopChange}
+      navigation={navigation}
+      onNavigationComplete={onNavigationComplete}
       diagnosticRanges={diagnosticRanges}
     />
   );

@@ -38,6 +38,7 @@ interface Props {
   rspressMode?: boolean;
   scrollRestoreKey?: string;
   initialScrollRatio?: number;
+  restoreScroll?: boolean;
   onScrollRatioChange?: (ratio: number) => void;
 }
 
@@ -111,6 +112,7 @@ export function MarkdownPreview({
   rspressMode = false,
   scrollRestoreKey,
   initialScrollRatio = 0,
+  restoreScroll = true,
   onScrollRatioChange,
 }: Props) {
   const tocPrefixLength = 0;
@@ -150,7 +152,7 @@ export function MarkdownPreview({
 
   useEffect(() => {
     const preview = previewRef.current;
-    if (!preview) return;
+    if (!preview || !restoreScroll) return;
     const frame = requestAnimationFrame(() => {
       const maximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
       preview.scrollTop = maximum * Math.max(0, Math.min(1, initialScrollRatio));

@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import App from "./App";
+import * as diagnostics from "./lib/packageDiagnostics";
 import * as tauri from "./lib/tauri";
 import type { PackageInfo } from "./types";
 
@@ -29,11 +30,28 @@ vi.mock("./lib/editorPreferences", () => ({
   saveDrawingPreferences: vi.fn(),
 }));
 vi.mock("./components/MarkdownPreview", () => ({
-  MarkdownPreview: ({ markdown }: { markdown: string }) => <p>{markdown}</p>,
+  MarkdownPreview: ({ markdown, onEditTable }: {
+    markdown: string;
+    onEditTable: (start: number, end: number) => void;
+  }) => <>
+    <p>{markdown}</p>
+    {markdown.includes("|") && (
+      <button onClick={() => onEditTable(markdown.indexOf("|"), markdown.lastIndexOf("|") + 1)}>Edit test table</button>
+    )}
+  </>,
 }));
 vi.mock("./components/MarkdownEditor", () => ({
-  MarkdownEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) =>
-    <textarea value={value} onChange={(event) => onChange(event.currentTarget.value)} />,
+  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange }: {
+    value: string;
+    onChange: (value: string) => void;
+    initialCursorPosition?: number;
+    initialScrollTop?: number;
+    onCursorChange: (position: number) => void;
+    onScrollTopChange: (position: number) => void;
+  }) => <textarea value={value} data-cursor={initialCursorPosition} data-scroll={initialScrollTop}
+    onClick={(event) => onCursorChange(event.currentTarget.selectionStart)}
+    onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}
+    onChange={(event) => onChange(event.currentTarget.value)} />,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -124,6 +142,97 @@ describe("App persistence", () => {
     act(() => search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
     expect(container.querySelector(".package-search-dialog")).toBeNull();
     expect(document.activeElement).toBe(editor);
+  });
+
+  test("restores cursor and scroll positions separately for each opened file", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    const info = documentInfo("0123456789");
+    info.files.push({ ...info.files[0], path: "other.md" });
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await click("File");
+    await click("Open");
+    await click("Edit");
+
+    const editor = () => container.querySelector("textarea")!;
+    const select = async (path: string) => {
+      await act(async () => container.querySelector<HTMLElement>(`[data-path="${path}"]`)!.click());
+      await click("Edit");
+    };
+    const move = (cursor: number, scrollTop: number) => act(() => {
+      editor().setSelectionRange(cursor, cursor);
+      editor().click();
+      editor().scrollTop = scrollTop;
+      editor().dispatchEvent(new Event("scroll"));
+    });
+
+    move(7, 140);
+    await select("other.md");
+    expect(editor().dataset.cursor).toBeUndefined();
+    expect(editor().dataset.scroll).toBeUndefined();
+    move(3, 60);
+    await select("index.md");
+    expect(editor().dataset.cursor).toBe("7");
+    expect(editor().dataset.scroll).toBe("140");
+    await select("other.md");
+    expect(editor().dataset.cursor).toBe("3");
+    expect(editor().dataset.scroll).toBe("60");
+  });
+
+  test("debounces live diagnostics but validates the latest text on demand", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await click("File");
+    await click("Open");
+    const diagnose = vi.spyOn(diagnostics, "diagnosePackage");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await click("Edit");
+    await edit("[Link](first.md)");
+    act(() => vi.advanceTimersByTime(250));
+    await edit("[Link](latest.md)");
+    act(() => vi.advanceTimersByTime(299));
+    expect(diagnose).not.toHaveBeenCalled();
+    await click("File");
+    await click("Validate Package...");
+    expect(container.querySelector(".package-diagnostics-dialog")?.textContent).toContain("latest.md");
+    expect(diagnose).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(diagnose).toHaveBeenCalledTimes(2);
+  });
+
+  test("keeps table drafts out of saves and commits only when the user finishes", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    const original = "Before\n\n|A|B|\n|---|---|\n|1|2|\n\nAfter";
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo(original));
+    await click("File");
+    await click("Open");
+    await click("Edit test table");
+    await act(async () => { await import("./components/MarkdownTableEditor"); });
+    await click("完了");
+    expect(container.querySelector("textarea")?.value).toBe(original);
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+
+    const changeHeader = async () => {
+      const cell = container.querySelector<HTMLTextAreaElement>('[aria-label="Header column 1"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(cell, "Draft");
+        cell.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    await click("Edit test table");
+    await changeHeader();
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+    await act(async () => saveShortcut());
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [expect.objectContaining({ content: original })],
+    }));
+    await click("キャンセル");
+    expect(container.querySelector("textarea")?.value).toBe(original);
+
+    await click("Edit test table");
+    await changeHeader();
+    await click("完了");
+    expect(container.querySelector("textarea")?.value).toBe("Before\n\n| Draft | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter");
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
   });
 
   test.each(["Save", "Save As"])("%s keeps edits made while writing and blocks duplicate saves", async (command) => {
