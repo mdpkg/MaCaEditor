@@ -3,7 +3,7 @@ use objc2::runtime::{AnyObject, Bool, NSObject};
 use objc2::{define_class, msg_send, sel, AllocAnyThread, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
     NSPaperOrientation, NSPrintHeaderAndFooter, NSPrintInfo, NSPrintJobSavingURL, NSPrintOperation,
-    NSPrintSaveJob, NSWindow,
+    NSPrintPanelOptions, NSPrintSaveJob, NSWindow,
 };
 use objc2_foundation::{NSDictionary, NSNumber, NSSize, NSString, NSURL};
 use objc2_pdf_kit::{PDFDocument, PDFPrintScalingMode};
@@ -176,6 +176,12 @@ pub async fn print_prepared_pages(window: WebviewWindow, title: String) -> Resul
         }
         .ok_or("PDFKit could not create the print operation")?;
         operation.setJobTitle(Some(&NSString::from_str(&title)));
+        let panel = operation.printPanel();
+        panel.setOptions(
+            panel.options()
+                | NSPrintPanelOptions::ShowsPaperSize
+                | NSPrintPanelOptions::ShowsOrientation,
+        );
         Ok((operation, Some(document)))
     })
     .await?;
