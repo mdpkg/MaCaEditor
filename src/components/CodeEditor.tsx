@@ -6,7 +6,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
-import { Annotation, Compartment, EditorState, Prec } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
@@ -29,13 +29,25 @@ interface Props {
   initialCursorPosition?: number;
   initialScrollTop?: number;
   onScrollTopChange?: (position: number) => void;
-  navigation?: { offset: number };
+  navigation?: { offset: number; length?: number };
   onNavigationComplete?: () => void;
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
 const noDiagnosticRanges: NonNullable<Props["diagnosticRanges"]> = [];
 const controlledChange = Annotation.define<boolean>();
+const setNavigationHighlight = StateEffect.define<{ from: number; to: number } | null>();
+const navigationHighlight = StateField.define({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    let next = value.map(transaction.changes);
+    for (const effect of transaction.effects) if (effect.is(setNavigationHighlight)) {
+      next = effect.value ? Decoration.set([Decoration.mark({ class: "cm-navigation-highlight" }).range(effect.value.from, effect.value.to)]) : Decoration.none;
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 const vimSaveHandlers = new WeakMap<object, () => void>();
 Vim.defineEx("write", "w", (editor) => {
   vimSaveHandlers.get(editor)?.();
@@ -91,6 +103,7 @@ export function CodeEditor({
   onScrollTopChangeRef.current = onScrollTopChange;
   onNavigationCompleteRef.current = onNavigationComplete;
   const diagnosticsCompartmentRef = useRef(new Compartment());
+  const highlightTimer = useRef<number | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
   onCursorChangeRef.current = onCursorChange;
@@ -132,6 +145,7 @@ export function CodeEditor({
       ...(language === "markdown" ? [markdown()] : []),
       EditorView.lineWrapping,
       diagnosticsCompartmentRef.current.of([]),
+      navigationHighlight,
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": uiText(ariaLabel) })] : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && update.transactions.some((tr) => tr.docChanged && !tr.annotation(controlledChange))) {
@@ -213,6 +227,7 @@ export function CodeEditor({
       }
       view.scrollDOM.removeEventListener("scroll", recordScroll);
       view.dom.removeEventListener("keydown", preserveScrollOnUndo, true);
+      if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
       view.destroy();
       viewRef.current = null;
     };
@@ -248,7 +263,15 @@ export function CodeEditor({
       cancelAnimationFrame(scrollFrameRef.current);
       scrollFrameRef.current = null;
     }
-    view.dispatch({ selection: { anchor: Math.min(navigation.offset, view.state.doc.length) }, scrollIntoView: true });
+    const from = Math.max(0, Math.min(navigation.offset, view.state.doc.length));
+    const to = Math.min(view.state.doc.length, from + Math.max(1, navigation.length ?? 1));
+    if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    view.dispatch({ selection: { anchor: from }, scrollIntoView: true,
+      effects: setNavigationHighlight.of(from < to ? { from, to } : null) });
+    highlightTimer.current = window.setTimeout(() => {
+      if (viewRef.current === view) view.dispatch({ effects: setNavigationHighlight.of(null) });
+      highlightTimer.current = null;
+    }, 2000);
     view.focus();
     onNavigationCompleteRef.current?.();
   }, [language, navigation]);

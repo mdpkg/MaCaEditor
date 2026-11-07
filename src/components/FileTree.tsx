@@ -199,7 +199,11 @@ export function FileTree({
             if (!node.isDir || (!onDropPath && node.path !== imageDropDirectory)) return;
             event.preventDefault();
             event.stopPropagation();
-            event.dataTransfer.dropEffect = "move";
+            const internal = Array.from(event.dataTransfer.types).includes(PACKAGE_PATH_DRAG_TYPE);
+            const items = Array.from(event.dataTransfer.items ?? []);
+            const image = items.some((item) => /^image\/(png|jpeg|gif|webp|bmp|x-ms-bmp)$/i.test(item.type));
+            event.dataTransfer.dropEffect = internal ? "move" : node.path === imageDropDirectory && (image || items.length === 0) ? "copy" : "none";
+            if (event.dataTransfer.dropEffect === "none") return;
             setDragOverPath(node.path);
           }}
           onDragLeave={() => setDragOverPath(null)}

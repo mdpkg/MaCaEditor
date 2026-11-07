@@ -10,8 +10,13 @@ export interface PackageSearchResult {
   path: string;
   line: number;
   offset: number;
+  length: number;
   preview: string;
   kind: Exclude<PackageSearchKind, "all">;
+}
+
+function context(lines: string[], line: number): string {
+  return lines.slice(Math.max(0, line - 2), line + 1).join("\n");
 }
 
 interface AstNode {
@@ -29,22 +34,29 @@ function headingText(node: AstNode): string {
 export function searchPackage(files: FileInfo[], query: string, kind: PackageSearchKind = "all"): PackageSearchResult[] {
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return [];
-  if (kind === "backlink") return findBacklinks(query.trim(), files).map((item) => ({
-    ...item, preview: `References ${query.trim()}`, kind: "backlink" as const,
-  }));
+  if (kind === "backlink") {
+    const byPath = new Map(files.map((file) => [file.path, file.content?.split("\n") ?? []]));
+    return findBacklinks(query.trim(), files).map((item) => ({
+      ...item, length: query.trim().length, preview: context(byPath.get(item.path) ?? [], item.line), kind: "backlink" as const,
+    }));
+  }
   const results: PackageSearchResult[] = [];
   for (const file of files) {
     if ((kind === "all" || kind === "filename") && file.path.toLocaleLowerCase().includes(needle)) {
-      results.push({ path: file.path, line: 1, offset: 0, preview: file.path, kind: "filename" });
+      results.push({ path: file.path, line: 1, offset: 0, length: 0, preview: file.path, kind: "filename" });
     }
     if (!file.is_text || file.content === null) continue;
+    const content = file.content;
+    const lines = content.split("\n");
     if (kind === "all" || kind === "content") {
-      file.content.split("\n").forEach((line, index) => {
+      let lineOffset = 0;
+      lines.forEach((line, index) => {
         const column = line.toLocaleLowerCase().indexOf(needle);
-        if (column >= 0) {
-          const offset = file.content!.split("\n").slice(0, index).reduce((sum, value) => sum + value.length + 1, 0) + column;
-          results.push({ path: file.path, line: index + 1, offset, preview: line.trim(), kind: "content" });
-        }
+        if (column >= 0) results.push({
+          path: file.path, line: index + 1, offset: lineOffset + column, length: query.trim().length,
+          preview: context(lines, index + 1), kind: "content",
+        });
+        lineOffset += line.length + 1;
       });
     }
     if (!isMarkdownPath(file.path)) continue;
@@ -54,18 +66,19 @@ export function searchPackage(files: FileInfo[], query: string, kind: PackageSea
           const text = headingText(node);
           if (text.toLocaleLowerCase().includes(needle)) results.push({
             path: file.path, line: node.position?.start?.line ?? 1,
-            offset: node.position?.start?.offset ?? 0, preview: text, kind: "heading",
+            offset: node.position?.start?.offset ?? 0, length: lines[(node.position?.start?.line ?? 1) - 1]?.length ?? 0,
+            preview: context(lines, node.position?.start?.line ?? 1), kind: "heading",
           });
         }
         node.children?.forEach(visit);
       };
-      visit(fromMarkdown(file.content) as AstNode);
+      visit(fromMarkdown(content) as AstNode);
     }
     if (kind === "all" || kind === "link") {
-      for (const link of markdownLinks(file.content)) {
+      for (const link of markdownLinks(content)) {
         if (!link.destination.toLocaleLowerCase().includes(needle)) continue;
-        results.push({ path: file.path, line: file.content.slice(0, link.start).split("\n").length,
-          offset: link.start, preview: link.destination, kind: "link" });
+        const line = content.slice(0, link.start).split("\n").length;
+        results.push({ path: file.path, line, offset: link.start, length: link.end - link.start, preview: context(lines, line), kind: "link" });
       }
     }
   }

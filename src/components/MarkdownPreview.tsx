@@ -120,7 +120,6 @@ export function MarkdownPreview({
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
-  const diagramClickTimer = useRef<number | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const mediaDrag = useRef<{
     startX: number;
@@ -133,23 +132,6 @@ export function MarkdownPreview({
     setMediaTransform(initialMediaTransform);
     setPreviewMedia(media);
   }, []);
-
-  const cancelDiagramClick = useCallback(() => {
-    if (diagramClickTimer.current !== null) {
-      window.clearTimeout(diagramClickTimer.current);
-      diagramClickTimer.current = null;
-    }
-  }, []);
-
-  const showDiagramAfterDoubleClickDelay = useCallback((media: PreviewMedia) => {
-    cancelDiagramClick();
-    diagramClickTimer.current = window.setTimeout(() => {
-      showPreviewMedia(media);
-      diagramClickTimer.current = null;
-    }, 200);
-  }, [cancelDiagramClick, showPreviewMedia]);
-
-  useEffect(() => cancelDiagramClick, [cancelDiagramClick]);
 
   useEffect(() => {
     const preview = previewRef.current;
@@ -316,41 +298,30 @@ export function MarkdownPreview({
         return <span
           className="drawing-image preview-diagram"
           data-drawpath={sourcePath ?? ""}
-          role="button"
-          tabIndex={0}
-          aria-label={alt || uiText("Enlarge diagram")}
-          title={sourcePath && editDiagram
-            ? uiText("Click to enlarge, double-click to edit the diagram")
-            : uiText("Click to enlarge")}
-          onClick={(event) => {
-            event.currentTarget.focus();
-            showDiagramAfterDoubleClickDelay(media);
-          }}
-          onDoubleClick={() => {
-            cancelDiagramClick();
-            if (sourcePath) editDiagram?.(sourcePath);
-          }}
-          onKeyDown={(event) => {
-            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-              event.preventDefault();
-              showPreviewMedia(media);
-            }
-          }}
         >
           <span
             className="preview-diagram-content"
+            role="button"
+            tabIndex={0}
+            aria-label={alt || uiText("Enlarge diagram")}
+            title={uiText("Click to enlarge")}
+            onClick={(event) => {
+              event.currentTarget.focus();
+              showPreviewMedia(media);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                showPreviewMedia(media);
+              }
+            }}
             dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
           />
           {sourcePath && editDiagram && (
             <button
               type="button"
               className="preview-diagram-edit"
-              onClick={(event) => {
-                event.stopPropagation();
-                cancelDiagramClick();
-                editDiagram(sourcePath);
-              }}
-              onDoubleClick={(event) => event.stopPropagation()}
+              onClick={() => editDiagram(sourcePath)}
             >{uiText("Edit")}</button>
           )}
         </span>;
@@ -391,7 +362,6 @@ export function MarkdownPreview({
     },
   }), [
     baseDir, files, manifest, tocPrefixLength, showPreviewMedia,
-    showDiagramAfterDoubleClickDelay, cancelDiagramClick,
   ]);
   const urlTransform: UrlTransform = (url, key) =>
     key === "href" ? packageUrl(baseDir, url) : url;
@@ -423,6 +393,7 @@ export function MarkdownPreview({
           aria-label={uiText("Close enlarged preview")}
           onClick={() => setPreviewMedia(null)}
         >×</button>
+        {previewMedia.kind === "diagram" && previewMedia.onEdit && <button className="preview-media-edit" onClick={editEnlargedDiagram}>{uiText("Edit")}</button>}
         <div
           className={`preview-media-content${draggingMedia ? " dragging" : ""}`}
           onWheel={zoomPreviewMedia}
@@ -430,7 +401,6 @@ export function MarkdownPreview({
           onPointerMove={moveMediaDrag}
           onPointerUp={stopMediaDrag}
           onPointerCancel={stopMediaDrag}
-          onDoubleClick={editEnlargedDiagram}
         >
           <div
             className="preview-media-transform"
@@ -447,7 +417,6 @@ export function MarkdownPreview({
                   : ""}`}
                 role="img"
                 aria-label={previewMedia.alt || uiText("Diagram")}
-                title={previewMedia.onEdit ? uiText("Double-click to edit the diagram") : undefined}
                 dangerouslySetInnerHTML={{ __html: previewMedia.html }}
               />
             )}

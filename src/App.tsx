@@ -1,3 +1,5 @@
+import { ResizeHandle } from "./components/ResizeHandle";
+import { useStoredLayoutNumber } from "./lib/layoutPreferences";
 import { uiText } from "./lib/uiText";
 import { useActionDialog } from "./components/ActionDialog";
 import { Dialog } from "./components/Dialog";
@@ -195,6 +197,8 @@ export default function App() {
   const [showToc, setShowToc] = useState(false);
   const [rspressMode, setRspressMode] = useState(false);
   const [fileListOpen, setFileListOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useStoredLayoutNumber("maca.sidebarWidth", 240, 120, 480);
+  const [splitRatio, setSplitRatio] = useStoredLayoutNumber("maca.splitRatio", 0.5, 0.2, 0.8);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [drawingPreferences, setDrawingPreferences] = useState<DrawingPreferences>({
     gridVisible: true, snap: false, smartGuidesEnabled: true,
@@ -209,7 +213,7 @@ export default function App() {
     diagnostics: PackageDiagnostic[];
   } | null>(null);
   const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
-  const [navigationTarget, setNavigationTarget] = useState<{ path: string; offset: number } | null>(null);
+  const [navigationTarget, setNavigationTarget] = useState<{ path: string; offset: number; length?: number } | null>(null);
   const [manifestEditorOpen, setManifestEditorOpen] = useState(false);
   const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
   const [packageSearchOpen, setPackageSearchOpen] = useState(false);
@@ -260,6 +264,7 @@ export default function App() {
     operationRedoRef.current = [];
     setFolderConflict(false);
     setError(null);
+    setNotifications((current) => current.filter((notice) => !notice.action));
     setDoc(next);
 
   };
@@ -407,9 +412,9 @@ export default function App() {
     setError((current) => current?.operation === operation ? null : current);
   };
 
-  const showNotification = (message: string, tone: NotificationTone) => {
+  const showNotification = (message: string, tone: NotificationTone, action?: BannerNotice["action"]) => {
     notificationSequenceRef.current += 1;
-    const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone };
+    const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone, action };
     setNotifications((current) => [...current, notice]);
   };
 
@@ -465,7 +470,7 @@ export default function App() {
               : reloaded.entrypoint,
           );
           setStatus(`${folderPath} の外部変更を反映しました`);
-          showNotification("Reloaded changes from the external editor.", "info");
+          showNotification("外部エディタによる変更を反映しました。", "info");
         }
       } catch (e) {
         if (active && session === documentSessionRef.current && lastError !== String(e)) {
@@ -1176,31 +1181,38 @@ export default function App() {
     setStatus(uiText("Inserted 2 × 2 table"));
   };
 
-  const handleDropImages = async (files: File[]) => {
-    const supported = files.filter((file) => isSupportedImageName(file.name));
-    if (supported.length === 0) {
-      reportError(uiText("Add images"), uiText("Drop PNG, JPEG, GIF, WebP, or BMP image files."));
-      return;
-    }
-    try {
-      addImportedImages(await Promise.all(supported.map(droppedFileToImage)));
-    } catch (e) {
-      reportError(uiText("Add images"), e);
-    }
+  const importDroppedImages = async <T,>(items: T[], name: (item: T) => string, read: (item: T) => Promise<ImportedImage>) => {
+    if (!doc) return;
+    const session = documentSessionRef.current;
+    const supported = items.filter((item) => isSupportedImageName(name(item)));
+    const excluded = items.filter((item) => !isSupportedImageName(name(item))).map(name);
+    const results = await Promise.allSettled(supported.map(read));
+    if (documentSessionRef.current !== session) return;
+    const images: ImportedImage[] = [];
+    const failed: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") images.push(result.value);
+      else failed.push(name(supported[index]));
+    });
+    if (images.length) nativeImportImagesRef.current(images);
+    const message = [
+      `取り込み ${images.length} 件${images.length ? ": " + images.map((image) => image.file_name).join("、") : ""}`,
+      excluded.length ? `除外 ${excluded.length} 件（非対応形式）: ${excluded.join("、")}` : "",
+      failed.length ? `失敗 ${failed.length} 件: ${failed.join("、")}。ファイルを読み直してください` : "",
+    ].filter(Boolean).join("。");
+    showNotification(message, excluded.length || failed.length ? "warning" : "success");
   };
+  const handleDropImages = (files: File[]) => importDroppedImages(files, (file) => file.name, droppedFileToImage);
 
   nativeImportImagesRef.current = addImportedImages;
   nativeDropRef.current = (paths) => {
     if (paths.length === 0) return;
-    if (doc && paths.every(isSupportedImageName)) {
-      const session = documentSessionRef.current;
-      void Promise.all(paths.map(readImage)).then((images) => {
-        if (documentSessionRef.current === session) nativeImportImagesRef.current(images);
-      }).catch((reason) => reportError(uiText("Add images"), reason));
+    if (doc && (paths.some(isSupportedImageName) || paths.every((path) => /\.(svg|heic|heif|tiff?|avif|ico|pdf)$/i.test(path)))) {
+      void importDroppedImages(paths, (path) => path.split(/[\\/]/).pop() ?? path, readImage);
     } else if (paths.length === 1) {
       void openDocument(paths[0], /\.mdpkg$/i.test(paths[0]) ? "package" : "folder");
     } else {
-      reportError(uiText("Open document"), uiText("Drop one package or folder at a time."));
+      showNotification(`パッケージまたはフォルダは1件ずつ開いてください。除外: ${paths.map((path) => path.split(/[\\/]/).pop()).join("、")}`, "warning");
     }
   };
 
@@ -1254,7 +1266,35 @@ export default function App() {
       setMermaidPath((current) => mapPath(current));
       setMathJaxPath((current) => mapPath(current));
       setStatus(`${destination} に移動し、Markdown のリンクを更新しました`); clearError(uiText("Move"));
+      const session = documentSessionRef.current;
+      showNotification(`${path} を ${destination} に移動しました。Markdown のリンクも更新しました。`, "success", {
+        label: "元に戻す",
+        onClick: () => {
+          if (documentSessionRef.current !== session) return;
+          if (documentRef.current !== moved || operationUndoRef.current[operationUndoRef.current.length - 1]?.state !== doc) {
+            showNotification("移動後の編集を保護するため、この通知からは取り消せません。移動メニューから元の場所へ戻してください。", "warning");
+            return;
+          }
+          const entry = operationUndoRef.current.pop()!;
+          operationRedoRef.current.push({ state: moved, label: entry.label });
+          setDoc(entry.state); setSelectedFolder(null); setSelectedPath(entry.state.entrypoint); setMode("preview");
+          setOperationHistoryRevision((revision) => revision + 1);
+          setStatus(`${path} の移動を元に戻しました`);
+        },
+      });
     } catch (reason) { reportError(uiText("Move"), reason); }
+  };
+
+  const handleDropMove = async (path: string, destination: string) => {
+    if (!doc || path === destination) return;
+    const snapshot = doc;
+    const count = doc.files.filter((file) => file.path === path || file.path.startsWith(path + "/")).length;
+    if (!destination.includes("/") || count > 1) {
+      const answer = await ask({ title: "移動を確認", confirmLabel: "移動",
+        message: `${path} を ${destination} に移動します（${count} ファイル）。Markdown のリンクも更新します。` });
+      if (answer === null || documentRef.current !== snapshot) return;
+    }
+    applyMove(path, destination);
   };
 
   const handleMove = async (path: string) => {
@@ -1267,6 +1307,7 @@ export default function App() {
     const targetPath = (folder: string) => folder ? `${folder}/${name}` : name;
     const folder = await ask({
       title: `${name} を移動`, label: uiText("Destination folder"), initialValue: parent,
+      message: "移動先を選んで確定してください。フォルダ内のファイルと Markdown のリンクも更新します。",
       options: folders.map((folder) => ({ value: folder, label: folder || uiText("Package root") })),
       confirmLabel: uiText("Move"),
       validate: (folder) => targetPath(folder) === path ? uiText("Choose another folder.") : newPathError(targetPath(folder), path),
@@ -1438,16 +1479,17 @@ export default function App() {
     closeTableEditor();
   };
 
-  const navigateToSearchResult = (path: string, offset: number) => {
-    const markdown = isMarkdownPath(path);
-    setNavigationTarget(markdown ? { path, offset } : null);
+  const navigateToSearchResult = (path: string, offset: number, length = 0) => {
+    setSelectedFolder(null);
+    const editable = doc?.files.find((file) => file.path === path)?.is_text;
+    setNavigationTarget(editable ? { path, offset, length } : null);
     setSelectedPath(path);
-    setMode(markdown ? "split" : "preview");
+    setMode(editable ? "split" : "preview");
   };
 
   const handleValidatePackage = () => {
     const current = documentRef.current;
-    if (current) setPackageDiagnostics(diagnosePackage(current));
+    if (current) { setPackageSearchOpen(false); setPackageDiagnostics(diagnosePackage(current)); }
   };
 
   useEffect(() => {
@@ -1455,6 +1497,7 @@ export default function App() {
       if (event.defaultPrevented || event.isComposing) return;
       if (isPackageSearchShortcut(event) && doc) {
         event.preventDefault();
+        setPackageDiagnostics(null);
         setPackageSearchOpen(true);
       } else if (isSaveShortcut(event)) {
         event.preventDefault();
@@ -1466,20 +1509,30 @@ export default function App() {
   }, [doc]);
 
   const displayFile = selectedFile ?? entrypointFile;
+  const printTitle = doc ? `${documentName} — ${displayFile?.path ?? ""}` : "MaCa Editor";
+  useEffect(() => {
+    document.documentElement.style.setProperty("--print-title", JSON.stringify(printTitle.replace(/[\r\n\f]/g, " ")));
+    return () => { document.documentElement.style.removeProperty("--print-title"); };
+  }, [printTitle]);
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
   const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
   const editorScrollTop = displayFile ? editorScrollTopsRef.current.get(displayFile.path) : undefined;
   const editorSession = documentSessionRef.current;
   const liveDiagnosticsEnabled = mode === "split" && displayIsMarkdown;
+  const diagnosticsOpen = packageDiagnostics !== null;
+  const diagnosticsEnabled = liveDiagnosticsEnabled || diagnosticsOpen;
   useEffect(() => {
-    if (!doc || !liveDiagnosticsEnabled) return;
+    if (!doc || !diagnosticsEnabled) return;
     const timer = window.setTimeout(() => setLiveDiagnostics({
       document: doc,
       diagnostics: diagnosePackage(doc),
     }), 300);
     return () => window.clearTimeout(timer);
-  }, [doc, liveDiagnosticsEnabled]);
+  }, [doc, diagnosticsEnabled]);
+  useEffect(() => {
+    if (diagnosticsOpen && liveDiagnostics?.document === doc) setPackageDiagnostics(liveDiagnostics.diagnostics);
+  }, [doc, liveDiagnostics, diagnosticsOpen]);
 
   const currentDiagnostics = liveDiagnostics?.document === doc ? liveDiagnostics?.diagnostics : undefined;
   const diagnosticRanges = useMemo(() => (currentDiagnostics ?? [])
@@ -1565,7 +1618,7 @@ export default function App() {
         canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
         canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
         onEditManifest={() => setManifestEditorOpen(true)}
-        onSearchPackage={() => setPackageSearchOpen(true)}
+        onSearchPackage={() => { setPackageDiagnostics(null); setPackageSearchOpen(true); }}
         onAddMarkdown={handleAddMarkdown}
         onAddFolder={handleAddFolder}
         documentKind={doc?.origin.kind ?? null}
@@ -1604,7 +1657,7 @@ export default function App() {
       )}
       <div className="main-layout">
         {(fileListOpen || mode === "drawing") && (
-          <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
+          <aside style={{ width: `min(${sidebarWidth}px, 45vw)`, flexShrink: 0 }} className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
             {fileListOpen && (
               <div className="sidebar-tree">
                 <FileTree
@@ -1636,7 +1689,7 @@ export default function App() {
                   }}
                   onAddMarkdown={handleAddMarkdown}
                   onAddFolder={handleAddFolder}
-                  onDropPath={applyMove}
+                  onDropPath={handleDropMove}
                   onShowReferences={setBacklinksTarget}
                 />
               </div>
@@ -1646,6 +1699,7 @@ export default function App() {
             )}
           </aside>
         )}
+        {(fileListOpen || mode === "drawing") && <ResizeHandle label="サイドバーの幅" value={sidebarWidth} min={120} max={480} initial={240} onChange={setSidebarWidth} />}
         <main
           ref={documentAreaRef}
           className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}
@@ -1772,7 +1826,7 @@ export default function App() {
                 </div>
               )}
               {mode === "split" && (
-                <SynchronizedScrollView>
+                <SynchronizedScrollView ratio={splitRatio} onRatioChange={setSplitRatio}>
                   <MarkdownEditor
                     key={`${editorSession}:${displayFile.path}`}
                     value={displayContent}
@@ -1875,12 +1929,12 @@ export default function App() {
       {packageDiagnostics && doc && (
         <PackageDiagnosticsDialog
           diagnostics={packageDiagnostics}
-          onNavigate={(path) => {
-            if (doc.files.some((file) => file.path === path)) {
-              setSelectedPath(path);
-              if (isMarkdownPath(path)) setMode("split");
-            }
-            setPackageDiagnostics(null);
+          onNavigate={(path, line, offset) => {
+            const file = doc.files.find((item) => item.path === path);
+            if (file) {
+              const position = offset ?? (file.content ?? "").split("\n").slice(0, Math.max(0, (line ?? 1) - 1)).reduce((sum, text) => sum + text.length + 1, 0);
+              navigateToSearchResult(path, position, 1);
+            } else if (path === "manifest.json") setManifestEditorOpen(true);
           }}
           onClose={() => setPackageDiagnostics(null)}
         />
@@ -1954,10 +2008,7 @@ export default function App() {
       )}
       {packageSearchOpen && doc && (
         <PackageSearchDialog files={doc.files}
-          onNavigate={(path, offset) => {
-            navigateToSearchResult(path, offset);
-            setPackageSearchOpen(false);
-          }}
+          onNavigate={(path, offset, length) => navigateToSearchResult(path, offset, length)}
           onClose={() => setPackageSearchOpen(false)} />
       )}
       <StatusBar

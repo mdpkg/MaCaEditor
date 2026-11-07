@@ -43,6 +43,7 @@ body {
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
@@ -606,13 +607,12 @@ body {
   padding: 4px 10px;
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 4px;
-  opacity: 0;
+  opacity: 1;
   background: rgba(32, 33, 36, 0.82);
   color: #fff;
   font: inherit;
   cursor: pointer;
-  pointer-events: none;
-  transition: opacity 120ms ease;
+  pointer-events: auto;
 }
 
 .preview-diagram:hover .preview-diagram-edit,
@@ -2040,4 +2040,35 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.resize-handle { flex: 0 0 8px; width: 8px; cursor: col-resize; touch-action: none; background: var(--panel); }
+.resize-handle:hover, .resize-handle:focus-visible { background: var(--accent); outline: 2px solid var(--accent); outline-offset: -2px; }
+.results-panel { position: fixed; right: 12px; bottom: 30px; z-index: 90; display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 24px)); max-height: min(560px, 55vh); padding: 16px; box-sizing: border-box; overflow: auto; }
+.results-panel h2 { margin: 0; font-size: 18px; }
+.results-panel p { margin: 0; }
+.results-navigation { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.package-search-controls { grid-template-columns: minmax(0, 1fr); }
+.package-search-controls input, .package-search-controls select { min-width: 0; max-width: 100%; }
+.results-panel .package-diagnostics-list { min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.results-panel [aria-current="true"] { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); outline: 1px solid var(--accent); outline-offset: -1px; }
+.search-snippet { white-space: pre-wrap; overflow-wrap: anywhere; }
+.search-snippet mark, .cm-navigation-highlight { background: #ffe08a; color: #251900; }
+.notification-banner-warning { border-color: #9a6700; background: #fff4ce; color: #4d3300; }
+.notification-banner > div { overflow-wrap: anywhere; min-width: 0; }
+.preview-media-edit { position: absolute; top: 20px; right: 72px; z-index: 2; padding: 8px 16px; }
+@media (max-width: 600px) {
+  .toolbar { gap: 6px; padding: 6px; }
+  .toolbar button { padding: 4px 8px; }
+  .toolbar-toc { margin-left: 0; }
+  .results-panel { max-height: 45vh; }
+}
+@media print {
+  @page {
+    margin: 22mm 16mm 20mm;
+    @top-left { content: var(--print-title, "MaCa Editor"); font-size: 9pt; color: #555; }
+    @bottom-center { content: counter(page) " / " counter(pages); font-size: 9pt; color: #555; }
+  }
+  .resize-handle, .results-panel, .preview-diagram-edit, .preview-media-edit, .ai-chat-panel { display: none !important; }
+  .preview-diagram { break-inside: avoid; }
 }

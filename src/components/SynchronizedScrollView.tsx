@@ -1,8 +1,11 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { ResizeHandle } from "./ResizeHandle";
+import { Children, type ReactNode, useEffect, useRef } from "react";
 import { EditorView } from "@codemirror/view";
 
 interface Props {
   children: ReactNode;
+  ratio?: number;
+  onRatioChange?: (ratio: number) => void;
 }
 
 interface ScrollAnchor {
@@ -23,7 +26,7 @@ export function interpolateScroll(position: number, anchors: ScrollAnchor[]): nu
 }
 
 /** Keeps the CodeMirror source and rendered Markdown at the same relative position. */
-export function SynchronizedScrollView({ children }: Props) {
+export function SynchronizedScrollView({ children, ratio = 0.5, onRatioChange }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,5 +113,10 @@ export function SynchronizedScrollView({ children }: Props) {
     };
   }, []);
 
-  return <div ref={rootRef} className="split-view">{children}</div>;
+  const panes = Children.toArray(children);
+  return <div ref={rootRef} className="split-view" style={onRatioChange ? { gridTemplateColumns: `minmax(0, ${ratio}fr) 8px minmax(0, ${1 - ratio}fr)`, gap: 0 } : undefined}>
+    {panes[0]}
+    {onRatioChange && <ResizeHandle label="本文とプレビューの幅" value={ratio} min={0.2} max={0.8} initial={0.5} ratio onChange={onRatioChange} />}
+    {panes.slice(1)}
+  </div>;
 }

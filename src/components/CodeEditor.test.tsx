@@ -14,6 +14,18 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("highlights a navigation match temporarily and maps it safely through edits", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const host = document.createElement("div"); document.body.appendChild(host); const root = createRoot(host);
+    act(() => root.render(<CodeEditor value="Before needle after" onChange={vi.fn()} navigation={{ offset: 7, length: 6 }} />));
+    expect(host.querySelector(".cm-navigation-highlight")?.textContent).toBe("needle");
+    act(() => vi.advanceTimersByTime(2000));
+    expect(host.querySelector(".cm-navigation-highlight")).toBeNull();
+    act(() => root.render(<CodeEditor value="Before needle after" onChange={vi.fn()} navigation={{ offset: 7, length: 6 }} />));
+    act(() => root.render(<CodeEditor value="" onChange={vi.fn()} />));
+    expect(host.querySelector(".cm-content")?.textContent?.trim()).toBe("");
+    act(() => root.unmount()); host.remove(); vi.useRealTimers();
+  });
   test("preserves the editor scroll position across undo", () => {
     const restoreFrames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

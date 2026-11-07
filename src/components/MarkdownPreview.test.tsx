@@ -645,7 +645,7 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
-  test("renders a sanitized drawing SVG and opens its editor on double-click", () => {
+  test("renders a sanitized drawing SVG and opens its editor with the edit button", () => {
     const onEditDrawing = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -666,12 +666,12 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    const drawing = container.querySelector(".drawing-image") as HTMLDivElement;
+    const drawing = container.querySelector(".preview-diagram-content") as HTMLDivElement;
     expect(drawing.querySelector("svg")).not.toBeNull();
     expect(drawing.querySelector("script")).toBeNull();
     act(() => drawing.click());
     expect(onEditDrawing).not.toHaveBeenCalled();
-    act(() => drawing.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    act(() => container.querySelector<HTMLButtonElement>(".preview-diagram-edit")!.click());
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     act(() => root.unmount());
   });
@@ -720,8 +720,8 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    act(() => (container.querySelector(".preview-diagram-content") as HTMLSpanElement).click());
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
     expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     expect(document.body.querySelector('[role="dialog"] .drawing-image svg')).not.toBeNull();
@@ -731,7 +731,7 @@ describe("MarkdownPreview", () => {
     vi.useRealTimers();
   });
 
-  test("opens the diagram editor by double-clicking the full-screen diagram", async () => {
+  test("opens the diagram editor using its full-screen edit button", async () => {
     vi.useFakeTimers();
     const onEditDrawing = vi.fn();
     const container = document.createElement("div");
@@ -752,7 +752,7 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    act(() => (container.querySelector(".preview-diagram") as HTMLSpanElement).click());
+    act(() => (container.querySelector(".preview-diagram-content") as HTMLSpanElement).click());
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     const viewport = document.body.querySelector(".preview-media-content") as HTMLDivElement;
     const pointerDown = new MouseEvent("pointerdown", {
@@ -764,7 +764,7 @@ describe("MarkdownPreview", () => {
     act(() => viewport.dispatchEvent(pointerDown));
     act(() => viewport.dispatchEvent(new MouseEvent("pointerup", { bubbles: true })));
     expect(pointerDown.defaultPrevented).toBe(false);
-    act(() => viewport.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    act(() => document.querySelector<HTMLButtonElement>(".preview-media-edit")!.click());
 
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
@@ -772,7 +772,7 @@ describe("MarkdownPreview", () => {
     vi.useRealTimers();
   });
 
-  test("opens the PlantUML editor when its rendered SVG is double-clicked", () => {
+  test("opens the PlantUML editor with its edit button", () => {
     const onEditPlantUml = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -792,16 +792,16 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
+    const diagram = container.querySelector(".preview-diagram-content") as HTMLSpanElement;
     act(() => diagram.click());
     expect(onEditPlantUml).not.toHaveBeenCalled();
-    act(() => diagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    act(() => container.querySelector<HTMLButtonElement>(".preview-diagram-edit")!.click());
 
     expect(onEditPlantUml).toHaveBeenCalledWith("diagrams/sequence.puml");
     act(() => root.unmount());
   });
 
-  test("opens the Mermaid editor when its rendered SVG is double-clicked", () => {
+  test("opens the Mermaid editor with its edit button", () => {
     const onEditMermaid = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -821,15 +821,15 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
+    const diagram = container.querySelector(".preview-diagram-content") as HTMLSpanElement;
     act(() => diagram.click());
     expect(onEditMermaid).not.toHaveBeenCalled();
-    act(() => diagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    act(() => container.querySelector<HTMLButtonElement>(".preview-diagram-edit")!.click());
     expect(onEditMermaid).toHaveBeenCalledWith("diagrams/flow.mmd");
     act(() => root.unmount());
   });
 
-  test("opens the MathJax editor when its rendered SVG is double-clicked", () => {
+  test("opens the MathJax editor with its edit button", () => {
     const onEditMathJax = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -848,8 +848,7 @@ describe("MarkdownPreview", () => {
         onEditMathJax={onEditMathJax}
       />,
     ));
-    const diagram = container.querySelector(".drawing-image") as HTMLSpanElement;
-    act(() => diagram.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    act(() => container.querySelector<HTMLButtonElement>(".preview-diagram-edit")!.click());
     expect(onEditMathJax).toHaveBeenCalledWith("diagrams/math-1.tex");
     act(() => root.unmount());
   });
@@ -873,7 +872,7 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    act(() => (container.querySelector(".preview-diagram-content") as HTMLSpanElement).click());
     act(() => vi.advanceTimersByTime(200));
 
     expect(document.body.querySelector("[role='dialog'] .preview-media-white-background")).not.toBeNull();
@@ -901,7 +900,7 @@ describe("MarkdownPreview", () => {
       />,
     ));
 
-    act(() => (container.querySelector(".drawing-image") as HTMLSpanElement).click());
+    act(() => (container.querySelector(".preview-diagram-content") as HTMLSpanElement).click());
     act(() => vi.advanceTimersByTime(200));
 
     expect(document.body.querySelector("[role='dialog'] .preview-media-white-background")).not.toBeNull();
