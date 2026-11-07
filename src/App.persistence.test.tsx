@@ -208,7 +208,6 @@ describe("App persistence", () => {
     info.files.push({ path: "docs/guide.md", content: "Guide", is_text: true, base64: null });
     vi.mocked(tauri.openPackage).mockResolvedValue(info);
     await click("開く", container.querySelector(".empty-state")!);
-    await click("編集");
     let folder = container.querySelector<HTMLElement>('[data-path="docs"]')!;
     await act(async () => folder.click());
     expect(folder.getAttribute("aria-selected")).toBe("true");
@@ -250,6 +249,9 @@ describe("App persistence", () => {
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
     await click("開く", empty);
     expect(document.title).toBe("original.mdpkg — MaCa Editor");
+    const editor = container.querySelector("textarea");
+    expect(editor?.value).toBe("Original");
+    expect(JSON.parse(editor!.dataset.navigation!)).toEqual({ offset: 0, length: 0, path: "index.md" });
     act(() => root.unmount());
     root = createRoot(container);
     await act(async () => root.render(<App />));
@@ -257,6 +259,7 @@ describe("App persistence", () => {
     await click("original.mdpkg", container.querySelector(".recent-documents")!);
     expect(tauri.openPackage).toHaveBeenCalledTimes(2);
     expect(container.querySelector(".document-area")?.textContent).toContain("Original");
+    expect(container.querySelector(".document-area textarea")).toBeNull();
   });
 
 

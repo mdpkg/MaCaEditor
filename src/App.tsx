@@ -543,7 +543,7 @@ export default function App() {
     }
   }, [doc, selectedPath]);
 
-  const openDocument = async (path: string, kind: RecentDocument["kind"]) => {
+  const openDocument = async (path: string, kind: RecentDocument["kind"], editOnOpen = false) => {
     const sequence = ++openSequenceRef.current;
     try {
       const info = await (kind === "package" ? openPackage(path) : openFolder(path));
@@ -557,7 +557,9 @@ export default function App() {
       }
       replaceDocument(kind === "folder" ? createFolderDocumentState(info, path) : createDocumentState(info, path));
       setSelectedPath(info.entrypoint);
-      setMode("preview");
+      const editEntrypoint = editOnOpen && info.files.some((file) => file.path === info.entrypoint && file.is_text);
+      setMode(editEntrypoint ? "split" : "preview");
+      if (editEntrypoint) setNavigationTarget({ path: info.entrypoint, offset: 0, length: 0 });
       setDrawingDoc(null);
       setDrawingPath(null);
       setPlantUmlPath(null);
@@ -567,9 +569,9 @@ export default function App() {
     } catch (reason) { reportError(kind === "folder" ? uiText("Open folder") : uiText("Open package"), reason); }
   };
 
-  const handleOpen = async () => {
+  const handleOpen = async (editOnOpen = false) => {
     const path = await openDialog({ filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }] });
-    if (typeof path === "string") await openDocument(path, "package");
+    if (typeof path === "string") await openDocument(path, "package", editOnOpen);
   };
 
   const handleOpenFolder = async () => {
@@ -1719,7 +1721,7 @@ export default function App() {
               <p>{uiText("Create a document, open a package, or open a folder to start editing.")}</p>
               <div className="empty-state-actions">
                 <button type="button" onClick={handleNew}>{uiText("New")}</button>
-                <button type="button" onClick={handleOpen}>{uiText("Open")}</button>
+                <button type="button" onClick={() => handleOpen(true)}>{uiText("Open")}</button>
                 <button type="button" onClick={handleOpenFolder}>{uiText("Open Folder...")}</button>
               </div>
               <p>{uiText("Drop one .mdpkg file or folder anywhere in the window to open it.")}</p>
