@@ -91,7 +91,11 @@ describe("AiSettingsDialog", () => {
     act(() => root.unmount());
   });
 
-  test("shows error detail when test connection fails", async () => {
+  test.each([
+    [new Error("connection refused"), "接続できませんでした。", "connection refused"],
+    [{ kind: "AuthenticationFailed", message: "upstream rejected credentials" },
+      "接続できませんでした。AI の認証に失敗しました。API キーを確認してください。", "upstream rejected credentials"],
+  ])("shows error detail when test connection fails (%s)", async (error, summary, message) => {
     vi.spyOn(tauri, "loadAiConfig").mockResolvedValue({
       provider: "OpenAiCompatible",
       base_url: "http://localhost:11434/v1",
@@ -103,7 +107,7 @@ describe("AiSettingsDialog", () => {
       request_timeout_seconds: 300,
     });
     vi.spyOn(tauri, "testAiConnection").mockRejectedValue(
-      new Error("connection refused"),
+      error,
     );
     const onClose = vi.fn();
     const container = document.createElement("div");
@@ -117,13 +121,13 @@ describe("AiSettingsDialog", () => {
     await act(async () => {
       (container.querySelectorAll("button")[2] as HTMLButtonElement).click();
     });
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("接続できませんでした。");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(summary);
     const details = container.querySelector("details")!;
     expect(details.open).toBe(false);
     expect(details.querySelector("summary")?.textContent).toBe("詳細");
     act(() => details.querySelector("summary")!.click());
     expect(details.open).toBe(true);
-    expect(details.querySelector(".error-detail")?.textContent).toBe("connection refused");
+    expect(details.querySelector(".error-detail")?.textContent).toBe(message);
     act(() => root.unmount());
   });
 

@@ -1,9 +1,9 @@
 import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
+import { AiErrorFeedback } from "./AiErrorFeedback";
 import { useEffect, useRef, useState } from "react";
 import type { AiConfig } from "../types";
 import {
-  aiErrorMessage,
   isAiConfigured,
   type AiSelectionSnapshot,
   type AiTaskKind,
@@ -34,7 +34,7 @@ export function AiSelectionActionDialog({
 
   const [state, setState] = useState(service.getState());
   const [result, setResult] = useState(service.getResult());
-  const [errorKind, setErrorKind] = useState(service.getErrorKind());
+  const [error, setError] = useState(service.getError());
   const [config, setConfig] = useState<AiConfig | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -43,7 +43,7 @@ export function AiSelectionActionDialog({
     const unsubscribe = service.subscribe(() => {
       setState(service.getState());
       setResult(service.getResult());
-      setErrorKind(service.getErrorKind());
+      setError(service.getError());
       onRunningChange(service.isRunning());
     });
     onRunningChange(service.isRunning());
@@ -140,9 +140,7 @@ export function AiSelectionActionDialog({
       )}
       {state === "error" && (
         <>
-          <p className="ai-status ai-status-error">
-            {errorKind ? aiErrorMessage(errorKind) : uiText("An error occurred.")}
-          </p>
+          {error && <AiErrorFeedback error={error} />}
           <div className="about-dialog-actions">
             <button type="button" onClick={() => void run()}>{uiText("Retry")}</button>
             <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>

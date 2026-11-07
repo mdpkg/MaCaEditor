@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
 use crate::package_loader::{load_package, LoadedPackage};
 use crate::package_writer::write_package;
@@ -350,12 +351,11 @@ pub fn load_ai_config() -> Result<crate::ai::config::AiConfig, String> {
 pub async fn list_ai_models(
     base_url: String,
     api_key: Option<String>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AiError> {
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
     provider
         .list_models()
         .await
-        .map_err(|e| e.to_string())
 }
 
 /// 接続テストを実行する Tauri コマンド。
@@ -364,12 +364,11 @@ pub async fn test_ai_connection(
     base_url: String,
     api_key: Option<String>,
     model: String,
-) -> Result<(), String> {
+) -> Result<(), AiError> {
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
     provider
         .test_connection(&model)
         .await
-        .map_err(|e| e.to_string())
 }
 
 /// AI ストリーミングを開始する Tauri コマンド。
@@ -384,7 +383,7 @@ pub async fn ai_stream(
     request: crate::ai::types::AiRequest,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, AiError> {
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
     let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
         provider,
@@ -401,7 +400,6 @@ pub async fn ai_stream(
         request_timeout_seconds,
     )
     .await
-    .map_err(|e| e.to_string())
 }
 
 /// 選択テキストを対象とした AI タスクを実行する Tauri コマンド。
@@ -417,7 +415,7 @@ pub async fn ai_selection_action(
     selected_text: String,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, AiError> {
     let request = crate::ai::prompt::build_request(task, &selected_text);
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
     let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
@@ -435,7 +433,6 @@ pub async fn ai_selection_action(
         request_timeout_seconds,
     )
     .await
-    .map_err(|e| e.to_string())
 }
 
 /// 現在編集中の Markdown をコンテキストにした read-only chat を開始する。
@@ -452,7 +449,7 @@ pub async fn ai_document_chat(
     question: String,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, AiError> {
     let request = crate::ai::prompt::build_document_chat_request(
         &filename, &current_document, &history, &question,
     );
@@ -466,7 +463,7 @@ pub async fn ai_document_chat(
         request,
         connect_timeout_seconds,
         request_timeout_seconds,
-    ).await.map_err(|error| error.to_string())
+    ).await
 }
 
 #[tauri::command]
@@ -481,9 +478,9 @@ pub async fn ai_edit_diagram(
     instruction: String,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, AiError> {
     if instruction.trim().is_empty() {
-        return Err("diagram edit instruction must not be empty".to_string());
+        return Err(AiError::InvalidConfiguration("diagram edit instruction must not be empty".to_string()));
     }
     let request = crate::ai::prompt::build_diagram_edit_request(format, &current_source, &instruction);
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
@@ -494,7 +491,7 @@ pub async fn ai_edit_diagram(
         request,
         connect_timeout_seconds,
         request_timeout_seconds,
-    ).await.map_err(|error| error.to_string())
+    ).await
 }
 
 /// request ID を指定して実行中の AI ストリームをキャンセルする Tauri コマンド。

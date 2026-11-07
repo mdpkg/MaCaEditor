@@ -1,8 +1,9 @@
 import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
-import { ErrorDetails } from "./ErrorDetails";
+import { AiErrorFeedback } from "./AiErrorFeedback";
+import { readAiError } from "../lib/aiSelection";
 import { useEffect, useRef, useState } from "react";
-import type { AiConfig } from "../types";
+import type { AiConfig, AiError } from "../types";
 import {
   listAiModels,
   loadAiConfig,
@@ -30,7 +31,7 @@ export function AiSettingsDialog({ onClose }: Props) {
   const [config, setConfig] = useState<AiConfig>(DEFAULT_CONFIG);
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<AiError | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -61,8 +62,9 @@ export function AiSettingsDialog({ onClose }: Props) {
       const list = await listAiModels(config.base_url, config.api_key);
       setModels(list);
       setStatus("models-loaded");
-    } catch {
+    } catch (reason) {
       setStatus("models-error");
+      setRequestError(readAiError(reason));
     } finally {
       setBusy(false);
     }
@@ -71,13 +73,12 @@ export function AiSettingsDialog({ onClose }: Props) {
   const handleTestConnection = async () => {
     setBusy(true);
     setStatus("testing");
-    setErrorDetail(null);
     try {
       await testAiConnection(config.base_url, config.api_key, config.model);
       setStatus("connected");
-    } catch (error) {
+    } catch (reason) {
       setStatus("connection-error");
-      setErrorDetail(error instanceof Error ? error.message : String(error));
+      setRequestError(readAiError(reason));
     } finally {
       setBusy(false);
     }
@@ -181,19 +182,16 @@ export function AiSettingsDialog({ onClose }: Props) {
       {status === "saved" && <p>{uiText("Saved.")}</p>}
       {status === "error" && <p>{uiText("Failed to save.")}</p>}
       {status === "models-loaded" && <p>{uiText("Models loaded.")}</p>}
-      {status === "models-error" && <p>{uiText("Failed to load models.")}</p>}
+      {status === "models-error" && requestError &&
+        <AiErrorFeedback className="ai-connection-error" heading={uiText("Failed to load models.")} error={requestError} />}
       {status === "testing" && (
         <p className="ai-status ai-status-testing">
           <span className="ai-spinner" aria-hidden="true" />
           {uiText("Connecting…")}</p>
       )}
       {status === "connected" && <p className="ai-status ai-status-ok">{uiText("Connection OK.")}</p>}
-      {status === "connection-error" && (
-        <div className="ai-connection-error">
-          <p className="ai-status ai-status-error" role="alert">{uiText("Connection failed.")}</p>
-          {errorDetail && <ErrorDetails detail={errorDetail} />}
-        </div>
-      )}
+      {status === "connection-error" && requestError &&
+        <AiErrorFeedback className="ai-connection-error" heading={uiText("Connection failed.")} error={requestError} />}
     </Dialog>
   );
 }

@@ -95,9 +95,17 @@ describe("AiSelectionActionService", () => {
     await service.run(config, "Rewrite", snapshot);
     emit({ type: "error", request_id: "r1", error: { kind: "Timeout", message: "slow" } });
     expect(service.getState()).toBe("error");
-    expect(service.getErrorKind()).toBe("Timeout");
-    expect(service.getErrorMessage()).toContain("タイムアウト");
+    expect(service.getError()).toEqual({ kind: "Timeout", message: "slow" });
     expect(service.canApply()).toBe(false);
+  });
+
+  test("preserves the error when starting the request fails", async () => {
+    const error = { kind: "AuthenticationFailed", message: "upstream denied the request" };
+    startMock.mockRejectedValueOnce(error);
+    const service = new AiSelectionActionService();
+    await service.run(config, "Rewrite", snapshot);
+    expect(service.getState()).toBe("error");
+    expect(service.getError()).toEqual(error);
   });
 
   test("discard resets to idle", async () => {
