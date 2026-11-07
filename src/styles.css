@@ -625,6 +625,29 @@ body {
   display: block;
 }
 
+.preview-diagram-error {
+  display: inline-block;
+  padding: 10px;
+  border: 1px solid #c33;
+  border-radius: 4px;
+}
+
+.preview-diagram-error .diagram-render-error {
+  display: block;
+  margin: 0 0 4px;
+  padding: 0;
+  border: 0;
+}
+
+.preview-diagram-error .error-detail:not([hidden]) {
+  display: block;
+  color: var(--text);
+}
+
+.preview-diagram-error > button + button {
+  margin-inline-start: 6px;
+}
+
 .preview-diagram-edit {
   position: absolute;
   top: 8px;
@@ -670,6 +693,18 @@ body {
   margin: -1px;
   overflow: hidden;
   clip-path: inset(50%);
+}
+
+.preview-media-error {
+  width: min(44rem, 100%);
+  max-height: 100%;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.preview-media-error .error-details {
+  color: var(--text);
 }
 
 .preview-media-close {
@@ -2092,6 +2127,6 @@ body {
     @top-left { content: var(--print-title, "MaCa Editor"); font-size: 9pt; color: #555; }
     @bottom-center { content: counter(page) " / " counter(pages); font-size: 9pt; color: #555; }
   }
-  .resize-handle, .results-panel, .preview-diagram-edit, .preview-media-edit, .ai-chat-panel { display: none !important; }
+  .resize-handle, .results-panel, .preview-diagram-edit, .preview-diagram-error button, .preview-media-edit, .ai-chat-panel { display: none !important; }
   .preview-diagram { break-inside: avoid; }
 }

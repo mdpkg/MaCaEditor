@@ -1,5 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
+import { DiagramRenderError } from "./DiagramRenderError";
 import ReactMarkdown from "react-markdown";
 import type { Components, UrlTransform } from "react-markdown";
 import type {
@@ -17,8 +18,10 @@ import { sanitizeHtml } from "../lib/sanitize";
 import { findResourceByRendered } from "../lib/drawing/docIntegration";
 import { imageMediaType } from "../lib/document";
 import { findPlantUmlResourceByRendered } from "../lib/plantuml/docIntegration";
+import { plantUmlErrorDetail } from "../lib/plantuml/renderer";
 import { findMermaidResourceByRendered } from "../lib/mermaid/docIntegration";
 import { findMathJaxResourceByRendered } from "../lib/mathjax/docIntegration";
+import { mathJaxErrorDetail } from "../lib/mathjax/renderer";
 import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
 import { remarkRspressContainers } from "../lib/remarkRspressContainers";
 import { remarkFrontmatterTable } from "../lib/remarkFrontmatterTable";
@@ -51,7 +54,8 @@ type PreviewMedia =
       alt: string;
       onEdit?: () => void;
       whiteBackground?: boolean;
-    };
+    }
+  | { kind: "diagram-error"; detail: string; onEdit?: () => void };
 
 interface MediaTransform {
   scale: number;
@@ -198,7 +202,7 @@ export function MarkdownPreview({
   };
 
   const editEnlargedDiagram = () => {
-    if (previewMedia?.kind !== "diagram" || !previewMedia.onEdit) return;
+    if (!previewMedia || previewMedia.kind === "image" || !previewMedia.onEdit) return;
     setPreviewMedia(null);
     previewMedia.onEdit();
   };
@@ -275,7 +279,6 @@ export function MarkdownPreview({
       }
       if (file?.is_text && file.content?.trim().startsWith("<svg")) {
         const { onEditDrawing, onEditPlantUml, onEditMermaid, onEditMathJax } = actionsRef.current;
-        const sanitizedSvg = sanitizeHtml(file.content);
         const drawingResource = manifest ? findResourceByRendered(manifest, resolved ?? "") : undefined;
         const plantUmlResource = manifest
           ? findPlantUmlResourceByRendered(manifest, resolved ?? "")
@@ -290,9 +293,33 @@ export function MarkdownPreview({
         const editDiagram = drawingResource
           ? onEditDrawing
           : plantUmlResource ? onEditPlantUml : mermaidResource ? onEditMermaid : onEditMathJax;
+        const onEdit = sourcePath && editDiagram ? () => editDiagram(sourcePath) : undefined;
+        const detail = plantUmlResource
+          ? plantUmlErrorDetail(file.content)
+          : mathJaxResource
+            ? mathJaxErrorDetail(new DOMParser().parseFromString(file.content, "text/html"))
+            : null;
+        if (detail) {
+          return <span className="preview-diagram preview-diagram-error" data-drawpath={sourcePath ?? ""}
+            onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest("button")) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}>
+            <DiagramRenderError detail={detail} inline />
+            <button type="button" aria-label={alt ? `${uiText("Enlarge diagram")}（${alt}）` : undefined}
+              onClick={(event) => {
+                event.currentTarget.focus();
+                showPreviewMedia({ kind: "diagram-error", detail, onEdit });
+              }}>{uiText("Enlarge diagram")}</button>
+            {onEdit && <button type="button" onClick={onEdit}>{uiText("Edit")}</button>}
+          </span>;
+        }
+        const sanitizedSvg = sanitizeHtml(file.content);
         const media: PreviewMedia = {
           kind: "diagram", html: sanitizedSvg, alt,
-          onEdit: sourcePath && editDiagram ? () => editDiagram(sourcePath) : undefined,
+          onEdit,
           whiteBackground: true,
         };
         return <span
@@ -393,8 +420,10 @@ export function MarkdownPreview({
           aria-label={uiText("Close enlarged preview")}
           onClick={() => setPreviewMedia(null)}
         >×</button>
-        {previewMedia.kind === "diagram" && previewMedia.onEdit && <button className="preview-media-edit" onClick={editEnlargedDiagram}>{uiText("Edit")}</button>}
-        <div
+        {previewMedia.kind !== "image" && previewMedia.onEdit && <button className="preview-media-edit" onClick={editEnlargedDiagram}>{uiText("Edit")}</button>}
+        {previewMedia.kind === "diagram-error" ? (
+          <div className="preview-media-error"><DiagramRenderError detail={previewMedia.detail} /></div>
+        ) : <div
           className={`preview-media-content${draggingMedia ? " dragging" : ""}`}
           onWheel={zoomPreviewMedia}
           onPointerDown={startMediaDrag}
@@ -421,7 +450,7 @@ export function MarkdownPreview({
               />
             )}
           </div>
-        </div>
+        </div>}
       </Dialog>,
       document.body,
     )}

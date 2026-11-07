@@ -853,6 +853,64 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test.each([
+    {
+      type: "plantuml",
+      source: "legacy.puml",
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><g><text>PlantUML version 1</text><text>[From textarea (line 2) ]</text><text>Syntax Error?</text></g></svg>',
+      detail: "Syntax Error?",
+    },
+    {
+      type: "mathjax",
+      source: "legacy.tex",
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><g data-mjx-error="Extra open brace"><title>Extra open brace</title></g></svg>',
+      detail: "Extra open brace",
+    },
+  ])("discloses the original $type error in the preview and its enlarged dialog", ({ type, source, svg, detail }) => {
+    const onEdit = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown="図の説明 ![図](legacy.svg) の続き"
+        baseDir=""
+        files={[{ path: "legacy.svg", is_text: true, content: svg, base64: null }]}
+        manifest={{ resources: [{ type, source, rendered: "legacy.svg" }] }}
+        onEditPlantUml={onEdit}
+        onEditMathJax={onEdit}
+      />,
+    ));
+
+    const diagram = container.querySelector("p .preview-diagram-error")!;
+    expect(diagram.querySelector("svg")).toBeNull();
+    expect(diagram.querySelector('[role="alert"]')?.textContent).toBe("図の描画に失敗しました。");
+    const toggle = diagram.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    const original = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+    expect(toggle.textContent).toBe("詳細");
+    expect(original.hidden).toBe(true);
+    act(() => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(original.hidden).toBe(false);
+    expect(original.textContent).toContain(detail);
+    act(() => toggle.click());
+    expect(original.hidden).toBe(true);
+
+    const enlarge = diagram.querySelector<HTMLButtonElement>('[aria-label="図を拡大表示（図）"]')!;
+    act(() => enlarge.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector("svg")).toBeNull();
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe("図の描画に失敗しました。");
+    const details = dialog.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe("詳細");
+    expect(details.querySelector(".error-detail")?.textContent).toBe(original.textContent);
+    act(() => dialog.querySelector<HTMLButtonElement>(".preview-media-edit")!.click());
+    expect(onEdit).toHaveBeenCalledWith(source);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
   test("uses a white image background when a MathJax preview is enlarged", () => {
     vi.useFakeTimers();
     const container = document.createElement("div");
