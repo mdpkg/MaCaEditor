@@ -134,6 +134,7 @@ import {
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
+import { supportsPrintPageMargins } from "./lib/printPageMargins";
 import { diagnosePackage, diagnoseRelatedMarkdown, type PackageDiagnostic } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
 import { inferManifest, type ManifestInference } from "./lib/manifestInference";
@@ -760,30 +761,47 @@ export default function App() {
   const handlePrint = async () => {
     if (printDialogRef.current) return;
     printDialogRef.current = true;
+    let target: Window = window;
+    let dispose: (() => void) | undefined;
+    const preview = document.querySelector<HTMLElement>(".document-area .markdown-preview");
+    if (preview && !supportsPrintPageMargins()) {
+      try {
+        const snapshot = preview.cloneNode(true) as HTMLElement;
+        const { preparePaginatedPrint } = await import("./lib/preparePaginatedPrint");
+        const printDocument = await preparePaginatedPrint(snapshot, printTitle);
+        target = printDocument.target;
+        dispose = printDocument.dispose;
+      } catch (reason) {
+        printDialogRef.current = false;
+        reportError(uiText("Print"), reason);
+        return;
+      }
+    }
     let jobTitle: string | null = null;
     try {
       jobTitle = await watchPrint((detail) => reportError(uiText("Print"), detail));
     } catch (reason) {
       reportError(uiText("Print monitoring"), reason);
     }
-    const title = document.title;
+    const title = target.document.title;
     const taggedTitle = jobTitle ? `${jobTitle} — ${title}` : title;
     const restoreTitle = () => {
-      window.removeEventListener("afterprint", restoreTitle);
-      if (document.title === taggedTitle) document.title = title;
+      target.removeEventListener("afterprint", restoreTitle);
+      if (target.document.title === taggedTitle) target.document.title = title;
+      dispose?.();
       printDialogRef.current = false;
     };
     if (jobTitle) {
-      document.title = taggedTitle;
-      window.addEventListener("afterprint", restoreTitle);
+      target.document.title = taggedTitle;
     }
+    if (jobTitle || dispose) target.addEventListener("afterprint", restoreTitle);
     try {
-      window.print();
+      target.print();
     } catch (reason) {
       restoreTitle();
       reportError(uiText("Print"), reason);
     } finally {
-      if (!jobTitle) restoreTitle();
+      if (!jobTitle && !dispose) restoreTitle();
     }
   };
 
