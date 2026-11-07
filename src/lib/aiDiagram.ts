@@ -51,6 +51,12 @@ export function normalizeEditedDiagramSource(value: string, format: DiagramForma
   const match = mislabeledFence ?? expectedFence;
   normalized = (match ? match[1] : normalized).trim();
 
+  if (format === "mermaid") {
+    const wrapped = normalized.match(/^<diagram_source(?:\s+format\s*=\s*(?:"mermaid"|'mermaid'))?\s*>([\s\S]*)<\/diagram_source\s*>$/i);
+    // Remove the wrapper's line breaks without trimming the enclosed source.
+    if (wrapped) return wrapped[1].replace(/^[ \t]*\n|\n[ \t]*$/g, "");
+  }
+
   if (!normalized.includes("\n") && /\\[rn]/.test(normalized)) {
     const expanded = normalized.replace(/\\r\\n|\\n|\\r/g, "\n");
     const isCompletePlantUml = /^@startuml(?:\n|\s)/i.test(expanded) && /(?:\n|\s)@enduml$/i.test(expanded);

@@ -14,6 +14,23 @@ describe("normalizeEditedDiagramSource", () => {
   test("extracts source from a small structured response", () =>
     expect(normalizeEditedDiagramSource('{"format":"mermaid","source":"flowchart LR\\nA --> B"}', "mermaid"))
       .toBe("flowchart LR\nA --> B"));
+  test("unwraps a Mermaid response without trimming its source lines", () => {
+    const source = "  flowchart LR\n\n    A[<br/>] --> B\n\tB --> C  ";
+    const response = `<diagram_source format="mermaid">\r\n${source}\r\n</diagram_source>`;
+    expect(normalizeEditedDiagramSource(response, "mermaid")).toBe(source);
+  });
+  test("unwraps an untyped diagram_source tag inside a Mermaid fence", () => {
+    const source = "flowchart LR\n  A --> B";
+    const response = `\`\`\`mermaid\n<diagram_source>${source}</diagram_source>\n\`\`\``;
+    expect(normalizeEditedDiagramSource(response, "mermaid")).toBe(source);
+  });
+  test.each([
+    '<diagram_source format="plantuml">flowchart LR</diagram_source>',
+    "<diagram_source>flowchart LR",
+    "<diagram_source>flowchart LR</diagram_source>\nExplanation",
+    'flowchart LR\n  A["<diagram_source>"] --> B',
+  ])("does not unwrap a response without a complete Mermaid envelope", (source) =>
+    expect(normalizeEditedDiagramSource(source, "mermaid")).toBe(source));
   test("restores escaped newlines in an otherwise plain complete source", () =>
     expect(normalizeEditedDiagramSource("@startuml\\nA -> B\\n@enduml", "plantuml"))
       .toBe("@startuml\nA -> B\n@enduml"));
