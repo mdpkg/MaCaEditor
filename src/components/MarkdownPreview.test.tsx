@@ -88,30 +88,30 @@ describe("MarkdownPreview", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    act(() => root.render(
+    const file = { path: "attachments/仕様書.pdf", is_text: false, content: null, base64: "AQID" };
+    const render = (base64: string, onDownload: typeof onDownloadAttachment) => act(() => root.render(
       <MarkdownPreview
         markdown="[仕様書](attachments/仕様書.pdf)"
         baseDir=""
-        files={[{
-          path: "attachments/仕様書.pdf",
-          is_text: false,
-          content: null,
-          base64: "AQID",
-        }]}
-        onDownloadAttachment={onDownloadAttachment}
+        files={[{ ...file, base64 }]}
+        onDownloadAttachment={onDownload}
       />,
     ));
+    render("AQID", onDownloadAttachment);
 
     const link = container.querySelector("a") as HTMLAnchorElement;
     expect(link.download).toBe("仕様書.pdf");
     expect(link.href).toBe("data:application/octet-stream;base64,AQID");
     act(() => link.click());
-    expect(onDownloadAttachment).toHaveBeenCalledWith({
-      path: "attachments/仕様書.pdf",
-      is_text: false,
-      content: null,
-      base64: "AQID",
-    });
+    expect(onDownloadAttachment).toHaveBeenCalledWith(file);
+
+    const onDownloadUpdated = vi.fn();
+    render("BAUG", onDownloadUpdated);
+    expect(container.querySelector("a")).toBe(link);
+    expect(link.href).toBe("data:application/octet-stream;base64,BAUG");
+    act(() => link.click());
+    expect(onDownloadUpdated).toHaveBeenCalledWith({ ...file, base64: "BAUG" });
+    expect(onDownloadAttachment).toHaveBeenCalledTimes(1);
     act(() => root.unmount());
   });
 

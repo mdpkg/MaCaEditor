@@ -8,7 +8,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
 } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
@@ -45,6 +45,14 @@ interface Props {
   restoreScroll?: boolean;
   onScrollRatioChange?: (ratio: number) => void;
 }
+
+const PreviewContext = createContext<{
+  files: FileInfo[];
+  actions: Pick<Props,
+    "onEditDrawing" | "onEditPlantUml" | "onEditMermaid" | "onEditMathJax" |
+    "onEditTable" | "onDownloadAttachment" | "onNavigateMarkdown"
+  >;
+}>({ files: [], actions: {} });
 
 type PreviewMedia =
   | { kind: "image"; src: string; alt: string }
@@ -210,8 +218,6 @@ export function MarkdownPreview({
     onEditDrawing, onEditPlantUml, onEditMermaid, onEditMathJax,
     onEditTable, onDownloadAttachment, onNavigateMarkdown,
   };
-  const actionsRef = useRef(actions);
-  actionsRef.current = actions;
 
   // A text edit replaces the package's file list. Keep headings and tables
   // mounted while their source positions update.
@@ -223,7 +229,7 @@ export function MarkdownPreview({
       }];
     })),
     table({ node, ...props }) {
-      const { onEditTable } = actionsRef.current;
+      const { actions: { onEditTable } } = useContext(PreviewContext);
       const start = node?.position?.start.offset;
       const end = node?.position?.end.offset;
       const editable = Boolean(onEditTable && start !== undefined && end !== undefined);
@@ -249,6 +255,7 @@ export function MarkdownPreview({
   const components = useMemo<Components>(() => ({
     ...structuralComponents,
     img({ src = "", alt = "", ...props }) {
+      const { files, actions } = useContext(PreviewContext);
       const resolved = resolvePackagePath(baseDir, decodePackageUrl(src));
       const file = resolved ? files.find((candidate) => candidate.path === resolved) : undefined;
       if (file?.base64) {
@@ -273,7 +280,7 @@ export function MarkdownPreview({
         />;
       }
       if (file?.is_text && file.content?.trim().startsWith("<svg")) {
-        const { onEditDrawing, onEditPlantUml, onEditMermaid, onEditMathJax } = actionsRef.current;
+        const { onEditDrawing, onEditPlantUml, onEditMermaid, onEditMathJax } = actions;
         const drawingResource = manifest ? findResourceByRendered(manifest, resolved ?? "") : undefined;
         const plantUmlResource = manifest
           ? findPlantUmlResourceByRendered(manifest, resolved ?? "")
@@ -351,7 +358,7 @@ export function MarkdownPreview({
       return <span className="missing-image">⚠️ 画像が見つかりません: {src}</span>;
     },
     a({ href = "", ...props }) {
-      const { onDownloadAttachment, onNavigateMarkdown } = actionsRef.current;
+      const { files, actions: { onDownloadAttachment, onNavigateMarkdown } } = useContext(PreviewContext);
       const packagePath = decodePackageUrl(href);
       const resolvedPath = files.some((file) => file.path === packagePath)
         ? packagePath
@@ -383,29 +390,31 @@ export function MarkdownPreview({
       return <a {...props} href={packageUrl(baseDir, href)} />;
     },
   }), [
-    baseDir, files, manifest, showPreviewMedia, structuralComponents,
+    baseDir, manifest, showPreviewMedia, structuralComponents,
   ]);
-  const urlTransform: UrlTransform = (url, key) =>
-    key === "href" ? packageUrl(baseDir, url) : url;
-  const compatibleMarkdown = normalizeLegacyImageDestinations(markdown, baseDir, files);
-  const previewMarkdown = compatibleMarkdown;
-  const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
-    remarkFrontmatter,
-    remarkGfm,
-    ...(rspressMode ? [remarkRspressContainers] : []),
-    remarkGitHubAlerts,
-    [remarkFrontmatterTable, { showToc }],
-  ];
+  const previewMarkdown = normalizeLegacyImageDestinations(markdown, baseDir, files);
+
+  // Selection and diagnostics updates can change actions without changing
+  // Markdown. Keep the parsed preview while its interactive elements use the
+  // latest files and actions from context.
+  const preview = useMemo(() => {
+    const urlTransform: UrlTransform = (url, key) =>
+      key === "href" ? packageUrl(baseDir, url) : url;
+    const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
+      remarkFrontmatter,
+      remarkGfm,
+      ...(rspressMode ? [remarkRspressContainers] : []),
+      remarkGitHubAlerts,
+      [remarkFrontmatterTable, { showToc }],
+    ];
+    return <ReactMarkdown components={components} remarkPlugins={remarkPlugins} urlTransform={urlTransform}>
+      {previewMarkdown}
+    </ReactMarkdown>;
+  }, [baseDir, components, previewMarkdown, rspressMode, showToc]);
 
   return <>
     <div ref={previewRef} className="markdown-preview" onScroll={reportScrollRatio}>
-      <ReactMarkdown
-        components={components}
-        remarkPlugins={remarkPlugins}
-        urlTransform={urlTransform}
-      >
-        {previewMarkdown}
-      </ReactMarkdown>
+      <PreviewContext.Provider value={{ files, actions }}>{preview}</PreviewContext.Provider>
     </div>
     {previewMedia && createPortal(
       <Dialog className="preview-media-overlay" title={uiText("Enlarged preview")} onClose={() => setPreviewMedia(null)} backdrop={false}>
