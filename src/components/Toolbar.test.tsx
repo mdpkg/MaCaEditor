@@ -2,15 +2,18 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Toolbar } from "./Toolbar";
+import * as tauri from "../lib/tauri";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 afterEach(() => {
   document.body.innerHTML = "";
+  vi.restoreAllMocks();
 });
 
 describe("Toolbar menus", () => {
-  test("groups file and diagram commands and removes rename and delete", () => {
+  test("groups file and diagram commands and removes rename and delete", async () => {
+    vi.spyOn(tauri, "hasAiConfiguration").mockResolvedValue(true);
     const onInsertDrawing = vi.fn();
     const onVimModeChange = vi.fn();
     const onShowTocChange = vi.fn();
@@ -137,7 +140,7 @@ describe("Toolbar menus", () => {
     const aiButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "AI") as HTMLButtonElement;
     expect(aiButton.disabled).toBe(false);
-    act(() => aiButton.click());
+    await act(async () => aiButton.click());
     const aiItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
     expect(aiItems.map((button) => button.textContent)).toEqual(["書き換え", "要約", "校正", "AI 設定"]);
     act(() => (aiItems[0] as HTMLButtonElement).click());

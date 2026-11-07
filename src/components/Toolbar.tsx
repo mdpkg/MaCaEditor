@@ -1,4 +1,5 @@
 import { uiText } from "../lib/uiText";
+import { hasAiConfiguration } from "../lib/tauri";
 import { Menu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 
@@ -112,7 +113,28 @@ export function Toolbar({
   canPrint,
 }: Props) {
   const [openMenu, setOpenMenu] = useState<Menu>(null);
+  const [aiConfiguration, setAiConfiguration] = useState<"checking" | "ready" | "missing" | "error">("checking");
   const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (openMenu !== "ai") return;
+    let active = true;
+    void hasAiConfiguration().then(
+      (configured) => { if (active) setAiConfiguration(configured ? "ready" : "missing"); },
+      () => { if (active) setAiConfiguration("error"); },
+    );
+    return () => { active = false; };
+  }, [openMenu]);
+
+  const openAiMenu = () => {
+    if (openMenu === "ai") return;
+    setAiConfiguration("checking");
+    setOpenMenu("ai");
+  };
+  const aiMenuHint = aiConfiguration === "ready" ? aiDisabledReason
+    : aiConfiguration === "missing" ? uiText("AI is not configured.")
+    : aiConfiguration === "error" ? uiText("AI settings could not be loaded.")
+    : uiText("Checking AI settings…");
 
   useEffect(() => {
     if (!openMenu) return;
@@ -219,22 +241,29 @@ export function Toolbar({
           title={aiDisabledReason ?? uiText("AI actions and settings")}
           onClick={(event) => {
             event.currentTarget.focus();
-            setOpenMenu((current) => current === "ai" ? null : "ai");
+            if (openMenu === "ai") setOpenMenu(null);
+            else openAiMenu();
           }}
           onKeyDown={(event) => {
             if (event.key !== "ArrowDown") return;
             event.preventDefault();
-            setOpenMenu("ai");
+            openAiMenu();
           }}
         >AI</button>
         {openMenu === "ai" && (
           <Menu className="toolbar-menu-items" label="AI" onClose={() => setOpenMenu(null)}>
-            {aiDisabledReason && <p className="menu-hint">{aiDisabledReason}</p>}
-            <button type="button" role="menuitem" disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason} onClick={() => run(() => onAiSelection("Rewrite"))}>{uiText("Rewrite")}</button>
-            <button type="button" role="menuitem" disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason} onClick={() => run(() => onAiSelection("Summarize"))}>{uiText("Summarize")}</button>
-            <button type="button" role="menuitem" disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason} onClick={() => run(() => onAiSelection("Proofread"))}>{uiText("Proofread")}</button>
-            <div className="toolbar-menu-separator" role="separator" />
-            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>{uiText("AI Settings")}</button>
+            {aiMenuHint && <p className="menu-hint">{aiMenuHint}</p>}
+            {aiConfiguration === "ready" && <>
+              {(["Rewrite", "Summarize", "Proofread"] as const).map((task) => (
+                <button key={task} type="button" role="menuitem" tabIndex={-1}
+                  disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason}
+                  onClick={() => run(() => onAiSelection(task))}>{uiText(task)}</button>
+              ))}
+              <div className="toolbar-menu-separator" role="separator" />
+            </>}
+            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>
+              {uiText(aiConfiguration === "ready" || aiConfiguration === "checking" ? "AI Settings" : "Set up AI")}
+            </button>
           </Menu>
         )}
       </div>

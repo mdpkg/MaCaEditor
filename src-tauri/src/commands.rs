@@ -346,6 +346,11 @@ pub fn load_ai_config() -> Result<crate::ai::config::AiConfig, String> {
     crate::ai::storage::load_ai_config()
 }
 
+#[tauri::command]
+pub fn has_ai_configuration() -> Result<bool, String> {
+    crate::ai::storage::has_ai_configuration()
+}
+
 /// Model 一覧を取得する Tauri コマンド。
 #[tauri::command]
 pub async fn list_ai_models(

@@ -22,6 +22,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   onFolderChanged: vi.fn(),
   onNativeFileDrop: vi.fn(),
   readImage: vi.fn(),
+  hasAiConfiguration: vi.fn(),
 }));
 vi.mock("./lib/editorPreferences", () => ({
   loadVimMode: async () => false,
@@ -332,11 +333,18 @@ describe("App persistence", () => {
   test("reopens recent documents and exposes AI settings and keyboard help from the empty state", async () => {
     const empty = container.querySelector(".empty-state")!;
     expect([...empty.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["新規作成", "開く", "フォルダを開く..."]);
+    vi.mocked(tauri.hasAiConfiguration).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     await click("AI");
-    expect(container.querySelector('[role="menu"]')?.textContent).toContain("Markdown ファイルを開く");
-    await click("AI 設定", container.querySelector('[role="menu"]')!);
+    let aiMenu = container.querySelector('[role="menu"]')!;
+    expect(aiMenu.textContent).toContain("AI が設定されていません。");
+    expect([...aiMenu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual(["AI を設定する"]);
+    await click("AI を設定する", aiMenu);
     expect(container.querySelector(".about-dialog")?.textContent).toContain("AI 設定");
     await click("閉じる", container.querySelector(".about-dialog")!);
+    await click("AI");
+    aiMenu = container.querySelector('[role="menu"]')!;
+    expect(aiMenu.textContent).toContain("Markdown ファイルを開く");
+    expect([...aiMenu.querySelectorAll("button:disabled")].map((item) => item.textContent)).toEqual(["書き換え", "要約", "校正"]);
     await click("ヘルプ");
     await click("キーボードショートカット");
     expect(container.querySelector(".shortcut-list")?.textContent).toContain("Ctrl/Cmd+Shift+F");
