@@ -79,5 +79,6 @@ export type AiError =
   | { kind: "Timeout"; message: string }
   | { kind: "ServerError"; message: string }
   | { kind: "InvalidResponse"; message: string }
+  | { kind: "StreamInterrupted"; message: string }
   | { kind: "Cancelled" }
   | { kind: "Unknown"; message: string };

@@ -57,7 +57,7 @@ impl Drop for MockOpenAiServer {
 pub enum Scenario {
     /// 正常な SSE ストリーミング。
     Streaming,
-    /// 途中で接続を切る（Cancel 相当）。
+    /// 完了マーカーを送らずに接続を閉じる。
     StopMidStream,
     /// 接続は確立するが応答を返さない（Timeout 相当）。
     Hang,
@@ -152,15 +152,28 @@ mod tests {
 
         let mut contents = Vec::new();
         while let Some(item) = stream.next().await {
-            match item {
-                Ok(crate::ai::types::AiStreamEvent::Delta { content, .. }) => {
-                    contents.push(content);
-                }
-                Ok(_) => {}
-                Err(_) => {}
+            if let crate::ai::types::AiStreamEvent::Delta { content, .. } = item.unwrap() {
+                contents.push(content);
             }
         }
         assert_eq!(contents, vec!["hello", " ", "world"]);
+    }
+
+    #[tokio::test]
+    async fn rejects_eof_without_a_completion_marker() {
+        let server = MockOpenAiServer::start(Scenario::StopMidStream).await;
+        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+        let mut stream = provider.stream(sample_request()).await.unwrap();
+
+        assert!(stream.next().await.unwrap().is_ok());
+        assert!(stream.next().await.unwrap().is_ok());
+        assert_eq!(
+            stream.next().await.unwrap(),
+            Err(crate::ai::error::AiError::StreamInterrupted(
+                "stream ended without a completion marker".to_string(),
+            )),
+        );
+        assert!(stream.next().await.is_none());
     }
 
     #[tokio::test]

@@ -108,12 +108,11 @@ fn wrap_stream<S>(
 where
     S: Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin + 'static,
 {
-    use futures::StreamExt;
+    use futures::{FutureExt, StreamExt};
 
     let mut inner = inner;
-    let mut cancelled = false;
-    let mut completed = false;
-    let mut timed_out = false;
+    let mut finished = false;
+    let mut cancellation = Box::pin(token.cancelled_owned());
 
     let timeout_duration = std::time::Duration::from_secs(request_timeout_seconds);
     let mut timeout = Box::pin(tokio::time::sleep(timeout_duration));
@@ -121,16 +120,16 @@ where
     let mut first = true;
 
     futures::stream::poll_fn(move |cx| {
-        // キャンセル済みなら後続を流さない
-        if token.is_cancelled() {
-            if !cancelled {
-                cancelled = true;
-                registry.unregister(&request_id);
-                return std::task::Poll::Ready(Some(Ok(AiStreamEvent::Cancelled {
-                    request_id: request_id.clone(),
-                })));
-            }
+        if finished {
             return std::task::Poll::Ready(None);
+        }
+        // キャンセル済みなら後続を流さない
+        if cancellation.as_mut().poll_unpin(cx).is_ready() {
+            finished = true;
+            registry.unregister(&request_id);
+            return std::task::Poll::Ready(Some(Ok(AiStreamEvent::Cancelled {
+                request_id: request_id.clone(),
+            })));
         }
 
         // Request Timeout を確認
@@ -138,16 +137,12 @@ where
             first = false;
             timeout = Box::pin(tokio::time::sleep(timeout_duration));
         }
-        use futures::FutureExt;
         if std::task::Poll::Ready(()) == timeout.as_mut().poll_unpin(cx) {
-            if !timed_out {
-                timed_out = true;
-                registry.unregister(&request_id);
-                return std::task::Poll::Ready(Some(Err(AiError::Timeout(
-                    "request timeout".to_string(),
-                ))));
-            }
-            return std::task::Poll::Ready(None);
+            finished = true;
+            registry.unregister(&request_id);
+            return std::task::Poll::Ready(Some(Err(AiError::Timeout(
+                "request timeout".to_string(),
+            ))));
         }
 
         match inner.poll_next_unpin(cx) {
@@ -161,21 +156,18 @@ where
                     }
                     Ok(other) => std::task::Poll::Ready(Some(Ok(other))),
                     Err(e) => {
+                        finished = true;
                         registry.unregister(&request_id);
                         std::task::Poll::Ready(Some(Err(e)))
                     }
                 }
             }
             std::task::Poll::Ready(None) => {
-                if !completed {
-                    completed = true;
-                    registry.unregister(&request_id);
-                    std::task::Poll::Ready(Some(Ok(AiStreamEvent::Completed {
-                        request_id: request_id.clone(),
-                    })))
-                } else {
-                    std::task::Poll::Ready(None)
-                }
+                finished = true;
+                registry.unregister(&request_id);
+                std::task::Poll::Ready(Some(Ok(AiStreamEvent::Completed {
+                    request_id: request_id.clone(),
+                })))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }

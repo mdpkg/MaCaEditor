@@ -1,13 +1,19 @@
 /// OpenAI Compatible Provider。
 /// `async-openai` はこの実装内部に閉じ込め、
 /// アプリケーション層へは MaCa Editor 独自型のみを公開する。
+use async_openai::config::Config;
+use async_openai::error::{OpenAIError, WrappedError};
+use async_openai::middleware::{retry::OpenAIRetryLayer, HttpRequestFactory, ReqwestService};
 use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
     ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
     ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest,
-    CreateChatCompletionRequestArgs,
+    CreateChatCompletionRequestArgs, CreateChatCompletionStreamResponse,
 };
+use eventsource_stream::{EventStreamError, Eventsource};
+use futures::StreamExt;
+use tower::{Layer, ServiceExt};
 
 use crate::ai::error::{classify_http_status, AiError};
 use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
@@ -15,6 +21,7 @@ use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
 /// OpenAI Compatible API へ接続する Provider。
 pub struct OpenAiCompatibleProvider {
     client: async_openai::Client<async_openai::config::OpenAIConfig>,
+    http: reqwest::Client,
     model: String,
 }
 
@@ -27,8 +34,10 @@ impl OpenAiCompatibleProvider {
                 config = config.with_api_key(key);
             }
         }
+        let http = reqwest::Client::new();
         Self {
-            client: async_openai::Client::with_config(config),
+            client: async_openai::Client::build(http.clone(), config),
+            http,
             model: "default".to_string(),
         }
     }
@@ -137,7 +146,7 @@ impl OpenAiCompatibleProvider {
 /// stream chunk からユーザー向けテキスト delta を抽出する。
 /// content が無い chunk（role のみ・finish chunk・空 chunk）は None を返す。
 fn delta_content_from_chunk(
-    chunk: &async_openai::types::chat::CreateChatCompletionStreamResponse,
+    chunk: &CreateChatCompletionStreamResponse,
 ) -> Option<String> {
     let content = chunk.choices.first()?.delta.content.clone()?;
     if content.is_empty() {
@@ -150,7 +159,7 @@ fn delta_content_from_chunk(
 /// content が無い chunk（role のみ・finish chunk・空 chunk）は None を返し、
 /// UI へは実際に content がある chunk のみを流す。
 fn chunk_to_stream_event(
-    chunk: &async_openai::types::chat::CreateChatCompletionStreamResponse,
+    chunk: &CreateChatCompletionStreamResponse,
 ) -> Option<AiStreamEvent> {
     delta_content_from_chunk(chunk).map(|content| AiStreamEvent::Delta {
         request_id: String::new(),
@@ -177,36 +186,112 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
         &self,
         request: AiRequest,
     ) -> Result<Box<dyn futures::Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin>, AiError> {
-        let openai_request = self.to_openai_request(&self.model, &request, true)?;
-        let stream = self
-            .client
-            .chat()
-            .create_stream(openai_request)
+        let request = self.to_openai_request(&self.model, &request, true)?;
+        let config = self.client.config().clone();
+        let http = self.http.clone();
+        let factory = HttpRequestFactory::new(move || {
+            let request = http
+                .post(config.url("/chat/completions"))
+                .headers(config.headers())
+                .query(&config.query())
+                .header(reqwest::header::ACCEPT, "text/event-stream")
+                .json(&request)
+                .build();
+            async { request.map_err(OpenAIError::Reqwest) }
+        });
+        let response = OpenAIRetryLayer::default()
+            .layer(ReqwestService::new(self.http.clone()))
+            .oneshot(factory)
             .await
             .map_err(map_openai_error)?;
-        use futures::StreamExt;
-        let filtered = stream.filter_map(|item| {
-            let mapped = item.map_err(map_openai_error);
-            async move {
-                match mapped {
-                    Ok(chunk) => chunk_to_stream_event(&chunk).map(Ok),
-                    Err(error) => Some(Err(error)),
+        let status = response.status();
+        if !status.is_success() {
+            let body = read_body(response).await?;
+            let message = if status.is_server_error() {
+                body
+            } else {
+                match serde_json::from_str::<WrappedError>(&body) {
+                    Ok(wrapped) => wrapped.error.message,
+                    Err(error) => return Err(invalid_response(error, &body)),
                 }
-            }
-        });
-        Ok(Box::new(Box::pin(filtered)))
+            };
+            return Err(classify_http_status(status.as_u16(), &message));
+        }
+        let content_type = response.headers().get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(str::trim);
+        if content_type.is_some_and(|value| !value.eq_ignore_ascii_case("text/event-stream")) {
+            let body = read_body(response).await?;
+            return Err(AiError::InvalidResponse(format!(
+                "expected an SSE response\n\n{body}"
+            )));
+        }
+
+        Ok(Box::new(Box::pin(stream_events(response))))
     }
 }
 
-fn map_openai_error(error: async_openai::error::OpenAIError) -> AiError {
+async fn read_body(response: reqwest::Response) -> Result<String, AiError> {
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| map_openai_error(error.into()))?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn stream_events(
+    response: reqwest::Response,
+) -> impl futures::Stream<Item = Result<AiStreamEvent, AiError>> {
+    // The SDK's typed stream hides [DONE], so it cannot distinguish it from an early EOF.
+    let events = response.bytes_stream().eventsource();
+    futures::stream::try_unfold((events, false), |(mut events, mut saw_finish)| async move {
+        while let Some(event) = events.next().await {
+            let event = event.map_err(|error| match error {
+                EventStreamError::Transport(_) => AiError::StreamInterrupted(error.to_string()),
+                EventStreamError::Utf8(ref utf8) => AiError::InvalidResponse(format!(
+                    "{error}\n\n{}", String::from_utf8_lossy(utf8.as_bytes())
+                )),
+                EventStreamError::Parser(_) => AiError::InvalidResponse(error.to_string()),
+            })?;
+            if event.data == "[DONE]" {
+                return Ok(None);
+            }
+            if event.event == "keepalive" {
+                continue;
+            }
+            let chunk = serde_json::from_str::<CreateChatCompletionStreamResponse>(&event.data)
+                .map_err(|error| invalid_response(error, &event.data))?;
+            saw_finish |= chunk
+                .choices
+                .first()
+                .is_some_and(|choice| choice.finish_reason.is_some());
+            if let Some(delta) = chunk_to_stream_event(&chunk) {
+                return Ok(Some((delta, (events, saw_finish))));
+            }
+        }
+        if saw_finish {
+            return Ok(None);
+        }
+        Err(AiError::StreamInterrupted(
+            "stream ended without a completion marker".to_string(),
+        ))
+    })
+}
+
+fn invalid_response(error: serde_json::Error, body: &str) -> AiError {
+    AiError::InvalidResponse(format!("{error}\n\n{body}"))
+}
+
+fn map_openai_error(error: OpenAIError) -> AiError {
     match error {
-        async_openai::error::OpenAIError::ApiError(api_error) => {
+        OpenAIError::ApiError(api_error) => {
             classify_http_status(
                 api_error.status_code.as_u16(),
                 &api_error.api_error.message,
             )
         }
-        async_openai::error::OpenAIError::Reqwest(reqwest_error) => {
+        OpenAIError::Reqwest(reqwest_error) => {
             if reqwest_error.is_timeout() {
                 AiError::Timeout(reqwest_error.to_string())
             } else if reqwest_error.is_connect() {
@@ -215,10 +300,10 @@ fn map_openai_error(error: async_openai::error::OpenAIError) -> AiError {
                 AiError::Unknown(reqwest_error.to_string())
             }
         }
-        async_openai::error::OpenAIError::JSONDeserialize(_, _) => {
-            AiError::InvalidResponse("invalid api response".to_string())
+        OpenAIError::JSONDeserialize(error, body) => {
+            invalid_response(error, &body)
         }
-        async_openai::error::OpenAIError::InvalidArgument(message) => {
+        OpenAIError::InvalidArgument(message) => {
             AiError::InvalidConfiguration(message)
         }
         other => AiError::Unknown(other.to_string()),
@@ -502,5 +587,13 @@ mod tests {
         };
         let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
         assert!(matches!(mapped, AiError::InvalidConfiguration(_)));
+    }
+
+    #[test]
+    fn retains_the_body_of_an_invalid_response() {
+        let body = "<html>Unexpected response</html>";
+        let error = serde_json::from_str::<serde_json::Value>(body).unwrap_err();
+        let mapped = map_openai_error(OpenAIError::JSONDeserialize(error, body.to_string()));
+        assert!(matches!(mapped, AiError::InvalidResponse(detail) if detail.ends_with(body)));
     }
 }
