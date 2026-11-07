@@ -201,6 +201,28 @@ describe("App persistence", () => {
     expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
+  test("explains why PDF and ZIP attachments have no preview while showing PNG images", async () => {
+    vi.mocked(open).mockResolvedValue("attachments.mdpkg");
+    const info = documentInfo("Original");
+    const paths = ["attachments/document.pdf", "attachments/archive.ZIP", "attachments/image.png"];
+    info.files.push(...paths.map((path) => ({ path, content: null, is_text: false, base64: "AA==" })));
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await click("開く", container.querySelector(".empty-state")!);
+
+    for (const path of paths.slice(0, 2)) {
+      await act(async () => container.querySelector<HTMLElement>(`[data-path="${path}"]`)!.click());
+      const view = container.querySelector(".binary-view")!;
+      expect(view.textContent).toContain(path);
+      expect(view.textContent).toContain("このファイルはプレビューできません。");
+      expect(view.querySelector("img")).toBeNull();
+    }
+
+    await act(async () => container.querySelector<HTMLElement>('[data-path="attachments/image.png"]')!.click());
+    const view = container.querySelector(".binary-view")!;
+    expect(view.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AA==");
+    expect(view.textContent).not.toContain("このファイルはプレビューできません。");
+  });
+
   test("reports a preference autosave failure and clears it after a successful retry", async () => {
     const detail = "アクセスが拒否されました。 (os error 5)";
     vi.mocked(saveEditorPreferences).mockRejectedValueOnce(detail).mockResolvedValueOnce();
