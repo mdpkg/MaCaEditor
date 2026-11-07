@@ -761,16 +761,13 @@ export default function App() {
   const handlePrint = async () => {
     if (printDialogRef.current) return;
     printDialogRef.current = true;
-    let target: Window = window;
     let dispose: (() => void) | undefined;
     const preview = document.querySelector<HTMLElement>(".document-area .markdown-preview");
     if (preview && !supportsPrintPageMargins()) {
       try {
         const snapshot = preview.cloneNode(true) as HTMLElement;
         const { preparePaginatedPrint } = await import("./lib/preparePaginatedPrint");
-        const printDocument = await preparePaginatedPrint(snapshot, printTitle);
-        target = printDocument.target;
-        dispose = printDocument.dispose;
+        dispose = await preparePaginatedPrint(snapshot, printTitle);
       } catch (reason) {
         printDialogRef.current = false;
         reportError(uiText("Print"), reason);
@@ -783,20 +780,20 @@ export default function App() {
     } catch (reason) {
       reportError(uiText("Print monitoring"), reason);
     }
-    const title = target.document.title;
+    const title = document.title;
     const taggedTitle = jobTitle ? `${jobTitle} — ${title}` : title;
     const restoreTitle = () => {
-      target.removeEventListener("afterprint", restoreTitle);
-      if (target.document.title === taggedTitle) target.document.title = title;
+      window.removeEventListener("afterprint", restoreTitle);
+      if (document.title === taggedTitle) document.title = title;
       dispose?.();
       printDialogRef.current = false;
     };
     if (jobTitle) {
-      target.document.title = taggedTitle;
+      document.title = taggedTitle;
     }
-    if (jobTitle || dispose) target.addEventListener("afterprint", restoreTitle);
+    if (jobTitle || dispose) window.addEventListener("afterprint", restoreTitle);
     try {
-      target.print();
+      window.print();
     } catch (reason) {
       restoreTitle();
       reportError(uiText("Print"), reason);
