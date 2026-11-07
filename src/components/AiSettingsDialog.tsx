@@ -48,11 +48,15 @@ export function AiSettingsDialog({ onClose }: Props) {
   };
 
   const handleSave = async () => {
+    setBusy(true);
     try {
       await saveAiConfig(config);
       setStatus("saved");
-    } catch {
+    } catch (reason) {
       setStatus("error");
+      setRequestError(readAiError(reason));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -174,13 +178,14 @@ export function AiSettingsDialog({ onClose }: Props) {
           {uiText("Refresh Models")}</button>
         <button type="button" onClick={handleTestConnection} disabled={busy}>
           {uiText("Test Connection")}</button>
-        <button type="button" onClick={handleSave}>
+        <button type="button" onClick={handleSave} disabled={busy}>
           {uiText("Save")}</button>
         <button ref={closeButtonRef} type="button" onClick={onClose}>
           {uiText("Close")}</button>
       </div>
       {status === "saved" && <p>{uiText("Saved.")}</p>}
-      {status === "error" && <p>{uiText("Failed to save.")}</p>}
+      {status === "error" && requestError &&
+        <AiErrorFeedback heading={uiText("Failed to save.")} error={requestError} />}
       {status === "models-loaded" && <p>{uiText("Models loaded.")}</p>}
       {status === "models-error" && requestError &&
         <AiErrorFeedback className="ai-connection-error" heading={uiText("Failed to load models.")} error={requestError} />}

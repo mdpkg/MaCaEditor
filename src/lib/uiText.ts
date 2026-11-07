@@ -70,6 +70,8 @@ const labels: Record<string, string> = {
   "Hide": "非表示",
   "Saved.": "保存しました。",
   "Failed to save.": "保存できませんでした。",
+  "Save editor settings": "エディタ設定の保存",
+  "Editor settings saved.": "エディタ設定を保存しました。",
   "Models loaded.": "モデル一覧を読み込みました。",
   "Failed to load models.": "モデル一覧を取得できませんでした。",
   "Connecting…": "接続しています…",

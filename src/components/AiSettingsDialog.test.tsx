@@ -133,7 +133,8 @@ describe("AiSettingsDialog", () => {
 
   test("shows error when save fails", async () => {
     vi.spyOn(tauri, "loadAiConfig").mockRejectedValue(new Error("no config"));
-    vi.spyOn(tauri, "saveAiConfig").mockRejectedValue(new Error("boom"));
+    const detail = "アクセスが拒否されました。 (os error 5)";
+    vi.spyOn(tauri, "saveAiConfig").mockRejectedValueOnce(detail).mockResolvedValueOnce();
     const onClose = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -146,7 +147,17 @@ describe("AiSettingsDialog", () => {
     await act(async () => {
       (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
     });
-    expect(container.textContent).toContain("保存できませんでした。");
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toBe("保存できませんでした。");
+    const details = container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe("詳細");
+    expect(details.querySelector(".error-detail")?.textContent).toBe(detail);
+    await act(async () => {
+      (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("保存しました。");
     act(() => root.unmount());
   });
 });

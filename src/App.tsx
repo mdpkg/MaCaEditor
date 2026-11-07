@@ -123,12 +123,9 @@ import { EMPTY_2X2_MARKDOWN_TABLE } from "./lib/markdownTable";
 import {
   loadRspressMode,
   loadDrawingPreferences,
-  saveDrawingPreferences,
+  saveEditorPreferences,
   loadShowToc,
   loadVimMode,
-  saveRspressMode,
-  saveShowToc,
-  saveVimMode,
 } from "./lib/editorPreferences";
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
@@ -161,8 +158,9 @@ const MarkdownTableEditor = lazy(() => import("./components/MarkdownTableEditor"
 
 const fileOperationsRequiringErrorTranslation = new Set([
   "Save", "Reload folder", "Export folder", "Export package", "Print", "Print monitoring",
-  "Add images", "Add attachments", "Download attachment", "Add image to drawing", "Move",
+  "Add images", "Add attachments", "Download attachment", "Add image to drawing", "Move", "Save editor settings",
 ].map(uiText));
+const saveEditorSettingsOperation = uiText("Save editor settings");
 
 function errorDetail(reason: unknown): string {
   const message = reason instanceof Error ? reason.message : String(reason);
@@ -254,6 +252,7 @@ export default function App() {
   const documentRef = useRef<DocumentState | null>(null);
   const documentSessionRef = useRef(0);
   const fileTaskRef = useRef(false);
+  const preferencesSaveRef = useRef(Promise.resolve());
   const printDialogRef = useRef(false);
   const folderConflictRef = useRef(false);
 
@@ -426,7 +425,7 @@ export default function App() {
     try { validateNewPackagePath(value); return null; } catch { return "ファイル名に使用できない文字が含まれています。"; }
   };
 
-  const reportError = (operation: string, reason: unknown) => {
+  const reportError = useCallback((operation: string, reason: unknown) => {
     const detail = errorDetail(reason);
     const firstLine = detail.trim().split(/\r?\n/, 1)[0];
     const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
@@ -440,11 +439,11 @@ export default function App() {
     const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
     setError({ operation, summary, detail });
     setStatus(summary);
-  };
+  }, []);
 
-  const clearError = (operation: string) => {
+  const clearError = useCallback((operation: string) => {
     setError((current) => current?.operation === operation ? null : current);
-  };
+  }, []);
 
   const showNotification = (message: string, tone: NotificationTone, options?: Pick<BannerNotice, "action" | "detail">) => {
     notificationSequenceRef.current += 1;
@@ -540,20 +539,23 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (preferencesLoaded) void saveVimMode(vimMode);
-  }, [preferencesLoaded, vimMode]);
-
-  useEffect(() => {
-    if (preferencesLoaded) void saveShowToc(showToc);
-  }, [preferencesLoaded, showToc]);
-
-  useEffect(() => {
-    if (preferencesLoaded) void saveRspressMode(rspressMode);
-  }, [preferencesLoaded, rspressMode]);
-
-  useEffect(() => {
-    if (preferencesLoaded) void saveDrawingPreferences(drawingPreferences);
-  }, [preferencesLoaded, drawingPreferences]);
+    if (!preferencesLoaded) return;
+    let active = true;
+    preferencesSaveRef.current = preferencesSaveRef.current.then(async () => {
+      if (!active) return;
+      try {
+        await saveEditorPreferences({ vimMode, showToc, rspressMode, drawingPreferences });
+        if (!active) return;
+        clearError(saveEditorSettingsOperation);
+        setStatus((current) => current.startsWith(`${saveEditorSettingsOperation}に失敗しました。`)
+          ? uiText("Editor settings saved.")
+          : current);
+      } catch (reason) {
+        if (active) reportError(saveEditorSettingsOperation, reason);
+      }
+    });
+    return () => { active = false; };
+  }, [preferencesLoaded, vimMode, showToc, rspressMode, drawingPreferences, clearError, reportError]);
 
   useEffect(() => {
     if (doc && !selectedPath) {
