@@ -386,26 +386,37 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
-  test("reports the Markdown source range when a table is clicked", () => {
+  test("keeps the preview table mounted and reports its new source range after an edit", () => {
     const onEditTable = vi.fn();
-    const markdown = "Before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter";
+    const tableSource = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const markdown = `Before\n\n# Section\n\n${tableSource}\n\nAfter`;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    act(() => root.render(
+    const render = (source: string) => act(() => root.render(
       <MarkdownPreview
-        markdown={markdown}
+        markdown={source}
         baseDir=""
         files={[]}
         onEditTable={onEditTable}
       />,
     ));
+    render(markdown);
+    const heading = container.querySelector("h1")!;
+    const table = container.querySelector("table")!;
+    table.focus();
 
-    act(() => (container.querySelector("table") as HTMLTableElement).click());
-
-    const start = markdown.indexOf("| A | B |");
-    const end = start + "| A | B |\n| --- | --- |\n| 1 | 2 |".length;
-    expect(onEditTable).toHaveBeenCalledWith(start, end);
+    const revisedTable = tableSource.replace("| 1 |", "| 100 |");
+    const revised = markdown.replace("Before", "Edited paragraph").replace(tableSource, revisedTable);
+    render(revised);
+    expect(container.querySelector("h1")).toBe(heading);
+    expect(heading.dataset.sourceOffset).toBe(String(revised.indexOf("# Section")));
+    expect(container.querySelector("table")).toBe(table);
+    expect(table.querySelector("td")?.textContent).toBe("100");
+    expect(document.activeElement).toBe(table);
+    act(() => table.click());
+    const start = revised.indexOf(revisedTable);
+    expect(onEditTable).toHaveBeenCalledWith(start, start + revisedTable.length);
     act(() => root.unmount());
   });
 

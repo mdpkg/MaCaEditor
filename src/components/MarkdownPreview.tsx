@@ -120,7 +120,6 @@ export function MarkdownPreview({
   restoreScroll = true,
   onScrollRatioChange,
 }: Props) {
-  const tocPrefixLength = 0;
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
@@ -214,28 +213,19 @@ export function MarkdownPreview({
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
 
-  // Keep the media opener mounted when the overlay or app controls re-render.
-  const components = useMemo<Components>(() => ({
+  // A text edit replaces the package's file list. Keep headings and tables
+  // mounted while their source positions update.
+  const structuralComponents = useMemo<Components>(() => ({
     ...Object.fromEntries(([1, 2, 3, 4, 5, 6] as const).map((level) => {
       const Tag = `h${level}` as const;
       return [Tag, ({ node, ...props }: ComponentProps<typeof Tag> & { node?: { position?: { start: { offset?: number } } } }) => {
-        const previewOffset = node?.position?.start.offset;
-        const sourceOffset = previewOffset === undefined || previewOffset < tocPrefixLength
-          ? undefined
-          : previewOffset - tocPrefixLength;
-        return <Tag {...props} data-source-offset={sourceOffset} />;
+        return <Tag {...props} data-source-offset={node?.position?.start.offset} />;
       }];
     })),
     table({ node, ...props }) {
       const { onEditTable } = actionsRef.current;
-      const previewStart = node?.position?.start.offset;
-      const previewEnd = node?.position?.end.offset;
-      const start = previewStart === undefined || previewStart < tocPrefixLength
-        ? undefined
-        : previewStart - tocPrefixLength;
-      const end = previewEnd === undefined || previewEnd < tocPrefixLength
-        ? undefined
-        : previewEnd - tocPrefixLength;
+      const start = node?.position?.start.offset;
+      const end = node?.position?.end.offset;
       const editable = Boolean(onEditTable && start !== undefined && end !== undefined);
       return <table
         {...props}
@@ -253,6 +243,11 @@ export function MarkdownPreview({
         }}
       />;
     },
+  }), []);
+
+  // Keep the media opener mounted when the overlay or app controls re-render.
+  const components = useMemo<Components>(() => ({
+    ...structuralComponents,
     img({ src = "", alt = "", ...props }) {
       const resolved = resolvePackagePath(baseDir, decodePackageUrl(src));
       const file = resolved ? files.find((candidate) => candidate.path === resolved) : undefined;
@@ -388,7 +383,7 @@ export function MarkdownPreview({
       return <a {...props} href={packageUrl(baseDir, href)} />;
     },
   }), [
-    baseDir, files, manifest, tocPrefixLength, showPreviewMedia,
+    baseDir, files, manifest, showPreviewMedia, structuralComponents,
   ]);
   const urlTransform: UrlTransform = (url, key) =>
     key === "href" ? packageUrl(baseDir, url) : url;
