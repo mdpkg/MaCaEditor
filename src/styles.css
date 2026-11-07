@@ -118,6 +118,17 @@ body {
   color: #e0a800;
 }
 
+.folder-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  border-left: 5px solid #d73a49;
+  background: var(--panel);
+}
+
 .notification-banners {
   position: fixed;
   top: 16px;
@@ -1678,6 +1689,7 @@ body {
   }
 
   .toolbar,
+  .folder-conflict,
   .sidebar,
   .status-bar,
   .edit-btn,

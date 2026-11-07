@@ -184,6 +184,28 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
+  test.each([false, true])("preserves a body section named 目次 with TOC enabled = %s", (showToc) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(
+      <MarkdownPreview
+        markdown={"## 目次\n\nKeep this paragraph.\n\n## Next section\n\nNext paragraph."}
+        baseDir=""
+        files={[]}
+        showToc={showToc}
+      />,
+    ));
+
+    const headings = container.querySelectorAll("h2");
+    const bodyToc = headings[showToc ? 1 : 0];
+    expect(bodyToc.textContent).toBe("目次");
+    expect(bodyToc.nextElementSibling?.textContent).toBe("Keep this paragraph.");
+    expect(headings).toHaveLength(showToc ? 3 : 2);
+    expect(container.querySelector("ul a")?.textContent ?? null).toBe(showToc ? "目次" : null);
+    act(() => root.unmount());
+  });
+
   test("renders CommonMark structure with react-markdown", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

@@ -9,7 +9,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
-import remarkToc from "remark-toc";
 import type { FileInfo } from "../types";
 import { resolvePackagePath } from "../lib/markdown";
 import { sanitizeHtml } from "../lib/sanitize";
@@ -391,7 +390,6 @@ export function MarkdownPreview({
     ...(rspressMode ? [remarkRspressContainers] : []),
     remarkGitHubAlerts,
     [remarkFrontmatterTable, { showToc }],
-    [remarkToc, { heading: "目次" }],
   ];
 
   return <>

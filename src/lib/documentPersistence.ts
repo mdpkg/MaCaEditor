@@ -20,6 +20,19 @@ export async function saveDocument(
   return markSaved(state);
 }
 
+/** Retain edits while advancing the baseline to the snapshot actually written. */
+export function applySavedBaseline(current: DocumentState, saved: DocumentState): DocumentState {
+  return {
+    ...current,
+    path: saved.path,
+    origin: saved.origin,
+    manifest: { ...current.manifest, version: saved.manifest.version },
+    originalPaths: saved.originalPaths,
+    folderSnapshot: saved.folderSnapshot,
+    dirty: true,
+  };
+}
+
 export async function exportFolderDocumentPackage(
   state: DocumentState,
   path: string,
