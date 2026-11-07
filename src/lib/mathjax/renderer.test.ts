@@ -9,4 +9,10 @@ describe("MathJax renderer", () => {
     expect(svg).toContain("xmlns=\"http://www.w3.org/2000/svg\"");
     expect(sanitizeHtml(svg)).toContain("<svg");
   }, 30_000);
+
+  test("returns TeX errors as original text and renders valid input afterward", async () => {
+    await expect(renderMathJax("x^{")).rejects.toThrow("Extra open brace or missing close brace");
+    await expect(renderMathJax(String.raw`\notARealMacro`)).rejects.toThrow("Undefined control sequence");
+    await expect(renderMathJax("x^2")).resolves.toMatch(/^<svg[\s>]/);
+  });
 });

@@ -163,12 +163,13 @@ body {
   cursor: pointer;
 }
 
-.operation-error details {
+.notification-banner .error-details {
   margin-top: 8px;
 }
 
-.operation-error-detail {
+.error-detail {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .notification-banner-info {
@@ -1591,13 +1592,10 @@ body {
   color: #d73a49;
 }
 
-.ai-status-detail {
-  display: block;
+.ai-connection-error .error-details {
   margin-top: 4px;
   color: var(--text);
   font-size: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .ai-spinner {

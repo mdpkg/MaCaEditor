@@ -1,5 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
+import { ErrorDetails } from "./ErrorDetails";
 import { useEffect, useRef, useState } from "react";
 import type { AiConfig } from "../types";
 import {
@@ -188,9 +189,10 @@ export function AiSettingsDialog({ onClose }: Props) {
       )}
       {status === "connected" && <p className="ai-status ai-status-ok">{uiText("Connection OK.")}</p>}
       {status === "connection-error" && (
-        <p className="ai-status ai-status-error">
-          {uiText("Connection failed.")}{errorDetail && <span className="ai-status-detail">{errorDetail}</span>}
-        </p>
+        <div className="ai-connection-error">
+          <p className="ai-status ai-status-error" role="alert">{uiText("Connection failed.")}</p>
+          {errorDetail && <ErrorDetails detail={errorDetail} />}
+        </div>
       )}
     </Dialog>
   );

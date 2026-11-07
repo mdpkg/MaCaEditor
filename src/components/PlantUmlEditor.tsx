@@ -1,6 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { useEffect, useState } from "react";
-import { renderPlantUml } from "../lib/plantuml/renderer";
+import { plantUmlErrorDetail, renderPlantUml } from "../lib/plantuml/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
 import { CodeEditor } from "./CodeEditor";
 import { SvgPreviewOverlay } from "./SvgPreviewOverlay";
@@ -27,7 +27,7 @@ export function PlantUmlEditor({
   onSave,
   onAiEdit,
 }: Props) {
-  const [svg, setSvg] = useState(initialSvg);
+  const [svg, setSvg] = useState(() => plantUmlErrorDetail(initialSvg) ? "" : initialSvg);
   const [error, setError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);

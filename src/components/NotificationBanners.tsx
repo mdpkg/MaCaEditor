@@ -1,5 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ErrorDetails } from "./ErrorDetails";
 
 export type NotificationTone = "info" | "success" | "warning" | "error";
 
@@ -7,6 +8,7 @@ export interface BannerNotice {
   id: number;
   message: string;
   tone: NotificationTone;
+  detail?: string;
   action?: { label: string; onClick: () => void };
 }
 
@@ -37,6 +39,7 @@ function NotificationBanner({ notice, onDismiss }: { notice: BannerNotice; onDis
       onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <div role={tone === "error" ? "alert" : "status"}>{message}</div>
+      {notice.detail && <ErrorDetails detail={notice.detail} />}
       {notice.action && <button type="button" onClick={() => { notice.action?.onClick(); onDismiss(id); }}>{notice.action.label}</button>}
       <button type="button" aria-label={`${message} の通知を閉じる`} onClick={() => onDismiss(id)}>
         {uiText("Dismiss")}</button>

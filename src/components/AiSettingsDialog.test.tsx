@@ -117,8 +117,13 @@ describe("AiSettingsDialog", () => {
     await act(async () => {
       (container.querySelectorAll("button")[2] as HTMLButtonElement).click();
     });
-    expect(container.textContent).toContain("接続できませんでした。");
-    expect(container.textContent).toContain("connection refused");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("接続できませんでした。");
+    const details = container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe("詳細");
+    act(() => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(details.querySelector(".error-detail")?.textContent).toBe("connection refused");
     act(() => root.unmount());
   });
 

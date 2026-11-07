@@ -42,7 +42,7 @@ describe("NotificationBanners", () => {
     function Notices() {
       const [notices, setNotices] = useState<BannerNotice[]>([
         { id: 1, message: "Finished", tone: "success" },
-        { id: 2, message: "Watch failed", tone: "error" },
+        { id: 2, message: "再読込できませんでした。", tone: "error", detail: "invalid folder document\ninvalid JSON" },
       ]);
       return <NotificationBanners notices={notices}
         onDismiss={(id) => setNotices((current) => current.filter((notice) => notice.id !== id))} />;
@@ -54,16 +54,22 @@ describe("NotificationBanners", () => {
     act(() => success.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
     act(() => vi.advanceTimersByTime(10_000));
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Finished");
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Watch failed");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("再読込できませんでした。");
+    const details = container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe("詳細");
+    act(() => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(details.querySelector(".error-detail")?.textContent).toBe("invalid folder document\ninvalid JSON");
 
     act(() => success.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
     act(() => vi.advanceTimersByTime(2499));
     expect(container.contains(success)).toBe(true);
     act(() => vi.advanceTimersByTime(1));
     expect(container.contains(success)).toBe(false);
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Watch failed");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("再読込できませんでした。");
 
-    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Watch failed の通知を閉じる"]')!.click());
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="再読込できませんでした。 の通知を閉じる"]')!.click());
     expect(container.querySelector(".notification-banners")).toBeNull();
     act(() => root.unmount());
   });

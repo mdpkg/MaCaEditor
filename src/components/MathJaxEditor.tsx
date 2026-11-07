@@ -1,6 +1,7 @@
 import { uiText } from "../lib/uiText";
 import { useEffect, useState } from "react";
 import { sanitizeHtml } from "../lib/sanitize";
+import { mathJaxErrorDetail, renderMathJax } from "../lib/mathjax/renderer";
 import { CodeEditor } from "./CodeEditor";
 import { SvgPreviewOverlay } from "./SvgPreviewOverlay";
 import { DiagramRenderError } from "./DiagramRenderError";
@@ -15,15 +16,14 @@ interface Props {
   onSave?: () => void | Promise<void>;
 }
 
-async function renderWithMathJax(source: string): Promise<string> {
-  const { renderMathJax } = await import("../lib/mathjax/renderer");
-  return renderMathJax(source);
-}
-
 export function MathJaxEditor({
-  source, initialSvg, onSourceChange, onRendered, render = renderWithMathJax, vimMode = false, onSave,
+  source, initialSvg, onSourceChange, onRendered, render = renderMathJax, vimMode = false, onSave,
 }: Props) {
-  const [svg, setSvg] = useState(initialSvg);
+  const [svg, setSvg] = useState(() => {
+    if (!initialSvg) return "";
+    const parsed = new DOMParser().parseFromString(initialSvg, "text/html");
+    return mathJaxErrorDetail(parsed) ? "" : initialSvg;
+  });
   const [error, setError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
