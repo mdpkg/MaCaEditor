@@ -88,30 +88,30 @@ describe("MarkdownPreview", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    act(() => root.render(
+    const file = { path: "attachments/仕様書.pdf", is_text: false, content: null, base64: "AQID" };
+    const render = (base64: string, onDownload: typeof onDownloadAttachment) => act(() => root.render(
       <MarkdownPreview
         markdown="[仕様書](attachments/仕様書.pdf)"
         baseDir=""
-        files={[{
-          path: "attachments/仕様書.pdf",
-          is_text: false,
-          content: null,
-          base64: "AQID",
-        }]}
-        onDownloadAttachment={onDownloadAttachment}
+        files={[{ ...file, base64 }]}
+        onDownloadAttachment={onDownload}
       />,
     ));
+    render("AQID", onDownloadAttachment);
 
     const link = container.querySelector("a") as HTMLAnchorElement;
     expect(link.download).toBe("仕様書.pdf");
     expect(link.href).toBe("data:application/octet-stream;base64,AQID");
     act(() => link.click());
-    expect(onDownloadAttachment).toHaveBeenCalledWith({
-      path: "attachments/仕様書.pdf",
-      is_text: false,
-      content: null,
-      base64: "AQID",
-    });
+    expect(onDownloadAttachment).toHaveBeenCalledWith(file);
+
+    const onDownloadUpdated = vi.fn();
+    render("BAUG", onDownloadUpdated);
+    expect(container.querySelector("a")).toBe(link);
+    expect(link.href).toBe("data:application/octet-stream;base64,BAUG");
+    act(() => link.click());
+    expect(onDownloadUpdated).toHaveBeenCalledWith({ ...file, base64: "BAUG" });
+    expect(onDownloadAttachment).toHaveBeenCalledTimes(1);
     act(() => root.unmount());
   });
 
@@ -386,26 +386,37 @@ describe("MarkdownPreview", () => {
     act(() => root.unmount());
   });
 
-  test("reports the Markdown source range when a table is clicked", () => {
+  test("keeps the preview table mounted and reports its new source range after an edit", () => {
     const onEditTable = vi.fn();
-    const markdown = "Before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter";
+    const tableSource = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const markdown = `Before\n\n# Section\n\n${tableSource}\n\nAfter`;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    act(() => root.render(
+    const render = (source: string) => act(() => root.render(
       <MarkdownPreview
-        markdown={markdown}
+        markdown={source}
         baseDir=""
         files={[]}
         onEditTable={onEditTable}
       />,
     ));
+    render(markdown);
+    const heading = container.querySelector("h1")!;
+    const table = container.querySelector("table")!;
+    table.focus();
 
-    act(() => (container.querySelector("table") as HTMLTableElement).click());
-
-    const start = markdown.indexOf("| A | B |");
-    const end = start + "| A | B |\n| --- | --- |\n| 1 | 2 |".length;
-    expect(onEditTable).toHaveBeenCalledWith(start, end);
+    const revisedTable = tableSource.replace("| 1 |", "| 100 |");
+    const revised = markdown.replace("Before", "Edited paragraph").replace(tableSource, revisedTable);
+    render(revised);
+    expect(container.querySelector("h1")).toBe(heading);
+    expect(heading.dataset.sourceOffset).toBe(String(revised.indexOf("# Section")));
+    expect(container.querySelector("table")).toBe(table);
+    expect(table.querySelector("td")?.textContent).toBe("100");
+    expect(document.activeElement).toBe(table);
+    act(() => table.click());
+    const start = revised.indexOf(revisedTable);
+    expect(onEditTable).toHaveBeenCalledWith(start, start + revisedTable.length);
     act(() => root.unmount());
   });
 
