@@ -137,6 +137,60 @@ describe("FileTree", () => {
     act(() => root.unmount());
   });
 
+  test("moves a file with mouse pointer events in Windows Tauri", () => {
+    const onDropPath = vi.fn();
+    const onSelect = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    vi.stubGlobal("isTauri", true);
+    const platform = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows");
+    const hitTest = vi.fn();
+    const originalHitTest = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: hitTest });
+    try {
+      act(() => root.render(<FileTree
+        files={[{ path: "docs/guide.md", is_text: true, content: "", base64: null }]}
+        selectedPath={null} onSelect={onSelect} onDropImages={vi.fn()}
+        canRename={() => false} onRename={vi.fn()} canDelete={() => false} onDelete={vi.fn()}
+        onDropPath={onDropPath} />));
+      const guide = container.querySelector<HTMLElement>('[data-path="docs/guide.md"]')!;
+      guide.setPointerCapture = vi.fn();
+      expect(guide.draggable).toBe(false);
+      const pointer = (type: string, clientY: number) => act(() => guide.dispatchEvent(
+        new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: "mouse", clientY }),
+      ));
+      const click = () => act(() => guide.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+      hitTest.mockReturnValue(container.querySelector(".file-tree"));
+      pointer("pointerdown", 40);
+      pointer("pointerup", 42);
+      click();
+      expect(onDropPath).not.toHaveBeenCalled();
+      expect(onSelect).toHaveBeenCalledWith("docs/guide.md");
+      onSelect.mockClear();
+
+      pointer("pointerdown", 40);
+      pointer("pointermove", 80);
+      expect(container.querySelector(".file-tree-drop-root")).not.toBeNull();
+      pointer("pointercancel", 80);
+      expect(container.querySelector(".file-tree-drop-root")).toBeNull();
+      expect(onDropPath).not.toHaveBeenCalled();
+
+      pointer("pointerdown", 40);
+      pointer("pointerup", 80);
+      click();
+      expect(onDropPath).toHaveBeenCalledTimes(1);
+      expect(onDropPath).toHaveBeenCalledWith("docs/guide.md", "guide.md");
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      if (originalHitTest) Object.defineProperty(document, "elementFromPoint", originalHitTest);
+      else Reflect.deleteProperty(document, "elementFromPoint");
+      platform.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("shows transient empty directories", () => {
     const container = document.createElement("div"); document.body.appendChild(container);
     const root = createRoot(container);

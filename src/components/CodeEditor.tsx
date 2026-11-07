@@ -9,7 +9,7 @@ import { openSearchPanel } from "@codemirror/search";
 import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
-import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { PACKAGE_PATH_DRAG_TYPE, PACKAGE_PATH_POINTER_DROP, type PackagePathPointerDrop } from "../lib/packageDrag";
 import { isDocumentSearchShortcut } from "../lib/shortcuts";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
 
@@ -120,6 +120,10 @@ export function CodeEditor({
       view.focus();
       setContextMenu({ from, to, x, y });
     };
+    const insertPackagePath = (view: EditorView, path: string, x: number, y: number) => {
+      const position = view.posAtCoords({ x, y }) ?? view.state.selection.main.head;
+      onPackagePathDropRef.current?.(path, position);
+    };
     const extensions = [
       Prec.highest(EditorView.domEventHandlers({
         keydown: (event, view) => {
@@ -181,9 +185,7 @@ export function CodeEditor({
           const path = event.dataTransfer?.getData(PACKAGE_PATH_DRAG_TYPE) ?? "";
           if (!path || !onPackagePathDropRef.current) return false;
           event.preventDefault();
-          const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
-            ?? view.state.selection.main.head;
-          onPackagePathDropRef.current(path, position);
+          insertPackagePath(view, path, event.clientX, event.clientY);
           return true;
         },
         contextmenu: (event, view) => {
@@ -203,6 +205,12 @@ export function CodeEditor({
       parent: hostRef.current,
     });
     viewRef.current = view;
+    const onPointerDrop = (event: Event) => {
+      if (!onPackagePathDropRef.current || !view.contentDOM.contains(event.target as Node)) return;
+      const { path, x, y } = (event as CustomEvent<PackagePathPointerDrop>).detail;
+      insertPackagePath(view, path, x, y);
+    };
+    view.dom.addEventListener(PACKAGE_PATH_POINTER_DROP, onPointerDrop);
     const preserveScrollOnUndo = (event: KeyboardEvent) => {
       const undoOrRedo = (event.ctrlKey || event.metaKey) &&
         (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y");
@@ -227,6 +235,7 @@ export function CodeEditor({
       }
       view.scrollDOM.removeEventListener("scroll", recordScroll);
       view.dom.removeEventListener("keydown", preserveScrollOnUndo, true);
+      view.dom.removeEventListener(PACKAGE_PATH_POINTER_DROP, onPointerDrop);
       if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
       view.destroy();
       viewRef.current = null;
