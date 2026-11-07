@@ -97,6 +97,7 @@ pub fn run() {
             folder_watcher::stop_watching_folder,
             commands::save_ai_config,
             commands::load_ai_config,
+            commands::has_ai_configuration,
             commands::list_ai_models,
             commands::test_ai_connection,
             commands::ai_stream,

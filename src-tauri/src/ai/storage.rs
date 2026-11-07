@@ -38,6 +38,17 @@ pub fn load_ai_config() -> Result<AiConfig, String> {
     Ok(config)
 }
 
+/// Checks whether the saved settings can be used without reading the API key.
+pub fn has_ai_configuration() -> Result<bool, String> {
+    let json = match std::fs::read_to_string(ai_config_path()) {
+        Ok(json) => json,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    let config: AiConfig = serde_json::from_str(&json).map_err(|error| error.to_string())?;
+    Ok(validate_config(&config).is_ok())
+}
+
 /// API Key を keyring から読み込む。
 pub fn load_api_key() -> Option<String> {
     let entry = keyring::Entry::new(SERVICE_NAME, KEY_ENTRY).ok()?;

@@ -87,6 +87,10 @@ export function loadAiConfig(): Promise<AiConfig> {
   return invoke("load_ai_config");
 }
 
+export function hasAiConfiguration(): Promise<boolean> {
+  return invoke("has_ai_configuration");
+}
+
 export function listAiModels(
   baseUrl: string,
   apiKey: string | null,
