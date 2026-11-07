@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { AiConfig, AiError, AiStreamEvent } from "../types";
 import { isAiConfigured, readAiError } from "../lib/aiSelection";
 import { AiErrorFeedback } from "./AiErrorFeedback";
+import { ErrorDetails } from "./ErrorDetails";
 import { chatHistory, createAiChatState, reduceAiChat, shouldSendChatKey } from "../lib/aiChat";
 import { cancelAiRequest, loadAiConfig, startAiDocumentChat } from "../lib/tauri";
 
@@ -15,7 +16,7 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
   const [state, dispatch] = useReducer(reduceAiChat, undefined, createAiChatState);
   const [input, setInput] = useState("");
   const [config, setConfig] = useState<AiConfig | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [invokeError, setInvokeError] = useState<AiError | null>(null);
   const [starting, setStarting] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -23,7 +24,11 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
   const listRef = useRef<HTMLDivElement>(null);
   const lastQuestionRef = useRef("");
 
-  useEffect(() => { loadAiConfig().then(setConfig).catch(() => setLoadFailed(true)); }, []);
+  useEffect(() => {
+    loadAiConfig().then(setConfig).catch((reason: unknown) => {
+      setLoadError(reason instanceof Error ? reason.message : String(reason));
+    });
+  }, []);
   useEffect(() => () => { if (activeRef.current) void cancelAiRequest(activeRef.current); }, []);
   useEffect(() => {
     const list = listRef.current;
@@ -81,6 +86,8 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
       {state.messages.map((message) => <article key={message.id} className={`ai-chat-message ai-chat-${message.role}`}>
         <b>{message.role === "user" ? uiText("You") : "AI"}</b>
         {message.role === "user" ? <p>{message.content}</p> : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}
+        {message.status === "complete" && !message.content.trim() &&
+          <p role="status">{uiText("AI returned no text.")}</p>}
         {message.status === "streaming" && <small>{uiText("Generating…")}</small>}
         {message.status === "cancelled" && <small>{uiText("Cancelled")}</small>}
       </article>)}
@@ -89,7 +96,13 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
         <button onClick={() => void send(lastQuestionRef.current)}>{uiText("Retry")}</button>
       </div>}
     </div>
-    {!configured && <div className="ai-chat-error">{loadFailed ? uiText("AI settings could not be loaded.") : uiText("AI is not configured.")} <button onClick={onOpenAiSettings}>{uiText("AI Settings")}</button></div>}
+    {!configured && <div className="ai-chat-error">
+      {loadError === null ? uiText("AI is not configured.") : <>
+        <div role="alert">{uiText("AI settings could not be loaded.")}</div>
+        <ErrorDetails detail={loadError} />
+      </>}
+      {" "}<button onClick={onOpenAiSettings}>{uiText("AI Settings")}</button>
+    </div>}
     <footer>
       <textarea aria-label={uiText("AI Chat message")} value={input} disabled={!configured || starting || state.status === "running"}
         onChange={(event) => setInput(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
