@@ -542,7 +542,20 @@ body {
   padding: 12px 0;
 }
 
-.code-editor .cm-editor:has(:focus-visible),
+.code-editor .cm-editor:has(:focus-visible) {
+  outline: none;
+}
+
+.code-editor .cm-editor:has(:focus-visible)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Paint above CodeMirror's gutters and panels, below its tooltips. */
+  z-index: 400;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+}
+
 .tree-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
