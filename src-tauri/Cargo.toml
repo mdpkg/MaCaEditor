@@ -36,3 +36,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-window-state = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Printing",
+    "Win32_Security",
+    "Win32_System_EventLog",
+    "Win32_System_Threading",
+] }

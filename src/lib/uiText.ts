@@ -12,6 +12,7 @@ const labels: Record<string, string> = {
   "Save": "保存",
   "Save As": "名前を付けて保存",
   "Print": "印刷",
+  "Print monitoring": "印刷状態の監視",
   "Add Markdown...": "Markdown を追加...",
   "Add Markdown": "Markdown を追加",
   "Add Folder...": "フォルダを追加...",

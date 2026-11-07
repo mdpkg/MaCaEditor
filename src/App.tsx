@@ -66,6 +66,7 @@ import {
   readImage,
   saveAttachment,
   watchFolder,
+  watchPrint,
   stopWatchingFolder,
   onFolderChanged,
   onNativeFileDrop,
@@ -159,7 +160,7 @@ const MarkdownTableEditor = lazy(() => import("./components/MarkdownTableEditor"
 })));
 
 const fileOperationsRequiringErrorTranslation = new Set([
-  "Save", "Reload folder", "Export folder", "Export package",
+  "Save", "Reload folder", "Export folder", "Export package", "Print", "Print monitoring",
   "Add images", "Add attachments", "Download attachment", "Add image to drawing", "Move",
 ].map(uiText));
 
@@ -253,6 +254,7 @@ export default function App() {
   const documentRef = useRef<DocumentState | null>(null);
   const documentSessionRef = useRef(0);
   const fileTaskRef = useRef(false);
+  const printDialogRef = useRef(false);
   const folderConflictRef = useRef(false);
 
   const setFolderConflict = (conflict: boolean) => {
@@ -717,8 +719,34 @@ export default function App() {
     setStatus(`${path} を再読込しました`);
   });
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (printDialogRef.current) return;
+    printDialogRef.current = true;
+    let jobTitle: string | null = null;
+    try {
+      jobTitle = await watchPrint((detail) => reportError(uiText("Print"), detail));
+    } catch (reason) {
+      reportError(uiText("Print monitoring"), reason);
+    }
+    const title = document.title;
+    const taggedTitle = jobTitle ? `${jobTitle} — ${title}` : title;
+    const restoreTitle = () => {
+      window.removeEventListener("afterprint", restoreTitle);
+      if (document.title === taggedTitle) document.title = title;
+      printDialogRef.current = false;
+    };
+    if (jobTitle) {
+      document.title = taggedTitle;
+      window.addEventListener("afterprint", restoreTitle);
+    }
+    try {
+      window.print();
+    } catch (reason) {
+      restoreTitle();
+      reportError(uiText("Print"), reason);
+    } finally {
+      if (!jobTitle) restoreTitle();
+    }
   };
 
   const handleNew = async () => {

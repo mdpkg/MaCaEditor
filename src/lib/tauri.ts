@@ -69,6 +69,12 @@ export function stopWatchingFolder(): Promise<void> {
   return invoke("stop_watching_folder");
 }
 
+export function watchPrint(onError: (detail: string) => void): Promise<string | null> {
+  if (!isTauri() || !navigator.userAgent.includes("Windows")) return Promise.resolve(null);
+  const channel = new Channel<string>(onError);
+  return invoke("watch_print", { channel });
+}
+
 export function onFolderChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<{ path: string }>("folder-changed", (event) => handler(event.payload.path));
 }
