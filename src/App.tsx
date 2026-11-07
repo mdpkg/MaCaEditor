@@ -167,7 +167,7 @@ export default function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("preview");
   const [status, setStatus] = useState("Ready");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ operation: string; summary: string; detail: string } | null>(null);
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
@@ -200,14 +200,12 @@ export default function App() {
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
-  const pendingRef = useRef<(() => void) | null>(null);
   const editorCursorRef = useRef<number | null>(null);
   const markdownScrollRatiosRef = useRef(new Map<string, number>());
   const documentAreaRef = useRef<HTMLElement>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
   const [editorSelection, setEditorSelection] = useState<AiSelectionSnapshot | null>(null);
   const notificationSequenceRef = useRef(0);
-  const notificationTimersRef = useRef<number[]>([]);
   const documentRef = useRef<DocumentState | null>(null);
   const documentSessionRef = useRef(0);
   const fileTaskRef = useRef(false);
@@ -229,6 +227,7 @@ export default function App() {
     operationUndoRef.current = [];
     operationRedoRef.current = [];
     setFolderConflict(false);
+    setError(null);
     setDoc(next);
   };
 
@@ -293,10 +292,6 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => () => {
-    notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-  }, []);
-
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (!doc?.dirty) return;
@@ -307,19 +302,31 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [doc?.dirty]);
 
-  const confirmReplaceDirtyDocument = () =>
-    !doc?.dirty || window.confirm("Discard unsaved changes?");
+  const confirmReplaceDirtyDocument = (message = "Discard unsaved changes?") =>
+    !documentRef.current?.dirty || window.confirm(message);
+
+  const reportError = (operation: string, reason: unknown) => {
+    const detail = (reason instanceof Error ? reason.message : String(reason)).trim() || "Unknown error";
+    const firstLine = detail.split(/\r?\n/, 1)[0];
+    const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
+    const summary = `${operation} failed: ${shortReason}`;
+    setError({ operation, summary, detail });
+    setStatus(summary);
+  };
+
+  const clearError = (operation: string) => {
+    setError((current) => current?.operation === operation ? null : current);
+  };
 
   const showNotification = (message: string, tone: NotificationTone) => {
     notificationSequenceRef.current += 1;
     const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone };
     setNotifications((current) => [...current, notice]);
-    const timer = window.setTimeout(() => {
-      setNotifications((current) => current.filter((item) => item.id !== notice.id));
-      notificationTimersRef.current = notificationTimersRef.current.filter((item) => item !== timer);
-    }, 3500);
-    notificationTimersRef.current.push(timer);
   };
+
+  const dismissNotification = useCallback((id: number) => {
+    setNotifications((current) => current.filter((notice) => notice.id !== id));
+  }, []);
 
   useEffect(() => {
     if (doc?.origin.kind !== "folder") {
@@ -441,11 +448,9 @@ export default function App() {
         setDrawingPath(null);
         setPlantUmlPath(null);
         setMermaidPath(null);
-        setError(null);
         setStatus(`Opened ${result}`);
       } catch (e) {
-        setError(String(e));
-        setStatus("Error");
+        reportError("Open package", e);
       }
     }
   };
@@ -458,7 +463,7 @@ export default function App() {
       const info = await openFolder(result);
       if (info.manifest_generated) {
         setPendingInferredFolder({ path: result, info, inference: inferManifest(info.files) });
-        setError(null);
+        clearError("Open folder");
         setStatus("Review generated manifest");
         return;
       }
@@ -470,11 +475,9 @@ export default function App() {
       setPlantUmlPath(null);
       setMermaidPath(null);
       setMathJaxPath(null);
-      setError(null);
       setStatus(`Opened folder ${result}`);
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Open folder", e);
     }
   };
 
@@ -497,15 +500,14 @@ export default function App() {
       setPlantUmlPath(null);
       setMermaidPath(null);
       setMathJaxPath(null);
-      setError(null);
       setStatus(`Created folder ${path}`);
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Create folder", e);
     }
   };
 
   const runFileTask = async (
+    operation: string,
     label: string,
     task: (snapshot: DocumentState, isCurrentSession: () => boolean) => Promise<void>,
   ) => {
@@ -519,8 +521,7 @@ export default function App() {
       await task(snapshot, isCurrentSession);
     } catch (e) {
       if (isCurrentSession()) {
-        setError(String(e));
-        setStatus("Error");
+        reportError(operation, e);
       }
     } finally {
       fileTaskRef.current = false;
@@ -535,11 +536,11 @@ export default function App() {
     for (const entry of [...operationUndoRef.current, ...operationRedoRef.current]) {
       entry.state = applySavedBaseline(entry.state, saved);
     }
-    setError(null);
+    clearError("Save");
     setStatus(`Saved ${saved.path}`);
   };
 
-  const performSaveAs = () => runFileTask("Saving…", async (snapshot, isCurrentSession) => {
+  const performSaveAs = () => runFileTask("Save", "Saving…", async (snapshot, isCurrentSession) => {
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
@@ -560,7 +561,7 @@ export default function App() {
       await performSaveAs();
       return;
     }
-    await runFileTask("Saving…", async (snapshot, isCurrentSession) => {
+    await runFileTask("Save", "Saving…", async (snapshot, isCurrentSession) => {
       const saved = await saveDocument(snapshot);
       if (isCurrentSession()) finishSave(snapshot, saved);
     });
@@ -575,9 +576,9 @@ export default function App() {
     await performSave();
   };
 
-  const handleReloadFolder = () => runFileTask("Reloading folder…", async (snapshot, isCurrentSession) => {
+  const handleReloadFolder = () => runFileTask("Reload folder", "Reloading folder…", async (snapshot, isCurrentSession) => {
     if (snapshot.origin.kind !== "folder" ||
-        !window.confirm("Discard unsaved changes and reload this folder?")) return;
+        !confirmReplaceDirtyDocument("Discard unsaved changes and reload this folder?")) return;
     const path = snapshot.origin.path;
     const info = await openFolder(path);
     if (!isCurrentSession()) return;
@@ -594,7 +595,6 @@ export default function App() {
     setMermaidPath(null);
     setMathJaxPath(null);
     setTableEdit(null);
-    setError(null);
     setStatus(`Reloaded folder ${path}`);
   });
 
@@ -619,11 +619,9 @@ export default function App() {
         setDrawingPath(null);
         setPlantUmlPath(null);
         setMermaidPath(null);
-        setError(null);
         setStatus(`Created ${result}`);
       } catch (e) {
-        setError(String(e));
-        setStatus("Error");
+        reportError("Create package", e);
       }
     }
   };
@@ -646,7 +644,7 @@ export default function App() {
               inference: inferManifest(sourceInfo.files),
               destination: dest,
             });
-            setError(null);
+            clearError("Import folder");
             setStatus("Review generated manifest");
             return;
           }
@@ -659,11 +657,9 @@ export default function App() {
           setDrawingPath(null);
           setPlantUmlPath(null);
           setMermaidPath(null);
-          setError(null);
           setStatus(`Imported ${folder}`);
         } catch (e) {
-          setError(String(e));
-          setStatus("Error");
+          reportError("Import folder", e);
         }
       }
     }
@@ -676,14 +672,14 @@ export default function App() {
       try {
         await exportFolder(doc.origin.path, folder);
         setStatus(`Exported to ${folder}`);
+        clearError("Export folder");
       } catch (e) {
-        setError(String(e));
-        setStatus("Error");
+        reportError("Export folder", e);
       }
     }
   };
 
-  const handleExportPackage = () => runFileTask("Exporting package…", async (snapshot, isCurrentSession) => {
+  const handleExportPackage = () => runFileTask("Export package", "Exporting package…", async (snapshot, isCurrentSession) => {
     if (snapshot.origin.kind !== "folder") return;
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
@@ -694,7 +690,7 @@ export default function App() {
     await exportFolderDocumentPackage(snapshot, path);
     if (isCurrentSession()) {
       setStatus(`Exported package ${path}`);
-      setError(null);
+      clearError("Export package");
     }
   });
 
@@ -721,14 +717,14 @@ export default function App() {
         try {
           const parsed = parseDrawingFile(file.content);
           setDrawingDoc(parsed);
+          clearError("Open drawing");
           setDrawingPath(path);
           setPlantUmlPath(null);
           setMermaidPath(null);
           setMode("drawing");
           return;
         } catch (e) {
-          setError(`Unable to open drawing: ${String(e)}`);
-          setStatus("Error");
+          reportError("Open drawing", e);
           return;
         }
       }
@@ -777,16 +773,15 @@ export default function App() {
   const handleAiSelection = (task: AiTaskKind) => {
     const selection = editorSelectionRef.current;
     if (!isSelectionValid(selection)) {
-      setError("テキストを選択してください。");
-      setStatus("Error");
+      reportError("AI action", "テキストを選択してください。");
       return;
     }
     const sel = selection as AiSelectionSnapshot;
     if (isEntirelyInsideCodeBlock(displayContent, sel.from, sel.to)) {
-      setError("選択範囲がコードブロック内のため AI Action を実行できません。");
-      setStatus("Error");
+      reportError("AI action", "選択範囲がコードブロック内のため AI Action を実行できません。");
       return;
     }
+    clearError("AI action");
     setAiSelection({ task, snapshot: sel });
   };
 
@@ -796,15 +791,14 @@ export default function App() {
     const content = file?.is_text ? file.content ?? "" : "";
     const applied = applyAiResult(content, snapshot, result, mode);
     if (!applied.ok) {
-      setError("The document has changed since this AI request started. Please select the text again.");
-      setStatus("Error");
+      reportError("Apply AI result", "The document has changed since this AI request started. Please select the text again.");
       return;
     }
     setDoc(updateFileContent(doc, selectedPath, applied.result.content));
     setAiSelection(null);
     setAiSelectionRunning(false);
     setStatus(`AI ${mode === "replace" ? "Replace" : "Insert"} applied`);
-    setError(null);
+    clearError("Apply AI result");
   };
 
   const handleInsertDrawing = () => {
@@ -860,10 +854,9 @@ export default function App() {
       setDrawingPath(null);
       setMode("plantuml");
       setStatus("Inserted PlantUML");
-      setError(null);
+      clearError("Render PlantUML");
     } catch (reason) {
-      setError(`Unable to render PlantUML: ${String(reason)}`);
-      setStatus("Error");
+      reportError("Render PlantUML", reason);
     }
   };
 
@@ -903,10 +896,9 @@ export default function App() {
       setDrawingPath(null);
       setMode("mermaid");
       setStatus("Inserted Mermaid");
-      setError(null);
+      clearError("Render Mermaid");
     } catch (reason) {
-      setError(`Unable to render Mermaid: ${String(reason)}`);
-      setStatus("Error");
+      reportError("Render Mermaid", reason);
     }
   };
 
@@ -929,12 +921,12 @@ export default function App() {
     const currentSource = doc.files.find((file) => file.path === currentPath)?.content ?? "";
     const applied = applyDiagramEdit(currentPath ?? "", currentSource, snapshot, updatedSource);
     if (!applied.ok) {
-      setError("The diagram changed while AI generation was running. Run AI Generate again using the latest source.");
-      setStatus("Error"); return;
+      reportError("Apply AI diagram", "The diagram changed while AI generation was running. Run AI Generate again using the latest source.");
+      return;
     }
     if (aiDiagramEdit.format === "plantuml") handlePlantUmlSourceChange(applied.source);
     else handleMermaidSourceChange(applied.source);
-    setAiDiagramEdit(null); setStatus("AI-generated diagram applied"); setError(null);
+    setAiDiagramEdit(null); setStatus("AI-generated diagram applied"); clearError("Apply AI diagram");
   };
 
   const handleInsertMathJax = () => {
@@ -959,7 +951,6 @@ export default function App() {
     setDrawingPath(null);
     setMode("mathjax");
     setStatus("Inserted MathJax");
-    setError(null);
   };
 
   const handleMathJaxSourceChange = useCallback((source: string) => {
@@ -996,7 +987,7 @@ export default function App() {
     setDoc(next);
     setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
     setStatus(`Added ${images.length} image${images.length === 1 ? "" : "s"} to images/`);
-    setError(null);
+    clearError("Add images");
   };
 
   const handleAddImage = async () => {
@@ -1012,8 +1003,7 @@ export default function App() {
     try {
       addImportedImages(await Promise.all(paths.map(readImage)));
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Add images", e);
     }
   };
 
@@ -1038,7 +1028,7 @@ export default function App() {
     setDoc(next);
     setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
     setStatus(`Added ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} to attachments/`);
-    setError(null);
+    clearError("Add attachments");
   };
 
   const handleAddAttachment = async () => {
@@ -1049,8 +1039,7 @@ export default function App() {
     try {
       addImportedAttachments(await Promise.all(paths.map(readAttachment)));
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Add attachments", e);
     }
   };
 
@@ -1060,8 +1049,6 @@ export default function App() {
         showNotification(`ダウンロードを開始しました: ${fileName}`, "info");
       } else if (event === "completed") {
         showNotification(`ダウンロードが完了しました: ${fileName}`, "success");
-      } else {
-        showNotification(`ダウンロードに失敗しました: ${fileName}`, "error");
       }
     };
     try {
@@ -1074,10 +1061,12 @@ export default function App() {
         saveAttachment,
         notify,
       );
-      if (saved) setStatus(`Downloaded ${file.path}`);
+      if (saved) {
+        setStatus(`Downloaded ${file.path}`);
+        clearError("Download attachment");
+      }
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Download attachment", e);
     }
   };
 
@@ -1095,21 +1084,18 @@ export default function App() {
     setTableEdit(null);
     setMode("split");
     setStatus("Inserted 2 × 2 table");
-    setError(null);
   };
 
   const handleDropImages = async (files: File[]) => {
     const supported = files.filter((file) => isSupportedImageName(file.name));
     if (supported.length === 0) {
-      setError("Drop PNG, JPEG, GIF, WebP, or BMP image files.");
-      setStatus("Error");
+      reportError("Add images", "Drop PNG, JPEG, GIF, WebP, or BMP image files.");
       return;
     }
     try {
       addImportedImages(await Promise.all(supported.map(droppedFileToImage)));
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Add images", e);
     }
   };
 
@@ -1130,10 +1116,9 @@ export default function App() {
       setSelectedPath(destination);
       setMode("preview");
       setStatus(`Renamed to ${destination}; Markdown links were updated`);
-      setError(null);
+      clearError("Rename");
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Rename", e);
     }
   };
 
@@ -1151,8 +1136,8 @@ export default function App() {
       setPlantUmlPath((current) => mapPath(current));
       setMermaidPath((current) => mapPath(current));
       setMathJaxPath((current) => mapPath(current));
-      setStatus(`Moved to ${destination}; Markdown links were updated`); setError(null);
-    } catch (reason) { setError(String(reason)); setStatus("Error"); }
+      setStatus(`Moved to ${destination}; Markdown links were updated`); clearError("Move");
+    } catch (reason) { reportError("Move", reason); }
   };
 
   const handleMove = (path: string) => {
@@ -1177,9 +1162,9 @@ export default function App() {
     if (!requested) return;
     try {
       const next = addMarkdown(doc, requested, `# ${requested.slice(requested.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "")}\n`);
-      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); setError(null);
+      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); clearError("Add Markdown");
       setStatus(`Added ${requested}`);
-    } catch (reason) { setError(String(reason)); setStatus("Error"); }
+    } catch (reason) { reportError("Add Markdown", reason); }
   };
 
   const handleAddFolder = (contextPath?: string) => {
@@ -1187,8 +1172,8 @@ export default function App() {
     const directory = contextDirectory(contextPath);
     const requested = window.prompt("Folder path (empty folders are not saved)", `${directory ? `${directory}/` : ""}folder`);
     if (!requested) return;
-    try { setDoc(addDirectory(doc, requested)); setStatus(`Added ${requested}; empty folders are not saved`); setError(null); }
-    catch (reason) { setError(String(reason)); setStatus("Error"); }
+    try { setDoc(addDirectory(doc, requested)); setStatus(`Added ${requested}; empty folders are not saved`); clearError("Add folder"); }
+    catch (reason) { reportError("Add folder", reason); }
   };
 
   const handleDelete = (path: string | null = selectedPath) => {
@@ -1218,10 +1203,9 @@ export default function App() {
         setMode("preview");
       }
       setStatus(`Deleted ${fileName}; Markdown links were not updated`);
-      setError(null);
+      clearError("Delete");
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Delete", e);
     }
   };
 
@@ -1244,11 +1228,10 @@ export default function App() {
     try {
       const image = await readImage(result);
       setStatus(`Added ${image.file_name} to drawing`);
-      setError(null);
+      clearError("Add image to drawing");
       return importedImageDataUrl(image);
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      reportError("Add image to drawing", e);
       return null;
     }
   };
@@ -1260,12 +1243,12 @@ export default function App() {
     try {
       const parsed = parseDrawingFile(file.content);
       setDrawingDoc(parsed);
+      clearError("Open drawing");
       setDrawingPath(drawPath);
       setMode("drawing");
       setSelectedPath(drawPath);
     } catch (e) {
-      setError(`Unable to open drawing: ${String(e)}`);
-      setStatus("Error");
+      reportError("Open drawing", e);
     }
   };
 
@@ -1299,14 +1282,6 @@ export default function App() {
     setTableEdit((current) => current ? { ...current, end: current.start + markdown.length } : current);
   };
 
-  const resolveDiscard = (discard: boolean) => {
-    setError(null);
-    if (discard && pendingRef.current) {
-      pendingRef.current();
-    }
-    pendingRef.current = null;
-  };
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isPackageSearchShortcut(event) && doc) {
@@ -1338,10 +1313,9 @@ export default function App() {
       setDoc(updateFileContent(doc, displayFile.path, inserted.content));
       editorCursorRef.current = inserted.cursor;
       setStatus(`Inserted link to ${path}`);
-      setError(null);
+      clearError("Insert link");
     } catch (reason) {
-      setError(String(reason));
-      setStatus("Error");
+      reportError("Insert link", reason);
     }
   };
 
@@ -1457,8 +1431,8 @@ export default function App() {
                   canSetEntrypoint={(path) => path !== doc?.entrypoint && /\.(md|markdown)$/i.test(path)}
                   onSetEntrypoint={(path) => {
                     if (!doc) return;
-                    try { recordDocumentOperation(setEntrypoint(doc, path), `set entrypoint to ${path}`); setStatus(`Entrypoint set to ${path}`); setError(null); }
-                    catch (reason) { setError(String(reason)); setStatus("Error"); }
+                    try { recordDocumentOperation(setEntrypoint(doc, path), `set entrypoint to ${path}`); setStatus(`Entrypoint set to ${path}`); clearError("Set entrypoint"); }
+                    catch (reason) { reportError("Set entrypoint", reason); }
                   }}
                   onAddMarkdown={handleAddMarkdown}
                   onAddFolder={handleAddFolder}
@@ -1657,20 +1631,6 @@ export default function App() {
           />
         )}
       </div>
-      {error && (
-        <div className="error-dialog">
-          <p>{error}</p>
-          {doc?.dirty && (
-            <div className="error-actions">
-              <button onClick={() => resolveDiscard(true)}>Discard</button>
-              <button onClick={() => resolveDiscard(false)}>Cancel</button>
-            </div>
-          )}
-          {!doc?.dirty && (
-            <button onClick={() => setError(null)}>OK</button>
-          )}
-        </div>
-      )}
       {aboutOpen && (
         <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
       )}
@@ -1731,8 +1691,8 @@ export default function App() {
           onSave={(values) => {
             try {
               recordDocumentOperation(updateManifestMetadata(doc, values), "edit manifest");
-              setManifestEditorOpen(false); setStatus("Manifest updated"); setError(null);
-            } catch (reason) { setError(String(reason)); setStatus("Error"); }
+              setManifestEditorOpen(false); setStatus("Manifest updated"); clearError("Edit manifest");
+            } catch (reason) { reportError("Edit manifest", reason); }
           }}
           onClose={() => setManifestEditorOpen(false)} />
       )}
@@ -1765,10 +1725,8 @@ export default function App() {
                 setMermaidPath(null);
                 setMathJaxPath(null);
                 setPendingInferredFolder(null);
-                setError(null);
               } catch (reason) {
-                setError(String(reason));
-                setStatus("Error");
+                reportError(pending.destination ? "Import folder" : "Open folder", reason);
               }
             })();
           }}
@@ -1798,7 +1756,18 @@ export default function App() {
         mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
         location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
       />
-      <NotificationBanners notices={notifications} />
+      <NotificationBanners notices={notifications} onDismiss={dismissNotification}>
+        {error && (
+          <div key={`${error.operation}:${error.detail}`} className="notification-banner notification-banner-error operation-error">
+            <div role="alert">{error.summary}</div>
+            <details>
+              <summary>Details</summary>
+              <div className="operation-error-detail">{error.detail}</div>
+            </details>
+            <button type="button" onClick={() => setError(null)}>Close error</button>
+          </div>
+        )}
+      </NotificationBanners>
     </div>
   );
 }

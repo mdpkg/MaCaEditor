@@ -142,6 +142,58 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).toBeNull();
   });
 
+  test("closing a save error preserves dirty edits and keeps the short cause in the status bar", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
+    const confirm = vi.spyOn(window, "confirm");
+    await click("File");
+    await click("Open");
+    await click("Edit");
+    await edit("Unsaved edit");
+
+    vi.mocked(tauri.savePackage).mockRejectedValueOnce(new Error("Disk full\nWriter detail"));
+    await act(async () => saveShortcut());
+    const banner = container.querySelector(".operation-error")!;
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe("Save failed: Disk full");
+    expect([...banner.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["Close error"]);
+    const details = banner.querySelector("details")!;
+    expect(details.open).toBe(false);
+    act(() => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain("Writer detail");
+
+    await click("Close error", banner);
+    expect(container.querySelector(".operation-error")).toBeNull();
+    expect(container.querySelector(".status-message")?.textContent).toBe("Save failed: Disk full");
+    expect(container.querySelector("textarea")?.value).toBe("Unsaved edit");
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  test("keeps a save error through unrelated edits and clears it after a successful retry", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
+    await click("File");
+    await click("Open");
+    await click("Edit");
+    await edit("First edit");
+
+    vi.mocked(tauri.savePackage).mockRejectedValueOnce("Permission denied");
+    await act(async () => saveShortcut());
+    await edit("Later edit");
+    expect(container.querySelector(".operation-error")?.textContent).toContain("Save failed: Permission denied");
+    vi.spyOn(window, "prompt").mockReturnValueOnce("notes");
+    await click("File");
+    await click("Add Folder...");
+    expect(container.querySelector(".status-message")?.textContent).toContain("Added notes");
+    expect(container.querySelector(".operation-error")?.textContent).toContain("Save failed: Permission denied");
+
+    await act(async () => saveShortcut());
+    expect(container.querySelector(".operation-error")).toBeNull();
+    expect(container.querySelector(".status-message")?.textContent).toBe("Saved original.mdpkg");
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+  });
+
   test("exports local edits and reloads the folder only after confirmation", async () => {
     vi.mocked(open).mockResolvedValue(folderPath);
     vi.mocked(save).mockResolvedValue("backup");
