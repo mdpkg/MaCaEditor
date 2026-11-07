@@ -72,6 +72,8 @@ import {
   stopWatchingFolder,
   onFolderChanged,
   onNativeFileDrop,
+  setImageDropEnabled,
+  type NativeFileDropAction,
   updateWindowTitle,
 } from "./lib/tauri";
 import type { DrawingDocument } from "@maca/drawing-core";
@@ -199,7 +201,7 @@ export default function App() {
   const [treeCollapsed, setTreeCollapsed] = useState(new Set<string>());
   const treeStatesRef = useRef(new Map<string, Set<string>>());
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const nativeDropRef = useRef<(paths: string[]) => void>(() => {});
+  const nativeDropRef = useRef<(paths: string[], action?: NativeFileDropAction) => void>(() => {});
   const nativeImportImagesRef = useRef<(images: ImportedImage[]) => void>(() => {});
   const openSequenceRef = useRef(0);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -314,12 +316,16 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let dispose: (() => void) | undefined;
-    void onNativeFileDrop((paths) => nativeDropRef.current(paths)).then((unlisten) => {
+    void onNativeFileDrop((paths, action) => nativeDropRef.current(paths, action)).then((unlisten) => {
       if (active) dispose = unlisten;
       else unlisten();
     });
     return () => { active = false; dispose?.(); };
   }, []);
+  const canImportImages = doc !== null;
+  useEffect(() => {
+    void setImageDropEnabled(canImportImages).catch((error) => console.warn("Failed to update the Windows drop target", error));
+  }, [canImportImages]);
 
   const treeStateKey = fileTreeStateKey(doc?.origin);
   useEffect(() => {
@@ -1300,9 +1306,13 @@ export default function App() {
   const handleDropImages = (files: File[]) => importDroppedImages(files, (file) => file.name, droppedFileToImage);
 
   nativeImportImagesRef.current = addImportedImages;
-  nativeDropRef.current = (paths) => {
+  nativeDropRef.current = (paths, action) => {
     if (paths.length === 0) return;
-    if (doc && (paths.some(isSupportedImageName) || paths.every((path) => /\.(svg|heic|heif|tiff?|avif|ico|pdf)$/i.test(path)))) {
+    if (action === "folder" || action === "package") {
+      void openDocument(paths[0], action);
+      return;
+    }
+    if (action === "images" || (doc && (paths.some(isSupportedImageName) || paths.every((path) => /\.(svg|heic|heif|tiff?|avif|ico|pdf)$/i.test(path))))) {
       void importDroppedImages(paths, (path) => path.split(/[\\/]/).pop() ?? path, readImage);
     } else if (paths.length === 1) {
       void openDocument(paths[0], /\.mdpkg$/i.test(paths[0]) ? "package" : "folder");

@@ -58,13 +58,22 @@ pub fn read_image(path: String) -> Result<ImportedImage, String> {
         .and_then(|value| value.to_str())
         .map(str::to_ascii_lowercase)
         .ok_or("image file must have an extension")?;
-    if !matches!(
-        extension.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
-    ) {
+    if !supported_image_extension(&extension) {
         return Err(format!("unsupported image type: .{extension}"));
     }
     read_imported_file(&source)
+}
+
+pub(crate) fn supported_image_extension(extension: &str) -> bool {
+    matches!(extension, "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp")
+}
+
+#[tauri::command]
+pub fn set_image_drop_enabled(app: tauri::AppHandle, enabled: bool) {
+    #[cfg(windows)]
+    crate::windows_drop::set_images_enabled(&app, enabled);
+    #[cfg(not(windows))]
+    let _ = (app, enabled);
 }
 
 #[tauri::command]

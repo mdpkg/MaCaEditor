@@ -78,7 +78,7 @@ describe("App persistence", () => {
   let root: Root;
   let container: HTMLDivElement;
   let folderChanged: (path: string) => void;
-  let nativeDrop: (paths: string[]) => void;
+  let nativeDrop: (paths: string[], action?: tauri.NativeFileDropAction) => void;
 
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -427,20 +427,20 @@ describe("App persistence", () => {
 
   test("opens native drops with discard confirmation and preserves edits made while reading dropped images", async () => {
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
-    await act(async () => nativeDrop(["original.mdpkg"]));
+    await act(async () => nativeDrop(["original.mdpkg"], "package"));
     await click("編集");
     await edit("Unsaved");
     vi.mocked(tauri.openFolder).mockResolvedValue(documentInfo("Folder"));
-    await act(async () => nativeDrop(["C:/folder"]));
+    await act(async () => nativeDrop(["C:/folder.png"], "folder"));
     await click("キャンセル", container.querySelector(".about-dialog")!);
     expect(container.querySelector("textarea")?.value).toBe("Unsaved");
-    await act(async () => nativeDrop(["C:/folder"]));
+    await act(async () => nativeDrop(["C:/folder.png"], "folder"));
     await click("破棄して続行", container.querySelector(".about-dialog")!);
     expect(container.querySelector(".document-area")?.textContent).toContain("Folder");
     await click("編集");
     let finishRead!: (image: { file_name: string; base64: string }) => void;
     vi.mocked(tauri.readImage).mockImplementation(() => new Promise((resolve) => { finishRead = resolve; }));
-    await act(async () => nativeDrop(["C:/photo.png"]));
+    await act(async () => nativeDrop(["C:/photo.png"], "images"));
     await edit("Latest edit");
     await act(async () => finishRead({ file_name: "photo.png", base64: "aGVsbG8=" }));
     expect(container.querySelector("textarea")?.value).toContain("Latest edit");
@@ -455,7 +455,7 @@ describe("App persistence", () => {
       if (path.endsWith("missing.png")) throw "  File not found (os error 2)\n";
       return { file_name: "good.png", base64: "aGVsbG8=" };
     });
-    await act(async () => nativeDrop(["C:/good.png", "C:/bad.png", "C:/skip.svg", "C:/missing.png"]));
+    await act(async () => nativeDrop(["C:/good.png", "C:/bad.png", "C:/skip.svg", "C:/missing.png"], "images"));
     expect(container.querySelector('[data-path="images/good.png"]')).not.toBeNull();
     expect(container.querySelector('[data-path="images/bad.png"]')).toBeNull();
     const warning = container.querySelector(".notification-banner-warning")!;

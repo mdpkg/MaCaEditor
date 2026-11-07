@@ -10,6 +10,8 @@ pub mod package_validation;
 pub mod package_writer;
 pub mod path_validator;
 mod print_monitor;
+#[cfg(windows)]
+mod windows_drop;
 
 #[cfg(all(test, desktop))]
 mod startup_visibility_tests {
@@ -57,7 +59,9 @@ pub fn run() {
     });
 
     #[cfg(windows)]
-    let builder = builder.manage(print_monitor::PrintMonitor::default());
+    let builder = builder
+        .manage(print_monitor::PrintMonitor::default())
+        .manage(windows_drop::ImageDropState::default());
 
     builder
         .manage(folder_watcher::FolderWatcherState::default())
@@ -69,6 +73,8 @@ pub fn run() {
 
                 if let Some(window) = app.get_webview_window("main") {
                     window.restore_state(window_state_flags())?;
+                    #[cfg(windows)]
+                    windows_drop::install(&window)?;
                 }
             }
             Ok(())
@@ -92,6 +98,7 @@ pub fn run() {
             commands::read_attachment,
             commands::read_image,
             commands::save_attachment,
+            commands::set_image_drop_enabled,
             print_monitor::watch_print,
             folder_watcher::watch_folder,
             folder_watcher::stop_watching_folder,
@@ -106,6 +113,11 @@ pub fn run() {
             commands::ai_edit_diagram,
             commands::cancel_ai_request,
         ])
-        .run(tauri::generate_context!())
+        .run({
+            let context = tauri::generate_context!();
+            #[cfg(windows)]
+            let context = windows_drop::configure(context);
+            context
+        })
         .expect("error while running tauri application");
 }
