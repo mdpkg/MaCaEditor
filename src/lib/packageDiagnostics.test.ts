@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type { DocumentState } from "./document";
 import * as markdownLinks from "./markdownLinks";
-import { diagnosePackage } from "./packageDiagnostics";
+import { diagnosePackage, diagnoseRelatedMarkdown } from "./packageDiagnostics";
 
 function state(overrides: Partial<DocumentState> = {}): DocumentState {
   return {
@@ -17,6 +17,21 @@ function state(overrides: Partial<DocumentState> = {}): DocumentState {
 }
 
 describe("diagnosePackage", () => {
+  test("checks the active Markdown and direct link targets without reading unrelated Markdown", () => {
+    const parse = vi.spyOn(markdownLinks, "markdownLinks");
+    const document = state({ files: [
+      { path: "index.md", is_text: true, content: "[Guide](GUIDE.md)", base64: null },
+      { path: "guide.md", is_text: true, content: "[Next](other.md) [Missing](missing.md)", base64: null },
+      { path: "other.md", is_text: true, content: "[Unrelated](another-missing.md)", base64: null },
+    ] });
+    try {
+      expect(diagnoseRelatedMarkdown(document, "index.md").map((item) => item.target)).toEqual(["GUIDE.md", "missing.md"]);
+      expect(parse.mock.calls.map(([content]) => content)).toEqual(document.files.slice(0, 2).map((file) => file.content));
+      expect(diagnosePackage(document).map((item) => item.target)).toContain("another-missing.md");
+    } finally {
+      parse.mockRestore();
+    }
+  });
   test("reports missing, escaping, and case-mismatched Markdown links", () => {
     const document = state({ files: [
       { path: "index.md", is_text: true, content: [

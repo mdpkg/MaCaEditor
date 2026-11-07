@@ -40,39 +40,65 @@ function parsedLinks(file: FileInfo, content: string) {
   return links;
 }
 
-export function diagnosePackage(state: DocumentState): PackageDiagnostic[] {
-  const diagnostics: PackageDiagnostic[] = [];
-  const exactPaths = new Set(state.files.map((file) => file.path));
-  const foldedPaths = new Map(state.files.map((file) => [file.path.normalize("NFC").toLocaleLowerCase(), file.path]));
-  const referenced = new Set<string>([state.entrypoint]);
+function indexPackageFiles(state: DocumentState) {
+  return {
+    exact: new Map(state.files.map((file) => [file.path, file])),
+    folded: new Map(state.files.map((file) => [file.path.normalize("NFC").toLocaleLowerCase(), file.path])),
+  };
+}
 
-  for (const file of state.files) {
-    if (!file.is_text || file.content === null || !isMarkdownPath(file.path)) continue;
-    const baseDir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
-    for (const link of parsedLinks(file, file.content)) {
-      const targetPath = link.destination.split(/[?#]/, 1)[0];
-      if (!targetPath || link.destination.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(link.destination)) continue;
-      let decoded = targetPath;
-      try { decoded = decodeURIComponent(targetPath); } catch { /* diagnose using the literal path */ }
-      const resolved = resolvePackagePath(baseDir, decoded);
-      if (resolved && exactPaths.has(resolved)) {
-        referenced.add(resolved);
-        continue;
-      }
-      const location = { path: file.path, target: link.destination, offset: link.start, line: lineAt(file.content, link.start) };
-      if (!resolved) {
-        diagnostics.push({ code: "outside-package-link", severity: "error", message: `パッケージの外を参照するリンクです。 ${link.destination}`, ...location });
-        continue;
-      }
-      const caseMatch = foldedPaths.get(resolved.normalize("NFC").toLocaleLowerCase());
-      if (caseMatch) {
-        referenced.add(caseMatch);
-        diagnostics.push({ code: "link-case-mismatch", severity: "warning", message: `リンクの大文字・小文字が異なります。 ${caseMatch}`, ...location });
-      } else {
-        diagnostics.push({ code: "missing-link", severity: "error", message: `リンク先のファイルがありません。 ${link.destination}`, ...location });
-      }
+function diagnoseLinks(
+  file: FileInfo,
+  paths: ReturnType<typeof indexPackageFiles>,
+  diagnostics: PackageDiagnostic[],
+  referenced?: Set<string>,
+): void {
+  if (!file.is_text || file.content === null || !isMarkdownPath(file.path)) return;
+  const baseDir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
+  for (const link of parsedLinks(file, file.content)) {
+    const targetPath = link.destination.split(/[?#]/, 1)[0];
+    if (!targetPath || link.destination.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(link.destination)) continue;
+    let decoded = targetPath;
+    try { decoded = decodeURIComponent(targetPath); } catch { /* diagnose using the literal path */ }
+    const resolved = resolvePackagePath(baseDir, decoded);
+    if (resolved && paths.exact.has(resolved)) {
+      referenced?.add(resolved);
+      continue;
+    }
+    const location = { path: file.path, target: link.destination, offset: link.start, line: lineAt(file.content, link.start) };
+    if (!resolved) {
+      diagnostics.push({ code: "outside-package-link", severity: "error", message: `パッケージの外を参照するリンクです。 ${link.destination}`, ...location });
+      continue;
+    }
+    const caseMatch = paths.folded.get(resolved.normalize("NFC").toLocaleLowerCase());
+    if (caseMatch) {
+      referenced?.add(caseMatch);
+      diagnostics.push({ code: "link-case-mismatch", severity: "warning", message: `リンクの大文字・小文字が異なります。 ${caseMatch}`, ...location });
+    } else {
+      diagnostics.push({ code: "missing-link", severity: "error", message: `リンク先のファイルがありません。 ${link.destination}`, ...location });
     }
   }
+}
+
+export function diagnoseRelatedMarkdown(state: DocumentState, activePath: string): PackageDiagnostic[] {
+  const paths = indexPackageFiles(state);
+  const active = paths.exact.get(activePath);
+  if (!active) return [];
+  const diagnostics: PackageDiagnostic[] = [];
+  const related = new Set<string>();
+  diagnoseLinks(active, paths, diagnostics, related);
+  for (const path of related) {
+    const file = paths.exact.get(path);
+    if (file && file !== active) diagnoseLinks(file, paths, diagnostics);
+  }
+  return diagnostics;
+}
+
+export function diagnosePackage(state: DocumentState): PackageDiagnostic[] {
+  const diagnostics: PackageDiagnostic[] = [];
+  const paths = indexPackageFiles(state);
+  const referenced = new Set<string>([state.entrypoint]);
+  for (const file of state.files) diagnoseLinks(file, paths, diagnostics, referenced);
 
   const resources = Array.isArray(state.manifest.resources) ? state.manifest.resources : [];
   for (const item of resources) {
@@ -85,7 +111,7 @@ export function diagnosePackage(state: DocumentState): PackageDiagnostic[] {
       const target = resource[field];
       if (typeof target !== "string" || !target) {
         diagnostics.push({ code: "invalid-resource", severity: "error", message: `リソースの ${field} がありません。`, path: "manifest.json" });
-      } else if (!exactPaths.has(target)) {
+      } else if (!paths.exact.has(target)) {
         diagnostics.push({ code: "missing-resource", severity: "error", message: `リソースのファイルがありません。 ${target}`, path: "manifest.json", target });
       } else {
         referenced.add(target);

@@ -132,7 +132,7 @@ import {
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
-import { diagnosePackage, type PackageDiagnostic } from "./lib/packageDiagnostics";
+import { diagnosePackage, diagnoseRelatedMarkdown, type PackageDiagnostic } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
 import { inferManifest, type ManifestInference } from "./lib/manifestInference";
 
@@ -236,6 +236,7 @@ export default function App() {
   const [packageDiagnostics, setPackageDiagnostics] = useState<PackageDiagnostic[] | null>(null);
   const [liveDiagnostics, setLiveDiagnostics] = useState<{
     document: DocumentState;
+    wholePackage: boolean;
     diagnostics: PackageDiagnostic[];
   } | null>(null);
   const [backlinksTarget, setBacklinksTarget] = useState<string | null>(null);
@@ -1627,19 +1628,24 @@ export default function App() {
   const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
   const editorScrollTop = displayFile ? editorScrollTopsRef.current.get(displayFile.path) : undefined;
   const editorSession = documentSessionRef.current;
-  const liveDiagnosticsEnabled = mode === "split" && displayIsMarkdown;
+  const liveDiagnosticPath = mode === "split" && displayIsMarkdown ? displayFile?.path : undefined;
   const diagnosticsOpen = packageDiagnostics !== null;
-  const diagnosticsEnabled = liveDiagnosticsEnabled || diagnosticsOpen;
   useEffect(() => {
-    if (!doc || !diagnosticsEnabled) return;
+    if (!doc) return;
+    const diagnose = diagnosticsOpen ? () => diagnosePackage(doc)
+      : liveDiagnosticPath ? () => diagnoseRelatedMarkdown(doc, liveDiagnosticPath) : null;
+    if (!diagnose) return;
     const timer = window.setTimeout(() => setLiveDiagnostics({
       document: doc,
-      diagnostics: diagnosePackage(doc),
+      wholePackage: diagnosticsOpen,
+      diagnostics: diagnose(),
     }), 300);
     return () => window.clearTimeout(timer);
-  }, [doc, diagnosticsEnabled]);
+  }, [doc, diagnosticsOpen, liveDiagnosticPath]);
   useEffect(() => {
-    if (diagnosticsOpen && liveDiagnostics?.document === doc) setPackageDiagnostics(liveDiagnostics.diagnostics);
+    if (diagnosticsOpen && liveDiagnostics?.wholePackage && liveDiagnostics.document === doc) {
+      setPackageDiagnostics(liveDiagnostics.diagnostics);
+    }
   }, [doc, liveDiagnostics, diagnosticsOpen]);
 
   const currentDiagnostics = liveDiagnostics?.document === doc ? liveDiagnostics?.diagnostics : undefined;

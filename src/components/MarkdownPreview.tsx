@@ -25,6 +25,7 @@ import { mathJaxErrorDetail } from "../lib/mathjax/renderer";
 import { remarkGitHubAlerts } from "../lib/remarkGitHubAlerts";
 import { remarkRspressContainers } from "../lib/remarkRspressContainers";
 import { remarkFrontmatterTable } from "../lib/remarkFrontmatterTable";
+import { PreviewParseCache, remarkReusePreviewParse } from "../lib/previewParseCache";
 
 interface Props {
   markdown: string;
@@ -129,6 +130,7 @@ export function MarkdownPreview({
   onScrollRatioChange,
 }: Props) {
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
+  const [parseCache] = useState(() => new PreviewParseCache());
   const [mediaTransform, setMediaTransform] = useState(initialMediaTransform);
   const [draggingMedia, setDraggingMedia] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -403,6 +405,7 @@ export function MarkdownPreview({
     const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
       remarkFrontmatter,
       remarkGfm,
+      [remarkReusePreviewParse, parseCache],
       ...(rspressMode ? [remarkRspressContainers] : []),
       remarkGitHubAlerts,
       [remarkFrontmatterTable, { showToc }],
@@ -410,7 +413,7 @@ export function MarkdownPreview({
     return <ReactMarkdown components={components} remarkPlugins={remarkPlugins} urlTransform={urlTransform}>
       {previewMarkdown}
     </ReactMarkdown>;
-  }, [baseDir, components, previewMarkdown, rspressMode, showToc]);
+  }, [baseDir, components, parseCache, previewMarkdown, rspressMode, showToc]);
 
   return <>
     <div ref={previewRef} className="markdown-preview" onScroll={reportScrollRatio}>
