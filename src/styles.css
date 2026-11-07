@@ -136,6 +136,8 @@ body {
   z-index: 5000;
   display: flex;
   width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
@@ -150,7 +152,22 @@ body {
   color: var(--text);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.24);
   overflow-wrap: anywhere;
+  flex: 0 0 auto;
+  pointer-events: auto;
   animation: notification-slide-in 180ms ease-out both;
+}
+
+.notification-banner button {
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.operation-error details {
+  margin-top: 8px;
+}
+
+.operation-error-detail {
+  white-space: pre-wrap;
 }
 
 .notification-banner-info {
@@ -1259,20 +1276,6 @@ body {
   opacity: 0.7;
 }
 
-.error-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
-  max-width: 480px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  z-index: 100;
-}
-
 .about-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -1630,23 +1633,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-.error-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
-.error-actions button,
-.error-dialog button {
-  padding: 4px 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel);
-  color: var(--text);
-  cursor: pointer;
-}
-
 .status-bar {
   display: flex;
   justify-content: space-between;
@@ -1660,10 +1646,14 @@ body {
   opacity: 0.8;
 }
 
+.status-message,
 .document-origin {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.document-origin {
   opacity: 0.85;
 }
 
@@ -1694,7 +1684,7 @@ body {
   .status-bar,
   .edit-btn,
   .markdown-editor,
-  .error-dialog,
+  .notification-banners,
   .about-dialog-backdrop,
   .preview-media-overlay {
     display: none !important;
