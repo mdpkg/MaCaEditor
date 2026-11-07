@@ -318,8 +318,51 @@ describe("App persistence", () => {
     await drop(); await click("移動", container.querySelector('[role="dialog"]')!);
     await click("編集"); await edit("Later edit");
     await click("元に戻す", container.querySelector(".notification-banner")!);
-    expect(container.querySelector("textarea")?.value).toBe("Later edit");
+    expect(container.querySelector(".document-area")?.textContent).toContain("Later edit");
+    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+  });
+
+  test("undoes and redoes a move from the file menu without reverting subsequent edits", async () => {
+    const info = documentInfo("[Guide](docs/guide.md)");
+    info.files.push({ path: "docs/guide.md", content: "[Home](../index.md)", is_text: true, base64: null });
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "docs/guide.md" } });
+    await act(async () => container.querySelector(".file-tree")!.dispatchEvent(drop));
+    await click("移動", container.querySelector('[role="dialog"]')!);
+
+    await click("編集");
+    await edit("[Guide](guide.md)\n\nEntry edit");
+    await act(async () => container.querySelector<HTMLElement>('[data-path="guide.md"]')!.click());
+    await click("編集");
+    await edit("[Home](index.md)\n\nMoved file edit");
+    await click("ファイル");
+    await click("ファイル操作を元に戻す");
+    expect(container.querySelector('[data-path="guide.md"]')).toBeNull();
+    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    await click("ファイル");
+    await click("保存");
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [
+        expect.objectContaining({ path: "index.md", content: "[Guide](docs/guide.md)\n\nEntry edit" }),
+        expect.objectContaining({ path: "docs/guide.md", content: "[Home](../index.md)\n\nMoved file edit" }),
+      ],
+    }));
+
+    await click("編集");
+    await edit("[Guide](docs/guide.md)\n\nEntry edit\n\nEdit after undo");
+    await click("ファイル");
+    await click("ファイル操作をやり直す");
     expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
+    await click("ファイル");
+    await click("保存");
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [
+        expect.objectContaining({ path: "index.md", content: "[Guide](guide.md)\n\nEntry edit\n\nEdit after undo" }),
+        expect.objectContaining({ path: "guide.md", content: "[Home](index.md)\n\nMoved file edit" }),
+      ],
+    }));
   });
 
   test("keeps diagnostics open, navigates to the source line, and refreshes after editing", async () => {

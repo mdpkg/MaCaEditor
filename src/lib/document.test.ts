@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import type { PackageInfo } from "../types";
 import {
   addDirectory, addMarkdown, createDocumentState, createFolderDocumentState, deletePath,
-  markSaved, movePath, pathReferenceCount, resourceDirectoryForMarkdown, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent, updateManifestMetadata,
+  applyPathMove, markSaved, movePath, pathReferenceCount, planPathMove, resourceDirectoryForMarkdown,
+  reversePathMove, setEntrypoint, toFolderSaveRequest, toSaveRequest, updateFileContent, updateManifestMetadata,
 } from "./document";
 
 const info: PackageInfo = {
@@ -241,6 +242,38 @@ describe("document structure", () => {
       "index.md", "architecture/a.puml", "architecture/a.svg",
     ]);
     expect(moved.files[0].content).toBe("![A](architecture/a.svg)");
+  });
+
+  test("reverses resource paths independently and rejects conflicts without replacing files", () => {
+    const resource = { type: "plantuml", source: "sources/a.puml", rendered: "images/a.svg" };
+    const current = createDocumentState({
+      manifest: { entrypoint: "index.md", resources: [resource] },
+      entrypoint: "index.md",
+      files: [
+        { path: "index.md", is_text: true, content: "![A](images/a.svg)", base64: null },
+        { path: "sources/a.puml", is_text: true, content: "@startuml", base64: null },
+        { path: "images/a.svg", is_text: true, content: "<svg/>", base64: null },
+      ],
+    }, "test.mdpkg");
+    const move = planPathMove(current, resource.source, "archive/a.puml");
+    const moved = applyPathMove(current, move);
+    const edited = updateFileContent(moved, "archive/a.puml", "Updated source");
+    const restored = applyPathMove(edited, reversePathMove(move));
+    expect(restored.manifest.resources).toEqual([resource]);
+    expect(restored.files.map(({ path, content }) => [path, content])).toEqual([
+      ["index.md", "![A](images/a.svg)"],
+      ["sources/a.puml", "Updated source"],
+      ["images/a.svg", "<svg/>"],
+    ]);
+
+    const blocked = {
+      ...edited,
+      files: [...edited.files, { path: resource.rendered, content: "New file", is_text: true, base64: null }],
+    };
+    expect(() => applyPathMove(blocked, reversePathMove(move))).toThrow("Path already exists: images/a.svg");
+    expect(blocked.files.map(({ path }) => path)).toEqual([
+      "index.md", "archive/a.puml", "archive/a.svg", "images/a.svg",
+    ]);
   });
 
   test("deletes both files when one member of a resource pair is deleted", () => {

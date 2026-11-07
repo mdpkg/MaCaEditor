@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { sanitizeHtml } from "../lib/sanitize";
 import { CodeEditor } from "./CodeEditor";
 import { SvgPreviewOverlay } from "./SvgPreviewOverlay";
+import { DiagramRenderError } from "./DiagramRenderError";
 
 interface Props {
   source: string;
@@ -54,8 +55,8 @@ export function MathJaxEditor({
         vimMode={vimMode} onSave={onSave} ariaLabel="MathJax source" />
     </div>
     <div className="mathjax-preview-pane">
-      <div className="diagram-pane-title">{uiText("Preview")}{rendering ? " — Rendering…" : ""}</div>
-      {error && <div className="diagram-render-error" role="alert">{error}</div>}
+      <div className="diagram-pane-title">{uiText("Preview")}{rendering && ` — ${uiText("Rendering…")}`}</div>
+      {error && <DiagramRenderError detail={error} />}
       {!error && svg && <div className="mathjax-preview" role="button" tabIndex={0}
         title={uiText("Click to enlarge")} onClick={() => setPreviewOpen(true)}
         onKeyDown={(event) => {

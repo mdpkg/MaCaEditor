@@ -162,12 +162,15 @@ function rewriteMarkdownLinksForMove(
   });
 }
 
-export function movePath(state: DocumentState, requestedFrom: string, requestedTo: string): DocumentState {
+export interface PathMove {
+  from: string;
+  to: string;
+  pairedMoves: ReadonlyMap<string, string>;
+}
+
+export function planPathMove(state: DocumentState, requestedFrom: string, requestedTo: string): PathMove {
   const from = validateNewPackagePath(requestedFrom);
   const to = validateNewPackagePath(requestedTo);
-  if (to === from || to.startsWith(`${from}/`)) throw new Error("A path cannot be moved into itself");
-  if (pathExists(state, to)) throw new Error(`Path already exists: ${to}`);
-  assertNoFileAncestor(state, to);
   const pairedMoves = new Map<string, string>();
   const resourcesList = Array.isArray(state.manifest.resources) ? state.manifest.resources : [];
   for (const item of resourcesList) {
@@ -180,16 +183,33 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
     const partnerName = partner.slice(partner.lastIndexOf("/") + 1);
     pairedMoves.set(partner, destinationDirectory ? `${destinationDirectory}/${partnerName}` : partnerName);
   }
+  return { from, to, pairedMoves };
+}
+
+export function reversePathMove({ from, to, pairedMoves }: PathMove): PathMove {
+  return { from: to, to: from, pairedMoves: new Map([...pairedMoves].map(([source, destination]) => [destination, source])) };
+}
+
+export function applyPathMove(state: DocumentState, { from, to, pairedMoves }: PathMove): DocumentState {
+  if (to === from || to.startsWith(`${from}/`)) throw new Error("A path cannot be moved into itself");
+  if (pathExists(state, to)) throw new Error(`Path already exists: ${to}`);
+  assertNoFileAncestor(state, to);
   const movedPath = (path: string) => pairedMoves.get(path) ?? replacePathPrefix(path, from, to);
   const affectedFiles = state.files.filter((file) =>
     file.path === from || file.path.startsWith(`${from}/`) || pairedMoves.has(file.path));
   const currentDirectories = state.directories ?? inferDirectories(state.files.map((file) => file.path));
   const affectedDirectories = currentDirectories.filter((directory) => directory === from || directory.startsWith(`${from}/`));
   if (affectedFiles.length === 0 && affectedDirectories.length === 0) throw new Error(`Path not found: ${from}`);
-  const unaffected = new Set(state.files.filter((file) => !affectedFiles.includes(file)).map((file) => file.path.toLowerCase()));
+  const occupied = new Set([
+    ...state.files.filter((file) => !affectedFiles.includes(file)).map((file) => file.path.toLowerCase()),
+    ...currentDirectories.filter((directory) => !affectedDirectories.includes(directory)).map((directory) => directory.toLowerCase()),
+  ]);
   for (const file of affectedFiles) {
-    const next = movedPath(file.path).toLowerCase();
-    if (unaffected.has(next)) throw new Error(`Path already exists: ${next}`);
+    const next = movedPath(file.path);
+    assertNoFileAncestor(state, next);
+    const key = next.toLowerCase();
+    if (occupied.has(key)) throw new Error(`Path already exists: ${next}`);
+    occupied.add(key);
   }
   const entrypoint = movedPath(state.entrypoint);
   const resources = Array.isArray(state.manifest.resources)
@@ -217,6 +237,10 @@ export function movePath(state: DocumentState, requestedFrom: string, requestedT
     directories: [...new Set([...inferDirectories(files.map((file) => file.path)), ...transientDirectories])].sort(),
     manifest: { ...state.manifest, entrypoint, resources },
   };
+}
+
+export function movePath(state: DocumentState, from: string, to: string): DocumentState {
+  return applyPathMove(state, planPathMove(state, from, to));
 }
 
 export function deletePath(state: DocumentState, requestedPath: string): DocumentState {

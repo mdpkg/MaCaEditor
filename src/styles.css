@@ -506,7 +506,6 @@ body {
   max-height: 75vh;
 }
 
-.plantuml-error,
 .diagram-render-error {
   margin: 12px;
   padding: 10px;
@@ -514,6 +513,7 @@ body {
   border-radius: 4px;
   color: #c33;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .code-editor {
