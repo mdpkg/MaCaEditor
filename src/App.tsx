@@ -1284,6 +1284,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
       if (isPackageSearchShortcut(event) && doc) {
         event.preventDefault();
         setPackageSearchOpen(true);

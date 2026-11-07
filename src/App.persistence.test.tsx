@@ -100,6 +100,32 @@ describe("App persistence", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, cancelable: true }));
   }
 
+  test("opens package search only for an unhandled shifted shortcut and returns focus on Escape", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
+    await click("File");
+    await click("Open");
+    await click("Edit");
+    const editor = container.querySelector("textarea")!;
+    editor.focus();
+    const press = (shiftKey: boolean, handled = false) => act(() => {
+      const event = new KeyboardEvent("keydown", {
+        key: shiftKey ? "F" : "f", shiftKey, ctrlKey: true, bubbles: true, cancelable: true,
+      });
+      if (handled) event.preventDefault();
+      editor.dispatchEvent(event);
+    });
+    press(false);
+    press(true, true);
+    expect(container.querySelector(".package-search-dialog")).toBeNull();
+    press(true);
+    const search = container.querySelector<HTMLInputElement>('.package-search-dialog input[type="search"]')!;
+    expect(document.activeElement).toBe(search);
+    act(() => search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect(container.querySelector(".package-search-dialog")).toBeNull();
+    expect(document.activeElement).toBe(editor);
+  });
+
   test.each(["Save", "Save As"])("%s keeps edits made while writing and blocks duplicate saves", async (command) => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(save).mockResolvedValue("copy.mdpkg");

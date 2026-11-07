@@ -1,3 +1,4 @@
+import { Dialog } from "./Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { AiConfig } from "../types";
 import {
@@ -30,15 +31,6 @@ export function AiSettingsDialog({ onClose }: Props) {
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
 
   useEffect(() => {
     loadAiConfig()
@@ -90,138 +82,129 @@ export function AiSettingsDialog({ onClose }: Props) {
   };
 
   return (
-    <div className="about-dialog-backdrop" onPointerDown={onClose}>
-      <section
-        className="about-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="AI Settings"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2>AI Settings</h2>
-        <label>
-          Provider
-          <select
-            value={config.provider}
-            onChange={(event) =>
-              update({ provider: event.target.value as AiConfig["provider"] })
-            }
-          >
-            <option value="OpenAiCompatible">OpenAI Compatible</option>
-          </select>
-        </label>
-        <label>
-          Base URL
+    <Dialog onClose={onClose} title="AI Settings" initialFocus={closeButtonRef}>
+      <label>
+        Provider
+        <select
+          value={config.provider}
+          onChange={(event) =>
+            update({ provider: event.target.value as AiConfig["provider"] })
+          }
+        >
+          <option value="OpenAiCompatible">OpenAI Compatible</option>
+        </select>
+      </label>
+      <label>
+        Base URL
+        <input
+          type="text"
+          value={config.base_url}
+          onChange={(event) => update({ base_url: event.target.value })}
+        />
+      </label>
+      <label>
+        API Key
+        <div className="ai-field-row">
           <input
-            type="text"
-            value={config.base_url}
-            onChange={(event) => update({ base_url: event.target.value })}
+            type={showKey ? "text" : "password"}
+            value={config.api_key ?? ""}
+            onChange={(event) => update({ api_key: event.target.value })}
           />
-        </label>
-        <label>
-          API Key
-          <div className="ai-field-row">
-            <input
-              type={showKey ? "text" : "password"}
-              value={config.api_key ?? ""}
-              onChange={(event) => update({ api_key: event.target.value })}
-            />
-            <button type="button" onClick={() => setShowKey((v) => !v)}>
-              {showKey ? "Hide" : "Show"}
-            </button>
-          </div>
-        </label>
-        <label>
-          Model
-          <input
-            type="text"
-            list="ai-model-list"
-            value={config.model}
-            onChange={(event) => update({ model: event.target.value })}
-          />
-          <datalist id="ai-model-list">
-            {models.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-        </label>
-        <label>
-          Temperature
-          <input
-            type="number"
-            step="0.1"
-            value={config.temperature ?? ""}
-            onChange={(event) =>
-              update({ temperature: Number(event.target.value) })
-            }
-          />
-        </label>
-        <label>
-          Max Output Tokens
-          <input
-            type="number"
-            value={config.max_output_tokens ?? ""}
-            onChange={(event) =>
-              update({ max_output_tokens: Number(event.target.value) })
-            }
-          />
-        </label>
-        <label>
-          Connection Timeout (seconds)
-          <input
-            type="number"
-            min={1}
-            max={3600}
-            value={config.connect_timeout_seconds ?? ""}
-            onChange={(event) =>
-              update({ connect_timeout_seconds: Number(event.target.value) })
-            }
-          />
-        </label>
-        <label>
-          Request Timeout (seconds)
-          <input
-            type="number"
-            min={1}
-            max={3600}
-            value={config.request_timeout_seconds ?? ""}
-            onChange={(event) =>
-              update({ request_timeout_seconds: Number(event.target.value) })
-            }
-          />
-        </label>
-        <div className="about-dialog-actions">
-          <button type="button" onClick={handleRefreshModels} disabled={busy}>
-            Refresh Models
-          </button>
-          <button type="button" onClick={handleTestConnection} disabled={busy}>
-            Test Connection
-          </button>
-          <button type="button" onClick={handleSave}>
-            Save
-          </button>
-          <button ref={closeButtonRef} type="button" onClick={onClose}>
-            Close
+          <button type="button" onClick={() => setShowKey((v) => !v)}>
+            {showKey ? "Hide" : "Show"}
           </button>
         </div>
-        {status === "saved" && <p>Saved.</p>}
-        {status === "error" && <p>Failed to save.</p>}
-        {status === "models-loaded" && <p>Models loaded.</p>}
-        {status === "models-error" && <p>Failed to load models.</p>}
-        {status === "testing" && (
-          <p className="ai-status ai-status-testing">
-            <span className="ai-spinner" aria-hidden="true" />
-            Connecting…
-          </p>
-        )}
-        {status === "connected" && <p className="ai-status ai-status-ok">Connection OK.</p>}
-        {status === "connection-error" && (
-          <p className="ai-status ai-status-error">
-            Connection failed.
-            {errorDetail && <span className="ai-status-detail">{errorDetail}</span>}
-          </p>
-        )}
-      </section>
-    </div>
+      </label>
+      <label>
+        Model
+        <input
+          type="text"
+          list="ai-model-list"
+          value={config.model}
+          onChange={(event) => update({ model: event.target.value })}
+        />
+        <datalist id="ai-model-list">
+          {models.map((model) => (
+            <option key={model} value={model} />
+          ))}
+        </datalist>
+      </label>
+      <label>
+        Temperature
+        <input
+          type="number"
+          step="0.1"
+          value={config.temperature ?? ""}
+          onChange={(event) =>
+            update({ temperature: Number(event.target.value) })
+          }
+        />
+      </label>
+      <label>
+        Max Output Tokens
+        <input
+          type="number"
+          value={config.max_output_tokens ?? ""}
+          onChange={(event) =>
+            update({ max_output_tokens: Number(event.target.value) })
+          }
+        />
+      </label>
+      <label>
+        Connection Timeout (seconds)
+        <input
+          type="number"
+          min={1}
+          max={3600}
+          value={config.connect_timeout_seconds ?? ""}
+          onChange={(event) =>
+            update({ connect_timeout_seconds: Number(event.target.value) })
+          }
+        />
+      </label>
+      <label>
+        Request Timeout (seconds)
+        <input
+          type="number"
+          min={1}
+          max={3600}
+          value={config.request_timeout_seconds ?? ""}
+          onChange={(event) =>
+            update({ request_timeout_seconds: Number(event.target.value) })
+          }
+        />
+      </label>
+      <div className="about-dialog-actions">
+        <button type="button" onClick={handleRefreshModels} disabled={busy}>
+          Refresh Models
+        </button>
+        <button type="button" onClick={handleTestConnection} disabled={busy}>
+          Test Connection
+        </button>
+        <button type="button" onClick={handleSave}>
+          Save
+        </button>
+        <button ref={closeButtonRef} type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {status === "saved" && <p>Saved.</p>}
+      {status === "error" && <p>Failed to save.</p>}
+      {status === "models-loaded" && <p>Models loaded.</p>}
+      {status === "models-error" && <p>Failed to load models.</p>}
+      {status === "testing" && (
+        <p className="ai-status ai-status-testing">
+          <span className="ai-spinner" aria-hidden="true" />
+          Connecting…
+        </p>
+      )}
+      {status === "connected" && <p className="ai-status ai-status-ok">Connection OK.</p>}
+      {status === "connection-error" && (
+        <p className="ai-status ai-status-error">
+          Connection failed.
+          {errorDetail && <span className="ai-status-detail">{errorDetail}</span>}
+        </p>
+      )}
+    </Dialog>
   );
 }

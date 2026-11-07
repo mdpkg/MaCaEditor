@@ -217,7 +217,7 @@ describe("editor context menu", () => {
     expect(styles).toContain(".editor-context-menu button");
     expect(styles).toContain(".editor-context-menu-divider");
     expect(styles).toContain(".editor-context-menu-submenu");
-    expect(styles).toContain(".editor-context-menu-submenu:hover .editor-context-menu-submenu-items");
+    expect(styles).toContain(".editor-context-menu-submenu > button::after");
   });
 });
 

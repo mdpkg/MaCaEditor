@@ -463,24 +463,38 @@ describe("MarkdownPreview", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    act(() => root.render(
+    const files = [{ path: "images/photo.png", is_text: false, content: null, base64: "AAAA" }];
+    const render = () => root.render(
       <MarkdownPreview
         markdown="![photo](images/photo.png)"
         baseDir=""
-        files={[{
-          path: "images/photo.png", is_text: false, content: null, base64: "AAAA",
-        }]}
+        files={files}
+        onEditTable={() => {}}
       />,
-    ));
+    );
+    act(render);
 
-    act(() => (container.querySelector(".markdown-preview img") as HTMLImageElement).click());
+    const image = container.querySelector(".markdown-preview img") as HTMLImageElement;
+    image.focus();
+    act(() => image.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
     const dialog = document.body.querySelector('[role="dialog"]');
+    const close = dialog?.querySelector(".preview-media-close");
+    expect(document.activeElement).toBe(close);
+    for (const shiftKey of [false, true]) {
+      const tab = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+      act(() => close?.dispatchEvent(tab));
+      expect(tab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(close);
+    }
     expect(dialog).not.toBeNull();
     expect(container.querySelector(".preview-diagram-edit")).toBeNull();
     expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
 
+    act(render);
+    expect(container.querySelector(".markdown-preview img")).toBe(image);
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(image);
     act(() => root.unmount());
   });
 
