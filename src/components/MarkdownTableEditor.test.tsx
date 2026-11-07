@@ -29,10 +29,10 @@ describe("MarkdownTableEditor", () => {
     click("2 列目に列を挿入");
     expect(onDone).not.toHaveBeenCalled();
     expect(current()).toEqual({ headers: ["A", "列 3", "B"], aligns: ["left", "left", "right"], rows: [["1", "", "2"], ["3", "", "4"]] });
-    expect(document.activeElement?.getAttribute("aria-label")).toBe("Header column 2");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("2 列目の見出し");
     click("2 行目に行を挿入");
     expect(current().rows).toEqual([["1", "", "2"], ["", "", ""], ["3", "", "4"]]);
-    expect(document.activeElement?.getAttribute("aria-label")).toBe("Row 2, column 1");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("2 行目、1 列目");
     act(() => container.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true })));
     expect(current().rows).toHaveLength(2);
     act(() => (container.querySelector(".markdown-table-toolbar button") as HTMLButtonElement).click());
@@ -48,7 +48,7 @@ describe("MarkdownTableEditor", () => {
     act(() => root.unmount());
   });
 
-  test.each(["Header column 2", "Row 1, column 2"])("pastes Markdown at %s with alignment and restores it in one undo", (label) => {
+  test.each(["2 列目の見出し", "1 行目、2 列目"])("pastes Markdown at %s with alignment and restores it in one undo", (label) => {
     const container = document.createElement("div");
     const root = createRoot(container);
     const onDone = vi.fn();
@@ -65,7 +65,7 @@ describe("MarkdownTableEditor", () => {
     finish(container);
     const table = parseMarkdownTable(onDone.mock.lastCall![0]);
     expect(table.aligns).toEqual(["left", "center", "right"]);
-    if (label.startsWith("Header")) {
+    if (label.endsWith("見出し")) {
       expect(table.headers).toEqual(["A", "X", "Y"]);
       expect(table.rows).toEqual([["1", "x|y", "z\nq"]]);
     } else {
@@ -94,7 +94,7 @@ describe("MarkdownTableEditor", () => {
       />,
     ));
 
-    const firstCell = container.querySelector('textarea[aria-label="Row 1, column 1"]') as HTMLTextAreaElement;
+    const firstCell = container.querySelector('textarea[aria-label="1 行目、1 列目"]') as HTMLTextAreaElement;
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(firstCell, "updated");
       firstCell.dispatchEvent(new Event("input", { bubbles: true }));
@@ -107,7 +107,7 @@ describe("MarkdownTableEditor", () => {
     finish(container);
     expect(onDone).toHaveBeenLastCalledWith(expect.stringContaining("|  |  |"));
 
-    const center = container.querySelector('button[aria-label="列 1 を中央寄せ"]') as HTMLButtonElement;
+    const center = container.querySelector('button[aria-label="1 列目を中央寄せ"]') as HTMLButtonElement;
     act(() => center.click());
     finish(container);
     expect(onDone).toHaveBeenLastCalledWith(expect.stringContaining("| :---: | --- |"));

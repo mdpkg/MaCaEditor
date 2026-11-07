@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export type NotificationTone = "info" | "success" | "error";
@@ -33,9 +34,8 @@ function NotificationBanner({ notice, onDismiss }: { notice: BannerNotice; onDis
     <div className={`notification-banner notification-banner-${tone}`}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <div role={tone === "error" ? "alert" : "status"}>{message}</div>
-      <button type="button" aria-label={`Dismiss notification: ${message}`} onClick={() => onDismiss(id)}>
-        Dismiss
-      </button>
+      <button type="button" aria-label={`${message} の通知を閉じる`} onClick={() => onDismiss(id)}>
+        {uiText("Dismiss")}</button>
     </div>
   );
 }
@@ -43,7 +43,7 @@ function NotificationBanner({ notice, onDismiss }: { notice: BannerNotice; onDis
 export function NotificationBanners({ notices, onDismiss, children }: Props) {
   if (notices.length === 0 && !children) return null;
   return (
-    <div className="notification-banners" role="region" aria-label="通知">
+    <div className="notification-banners" role="region" aria-label={uiText("Notifications")}>
       {children}
       {[...notices].reverse().map((notice) => (
         <NotificationBanner key={notice.id} notice={notice} onDismiss={onDismiss} />

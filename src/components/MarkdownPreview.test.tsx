@@ -246,11 +246,11 @@ describe("MarkdownPreview", () => {
   });
 
   test.each([
-    ["NOTE", "Note"],
-    ["TIP", "Tip"],
-    ["IMPORTANT", "Important"],
-    ["WARNING", "Warning"],
-    ["CAUTION", "Caution"],
+    ["NOTE", "補足"],
+    ["TIP", "ヒント"],
+    ["IMPORTANT", "重要"],
+    ["WARNING", "警告"],
+    ["CAUTION", "注意"],
   ])("renders the GitHub Flavored Markdown %s alert", (kind, title) => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -285,13 +285,13 @@ describe("MarkdownPreview", () => {
   });
 
   test.each([
-    ["note", "Note"],
-    ["tip", "Tip"],
-    ["important", "Important"],
-    ["info", "Info"],
-    ["warning", "Warning"],
-    ["danger", "Danger"],
-    ["caution", "Caution"],
+    ["note", "補足"],
+    ["tip", "ヒント"],
+    ["important", "重要"],
+    ["info", "情報"],
+    ["warning", "警告"],
+    ["danger", "危険"],
+    ["caution", "注意"],
   ])("renders an Rspress %s container when Rspress mode is enabled", (kind, title) => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -697,7 +697,7 @@ describe("MarkdownPreview", () => {
     ));
 
     const editButton = container.querySelector(".preview-diagram-edit") as HTMLButtonElement;
-    expect(editButton.textContent).toBe("Edit");
+    expect(editButton.textContent).toBe("編集");
     act(() => editButton.click());
     expect(onEditDrawing).toHaveBeenCalledWith("diagrams/example.draw.json");
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();

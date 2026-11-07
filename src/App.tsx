@@ -1,3 +1,7 @@
+import { uiText } from "./lib/uiText";
+import { useActionDialog } from "./components/ActionDialog";
+import { Dialog } from "./components/Dialog";
+import { loadRecentDocuments, saveRecentDocuments, type RecentDocument } from "./lib/recentDocuments";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { FileTree } from "./components/FileTree";
@@ -42,6 +46,7 @@ import {
   toSaveRequest,
   updateFileContent,
   updateManifestMetadata,
+  validateNewPackagePath,
 } from "./lib/document";
 import {
   createNewPackage,
@@ -57,6 +62,8 @@ import {
   watchFolder,
   stopWatchingFolder,
   onFolderChanged,
+  onNativeFileDrop,
+  updateWindowTitle,
 } from "./lib/tauri";
 import type { DrawingDocument } from "@maca/drawing-core";
 import {
@@ -165,9 +172,18 @@ export default function App() {
   const [doc, setDocumentState] = useState<DocumentState | null>(null);
   const [fileTask, setFileTask] = useState<string | null>(null);
   const [folderConflict, setFolderConflictState] = useState(false);
+  const { ask, dialog: actionDialog } = useActionDialog();
+  const [recentDocuments, setRecentDocuments] = useState(loadRecentDocuments);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [treeCollapsed, setTreeCollapsed] = useState(new Set<string>());
+  const treeStatesRef = useRef(new Map<string, Set<string>>());
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const nativeDropRef = useRef<(paths: string[]) => void>(() => {});
+  const nativeImportImagesRef = useRef<(images: ImportedImage[]) => void>(() => {});
+  const openSequenceRef = useRef(0);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("preview");
-  const [status, setStatus] = useState("Ready");
+  const [status, setStatus] = useState(uiText("Ready"));
   const [error, setError] = useState<{ operation: string; summary: string; detail: string } | null>(null);
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
@@ -229,6 +245,10 @@ export default function App() {
   };
 
   const replaceDocument = (next: DocumentState) => {
+    const oldOrigin = documentRef.current?.origin;
+    if (oldOrigin && oldOrigin.kind !== "untitled") treeStatesRef.current.set(oldOrigin.path, treeCollapsed);
+    setTreeCollapsed(next.origin.kind === "untitled" ? new Set() : treeStatesRef.current.get(next.origin.path) ?? new Set());
+    setSelectedFolder(null);
     documentSessionRef.current += 1;
     editorCursorsRef.current.clear();
     editorScrollTopsRef.current.clear();
@@ -241,7 +261,40 @@ export default function App() {
     setFolderConflict(false);
     setError(null);
     setDoc(next);
+
   };
+
+  useEffect(() => { saveRecentDocuments(recentDocuments); }, [recentDocuments]);
+  const originKind = doc?.origin.kind;
+  const originPath = doc?.origin.kind === "untitled" ? undefined : doc?.origin.path;
+  useEffect(() => {
+    if (!originPath || (originKind !== "package" && originKind !== "folder")) return;
+    const recent: RecentDocument = { path: originPath, kind: originKind };
+    setRecentDocuments((current) => [recent, ...current.filter((item) => item.path !== recent.path || item.kind !== recent.kind)].slice(0, 8));
+  }, [originKind, originPath]);
+  const documentName = doc?.path?.split(/[\\/]/).pop() || uiText("Untitled");
+  const windowTitle = doc ? `${doc.dirty ? "*" : ""}${documentName} — MaCa Editor` : "MaCa Editor";
+  useEffect(() => { void updateWindowTitle(windowTitle).catch(() => {}); }, [windowTitle]);
+
+  useEffect(() => {
+    let active = true;
+    let dispose: (() => void) | undefined;
+    void onNativeFileDrop((paths) => nativeDropRef.current(paths)).then((unlisten) => {
+      if (active) dispose = unlisten;
+      else unlisten();
+    });
+    return () => { active = false; dispose?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    setTreeCollapsed((current) => {
+      const parents = selectedPath.split("/").slice(0, -1);
+      const next = new Set(current);
+      for (let index = 1; index <= parents.length; index++) next.delete(parents.slice(0, index).join("/"));
+      return next;
+    });
+  }, [selectedPath]);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
@@ -259,9 +312,10 @@ export default function App() {
     if (!entry) return;
     operationRedoRef.current.push({ state: doc, label: entry.label });
     setDoc(entry.state);
+    setSelectedFolder(null);
     setSelectedPath(entry.state.entrypoint);
     setMode("preview");
-    setStatus(`Undid ${entry.label}`);
+    setStatus(`${entry.label}を元に戻しました`);
     setOperationHistoryRevision((revision) => revision + 1);
   };
   const redoFileOperation = () => {
@@ -272,7 +326,7 @@ export default function App() {
     setDoc(entry.state);
     setSelectedPath(entry.state.entrypoint);
     setMode("preview");
-    setStatus(`Redid ${entry.label}`);
+    setStatus(`${entry.label}をやり直しました`);
     setOperationHistoryRevision((revision) => revision + 1);
   };
 
@@ -314,14 +368,37 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [doc?.dirty]);
 
-  const confirmReplaceDirtyDocument = (message = "Discard unsaved changes?") =>
-    !documentRef.current?.dirty || window.confirm(message);
+  const confirmReplaceDirtyDocument = async (message = uiText("Discard unsaved changes before opening another document?")) => {
+    const current = documentRef.current;
+    if (!current?.dirty) return true;
+    const response = await ask({ title: uiText("Unsaved changes"), message, confirmLabel: uiText("Discard and continue") });
+    return response !== null && documentRef.current === current;
+  };
+
+  const newPathError = (value: string, source?: string): string | null => {
+    try {
+      const path = validateNewPackagePath(value);
+      if (path === source) return null;
+      const current = documentRef.current;
+      if (current?.files.some((file) => file.path.toLocaleLowerCase() === path.toLocaleLowerCase()) ||
+          current?.directories?.some((directory) => directory.toLocaleLowerCase() === path.toLocaleLowerCase())) return uiText("This path already exists.");
+      if (current?.files.some((file) => path.toLocaleLowerCase().startsWith(file.path.toLocaleLowerCase() + "/"))) return uiText("A parent path is a file.");
+      return null;
+    } catch { return "有効なパッケージ内の相対パスを入力してください。"; }
+  };
+
+  const nameError = (value: string) => {
+    if (!value.trim() || /[\\/]/.test(value)) return uiText("Enter a name without path separators.");
+    try { validateNewPackagePath(value); return null; } catch { return "ファイル名に使用できない文字が含まれています。"; }
+  };
 
   const reportError = (operation: string, reason: unknown) => {
-    const detail = (reason instanceof Error ? reason.message : String(reason)).trim() || "Unknown error";
+    const detail = (reason instanceof Error ? reason.message : String(reason)).trim() || uiText("Unknown error");
     const firstLine = detail.split(/\r?\n/, 1)[0];
     const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
-    const summary = `${operation} failed: ${shortReason}`;
+    const translated = uiText(shortReason);
+    const reasonText = /[ぁ-んァ-ヶ一-龠]/.test(translated) ? translated : "詳しくは詳細欄を確認してください。";
+    const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
     setError({ operation, summary, detail });
     setStatus(summary);
   };
@@ -387,13 +464,13 @@ export default function App() {
               ? selected
               : reloaded.entrypoint,
           );
-          setStatus(`Reloaded external changes from ${folderPath}`);
-          showNotification("外部エディタによる変更を反映しました", "info");
+          setStatus(`${folderPath} の外部変更を反映しました`);
+          showNotification("Reloaded changes from the external editor.", "info");
         }
       } catch (e) {
         if (active && session === documentSessionRef.current && lastError !== String(e)) {
           lastError = String(e);
-          showNotification(`フォルダの再読込に失敗しました: ${String(e)}`, "error");
+          showNotification(`フォルダを再読込できませんでした。${String(e)}`, "error");
         }
       } finally {
         checking = false;
@@ -410,7 +487,7 @@ export default function App() {
       unlisten = dispose;
       return watchFolder(folderPath);
     }).catch((e) => {
-      if (active) showNotification(`フォルダ監視を開始できませんでした: ${String(e)}`, "error");
+      if (active) showNotification(`フォルダの監視を開始できませんでした。${String(e)}`, "error");
     });
 
     return () => {
@@ -445,41 +522,19 @@ export default function App() {
     }
   }, [doc, selectedPath]);
 
-  const handleOpen = async () => {
-    if (!confirmReplaceDirtyDocument()) return;
-    const result = await openDialog({
-      filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
-    });
-    if (typeof result === "string") {
-      try {
-        const info = await openPackage(result);
-        replaceDocument(createDocumentState(info, result));
-        setSelectedPath(info.entrypoint);
-        setMode("preview");
-        setDrawingDoc(null);
-        setDrawingPath(null);
-        setPlantUmlPath(null);
-        setMermaidPath(null);
-        setStatus(`Opened ${result}`);
-      } catch (e) {
-        reportError("Open package", e);
-      }
-    }
-  };
-
-  const handleOpenFolder = async () => {
-    if (!confirmReplaceDirtyDocument()) return;
-    const result = await openDialog({ directory: true });
-    if (typeof result !== "string") return;
+  const openDocument = async (path: string, kind: RecentDocument["kind"]) => {
+    const sequence = ++openSequenceRef.current;
     try {
-      const info = await openFolder(result);
-      if (info.manifest_generated) {
-        setPendingInferredFolder({ path: result, info, inference: inferManifest(info.files) });
-        clearError("Open folder");
-        setStatus("Review generated manifest");
+      const info = await (kind === "package" ? openPackage(path) : openFolder(path));
+      if (sequence !== openSequenceRef.current || !await confirmReplaceDirtyDocument()) return;
+      if (sequence !== openSequenceRef.current) return;
+      if (kind === "folder" && info.manifest_generated) {
+        setPendingInferredFolder({ path, info, inference: inferManifest(info.files) });
+        clearError(uiText("Open folder"));
+        setStatus(uiText("Review generated manifest"));
         return;
       }
-      replaceDocument(createFolderDocumentState(info, result));
+      replaceDocument(kind === "folder" ? createFolderDocumentState(info, path) : createDocumentState(info, path));
       setSelectedPath(info.entrypoint);
       setMode("preview");
       setDrawingDoc(null);
@@ -487,23 +542,36 @@ export default function App() {
       setPlantUmlPath(null);
       setMermaidPath(null);
       setMathJaxPath(null);
-      setStatus(`Opened folder ${result}`);
-    } catch (e) {
-      reportError("Open folder", e);
-    }
+      setStatus(`${path} を開きました`);
+    } catch (reason) { reportError(kind === "folder" ? uiText("Open folder") : uiText("Open package"), reason); }
+  };
+
+  const handleOpen = async () => {
+    const path = await openDialog({ filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }] });
+    if (typeof path === "string") await openDocument(path, "package");
+  };
+
+  const handleOpenFolder = async () => {
+    const path = await openDialog({ directory: true });
+    if (typeof path === "string") await openDocument(path, "folder");
   };
 
   const handleStartWithEmptyFolder = async () => {
-    if (!confirmReplaceDirtyDocument()) return;
+    if (!await confirmReplaceDirtyDocument()) return;
+    const approvedDocument = documentRef.current;
     const parent = await openDialog({ directory: true });
     if (typeof parent !== "string") return;
-    const requestedName = window.prompt("New folder name", "untitled");
+    const requestedName = await ask({
+      title: uiText("Create folder"), label: uiText("Folder name"), initialValue: "untitled", confirmLabel: uiText("Create"),
+      validate: nameError,
+    });
     if (requestedName === null) return;
     const name = requestedName.trim();
     if (!name) return;
     const path = `${parent.replace(/[\\/]+$/, "")}/${name}`;
     try {
       const info = await createEmptyFolder(path);
+      if (documentRef.current !== approvedDocument && !await confirmReplaceDirtyDocument()) return;
       replaceDocument(createFolderDocumentState(info, path));
       setSelectedPath(info.entrypoint);
       setMode("split");
@@ -512,9 +580,9 @@ export default function App() {
       setPlantUmlPath(null);
       setMermaidPath(null);
       setMathJaxPath(null);
-      setStatus(`Created folder ${path}`);
+      setStatus(`${path} を作成しました`);
     } catch (e) {
-      reportError("Create folder", e);
+      reportError(uiText("Create folder"), e);
     }
   };
 
@@ -548,13 +616,13 @@ export default function App() {
     for (const entry of [...operationUndoRef.current, ...operationRedoRef.current]) {
       entry.state = applySavedBaseline(entry.state, saved);
     }
-    clearError("Save");
-    setStatus(`Saved ${saved.path}`);
+    clearError(uiText("Save"));
+    setStatus(`${saved.path} を保存しました`);
   };
 
-  const performSaveAs = () => runFileTask("Save", "Saving…", async (snapshot, isCurrentSession) => {
+  const performSaveAs = () => runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
     const result = await saveDialog({
-      filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
+      filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
     });
     if (typeof result !== "string" || !isCurrentSession()) return;
@@ -573,7 +641,7 @@ export default function App() {
       await performSaveAs();
       return;
     }
-    await runFileTask("Save", "Saving…", async (snapshot, isCurrentSession) => {
+    await runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
       const saved = await saveDocument(snapshot);
       if (isCurrentSession()) finishSave(snapshot, saved);
     });
@@ -588,14 +656,14 @@ export default function App() {
     await performSave();
   };
 
-  const handleReloadFolder = () => runFileTask("Reload folder", "Reloading folder…", async (snapshot, isCurrentSession) => {
+  const handleReloadFolder = () => runFileTask(uiText("Reload folder"), uiText("Reloading folder…"), async (snapshot, isCurrentSession) => {
     if (snapshot.origin.kind !== "folder" ||
-        !confirmReplaceDirtyDocument("Discard unsaved changes and reload this folder?")) return;
+        !await confirmReplaceDirtyDocument(uiText("Discard unsaved changes and reload this folder?"))) return;
     const path = snapshot.origin.path;
     const info = await openFolder(path);
     if (!isCurrentSession()) return;
     if (documentRef.current !== snapshot) {
-      setStatus("Reload canceled because the document was edited. Retry to discard the latest edits.");
+      setStatus(uiText("Reload canceled because the document was edited. Retry to discard the latest edits."));
       return;
     }
     replaceDocument(createFolderDocumentState(info, path));
@@ -607,7 +675,7 @@ export default function App() {
     setMermaidPath(null);
     setMathJaxPath(null);
     setTableEdit(null);
-    setStatus(`Reloaded folder ${path}`);
+    setStatus(`${path} を再読込しました`);
   });
 
   const handlePrint = () => {
@@ -615,15 +683,17 @@ export default function App() {
   };
 
   const handleNew = async () => {
-    if (!confirmReplaceDirtyDocument()) return;
+    if (!await confirmReplaceDirtyDocument()) return;
+    const approvedDocument = documentRef.current;
     const result = await saveDialog({
-      filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
+      filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
       defaultPath: "untitled.mdpkg",
     });
     if (typeof result === "string") {
       try {
         await createNewPackage(result);
         const info = await openPackage(result);
+        if (documentRef.current !== approvedDocument && !await confirmReplaceDirtyDocument()) return;
         replaceDocument(createDocumentState(info, result));
         setSelectedPath(info.entrypoint);
         setMode("preview");
@@ -631,24 +701,26 @@ export default function App() {
         setDrawingPath(null);
         setPlantUmlPath(null);
         setMermaidPath(null);
-        setStatus(`Created ${result}`);
+        setStatus(`${result} を作成しました`);
       } catch (e) {
-        reportError("Create package", e);
+        reportError(uiText("Create package"), e);
       }
     }
   };
 
   const handleImport = async () => {
-    if (!confirmReplaceDirtyDocument()) return;
+    if (!await confirmReplaceDirtyDocument()) return;
+    const approvedDocument = documentRef.current;
     const folder = await openDialog({ directory: true });
     if (typeof folder === "string") {
       const dest = await saveDialog({
-        filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
+        filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
         defaultPath: "imported.mdpkg",
       });
       if (typeof dest === "string") {
         try {
           const sourceInfo = await openFolder(folder);
+          if (documentRef.current !== approvedDocument && !await confirmReplaceDirtyDocument()) return;
           if (sourceInfo.manifest_generated) {
             setPendingInferredFolder({
               path: folder,
@@ -656,12 +728,13 @@ export default function App() {
               inference: inferManifest(sourceInfo.files),
               destination: dest,
             });
-            clearError("Import folder");
-            setStatus("Review generated manifest");
+            clearError(uiText("Import folder"));
+            setStatus(uiText("Review generated manifest"));
             return;
           }
           await importFolder(folder, dest);
           const info = await openPackage(dest);
+          if (documentRef.current !== approvedDocument && !await confirmReplaceDirtyDocument()) return;
           replaceDocument(createDocumentState(info, dest));
           setSelectedPath(info.entrypoint);
           setMode("preview");
@@ -669,9 +742,9 @@ export default function App() {
           setDrawingPath(null);
           setPlantUmlPath(null);
           setMermaidPath(null);
-          setStatus(`Imported ${folder}`);
+          setStatus(`${folder} を取り込みました`);
         } catch (e) {
-          reportError("Import folder", e);
+          reportError(uiText("Import folder"), e);
         }
       }
     }
@@ -683,26 +756,26 @@ export default function App() {
     if (typeof folder === "string") {
       try {
         await exportFolder(doc.origin.path, folder);
-        setStatus(`Exported to ${folder}`);
-        clearError("Export folder");
+        setStatus(`${folder} に書き出しました`);
+        clearError(uiText("Export folder"));
       } catch (e) {
-        reportError("Export folder", e);
+        reportError(uiText("Export folder"), e);
       }
     }
   };
 
-  const handleExportPackage = () => runFileTask("Export package", "Exporting package…", async (snapshot, isCurrentSession) => {
+  const handleExportPackage = () => runFileTask(uiText("Export package"), uiText("Exporting package…"), async (snapshot, isCurrentSession) => {
     if (snapshot.origin.kind !== "folder") return;
     const result = await saveDialog({
-      filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
+      filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
     });
     if (typeof result !== "string" || !isCurrentSession()) return;
     const path = result.toLowerCase().endsWith(".mdpkg") ? result : `${result}.mdpkg`;
     await exportFolderDocumentPackage(snapshot, path);
     if (isCurrentSession()) {
-      setStatus(`Exported package ${path}`);
-      clearError("Export package");
+      setStatus(`${path} にパッケージを書き出しました`);
+      clearError(uiText("Export package"));
     }
   });
 
@@ -711,6 +784,7 @@ export default function App() {
   };
 
   const handleEditMarkdown = (path: string) => {
+    setSelectedFolder(null);
     if (!/\.(md|markdown)$/i.test(path)) return;
     setAiDiagramEdit(null);
     setNavigationTarget(null);
@@ -719,6 +793,7 @@ export default function App() {
   };
 
   const handleSelect = (path: string) => {
+    setSelectedFolder(null);
     setAiDiagramEdit(null);
     setNavigationTarget(null);
     setTableEdit(null);
@@ -729,14 +804,14 @@ export default function App() {
         try {
           const parsed = parseDrawingFile(file.content);
           setDrawingDoc(parsed);
-          clearError("Open drawing");
+          clearError(uiText("Open drawing"));
           setDrawingPath(path);
           setPlantUmlPath(null);
           setMermaidPath(null);
           setMode("drawing");
           return;
         } catch (e) {
-          reportError("Open drawing", e);
+          reportError(uiText("Open drawing"), e);
           return;
         }
       }
@@ -785,15 +860,15 @@ export default function App() {
   const handleAiSelection = (task: AiTaskKind) => {
     const selection = editorSelectionRef.current;
     if (!isSelectionValid(selection)) {
-      reportError("AI action", "テキストを選択してください。");
+      reportError(uiText("AI action"), uiText("Select some text."));
       return;
     }
     const sel = selection as AiSelectionSnapshot;
     if (isEntirelyInsideCodeBlock(displayContent, sel.from, sel.to)) {
-      reportError("AI action", "選択範囲がコードブロック内のため AI Action を実行できません。");
+      reportError(uiText("AI action"), uiText("Select text outside a code block to use AI actions."));
       return;
     }
-    clearError("AI action");
+    clearError(uiText("AI action"));
     setAiSelection({ task, snapshot: sel });
   };
 
@@ -803,14 +878,14 @@ export default function App() {
     const content = file?.is_text ? file.content ?? "" : "";
     const applied = applyAiResult(content, snapshot, result, mode);
     if (!applied.ok) {
-      reportError("Apply AI result", "The document has changed since this AI request started. Please select the text again.");
+      reportError(uiText("Apply AI result"), uiText("The document has changed since this AI request started. Please select the text again."));
       return;
     }
     setDoc(updateFileContent(doc, selectedPath, applied.result.content));
     setAiSelection(null);
     setAiSelectionRunning(false);
-    setStatus(`AI ${mode === "replace" ? "Replace" : "Insert"} applied`);
-    clearError("Apply AI result");
+    setStatus(`AI の結果を${mode === "replace" ? "置換" : "挿入"}しました`);
+    clearError(uiText("Apply AI result"));
   };
 
   const insertionCursor = (file: FileInfo | undefined) =>
@@ -843,7 +918,7 @@ export default function App() {
     setPlantUmlPath(null);
     setMermaidPath(null);
     setMode("drawing");
-    setStatus("Inserted Drawing");
+    setStatus(uiText("Inserted Drawing"));
   };
 
   const handleInsertPlantUml = async () => {
@@ -852,7 +927,7 @@ export default function App() {
       ? selectedFile
       : entrypointFile;
     const cursor = insertionCursor(markdownFile);
-    setStatus("Rendering PlantUML…");
+    setStatus(uiText("Rendering PlantUML…"));
     try {
       const svg = await renderPlantUml(DEFAULT_PLANTUML_SOURCE);
       const added = addPlantUmlToDocument(doc, DEFAULT_PLANTUML_SOURCE, svg, "PlantUML", {
@@ -868,10 +943,10 @@ export default function App() {
       setDrawingDoc(null);
       setDrawingPath(null);
       setMode("plantuml");
-      setStatus("Inserted PlantUML");
-      clearError("Render PlantUML");
+      setStatus(uiText("Inserted PlantUML"));
+      clearError(uiText("Render PlantUML"));
     } catch (reason) {
-      reportError("Render PlantUML", reason);
+      reportError(uiText("Render PlantUML"), reason);
     }
   };
 
@@ -885,7 +960,7 @@ export default function App() {
     setDoc((current) => current && plantUmlPath
       ? savePlantUmlToDocument(current, plantUmlPath, source, svg)
       : current);
-    setStatus("PlantUML preview updated");
+    setStatus(uiText("PlantUML preview updated"));
   }, [plantUmlPath]);
 
   const handleInsertMermaid = async () => {
@@ -894,7 +969,7 @@ export default function App() {
       ? selectedFile
       : entrypointFile;
     const cursor = insertionCursor(markdownFile);
-    setStatus("Rendering Mermaid…");
+    setStatus(uiText("Rendering Mermaid…"));
     try {
       const svg = await renderMermaid(DEFAULT_MERMAID_SOURCE);
       const added = addMermaidToDocument(doc, DEFAULT_MERMAID_SOURCE, svg, "Mermaid", {
@@ -910,10 +985,10 @@ export default function App() {
       setDrawingDoc(null);
       setDrawingPath(null);
       setMode("mermaid");
-      setStatus("Inserted Mermaid");
-      clearError("Render Mermaid");
+      setStatus(uiText("Inserted Mermaid"));
+      clearError(uiText("Render Mermaid"));
     } catch (reason) {
-      reportError("Render Mermaid", reason);
+      reportError(uiText("Render Mermaid"), reason);
     }
   };
 
@@ -927,7 +1002,7 @@ export default function App() {
     setDoc((current) => current && mermaidPath
       ? saveMermaidToDocument(current, mermaidPath, source, svg)
       : current);
-    setStatus("Mermaid preview updated");
+    setStatus(uiText("Mermaid preview updated"));
   }, [mermaidPath]);
 
   const handleAiDiagramEditApply = (updatedSource: string, snapshot: { path: string; source: string }) => {
@@ -936,12 +1011,12 @@ export default function App() {
     const currentSource = doc.files.find((file) => file.path === currentPath)?.content ?? "";
     const applied = applyDiagramEdit(currentPath ?? "", currentSource, snapshot, updatedSource);
     if (!applied.ok) {
-      reportError("Apply AI diagram", "The diagram changed while AI generation was running. Run AI Generate again using the latest source.");
+      reportError(uiText("Apply AI diagram"), uiText("The diagram changed while AI generation was running. Run AI Generate again using the latest source."));
       return;
     }
     if (aiDiagramEdit.format === "plantuml") handlePlantUmlSourceChange(applied.source);
     else handleMermaidSourceChange(applied.source);
-    setAiDiagramEdit(null); setStatus("AI-generated diagram applied"); clearError("Apply AI diagram");
+    setAiDiagramEdit(null); setStatus(uiText("AI-generated diagram applied")); clearError(uiText("Apply AI diagram"));
   };
 
   const handleInsertMathJax = () => {
@@ -965,7 +1040,7 @@ export default function App() {
     setDrawingDoc(null);
     setDrawingPath(null);
     setMode("mathjax");
-    setStatus("Inserted MathJax");
+    setStatus(uiText("Inserted MathJax"));
   };
 
   const handleMathJaxSourceChange = useCallback((source: string) => {
@@ -978,7 +1053,7 @@ export default function App() {
     setDoc((current) => current && mathJaxPath
       ? saveMathJaxToDocument(current, mathJaxPath, source, svg)
       : current);
-    setStatus("MathJax preview updated");
+    setStatus(uiText("MathJax preview updated"));
   }, [mathJaxPath]);
 
   const addImportedImages = (images: ImportedImage[]) => {
@@ -1001,8 +1076,8 @@ export default function App() {
     }
     setDoc(next);
     setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
-    setStatus(`Added ${images.length} image${images.length === 1 ? "" : "s"} to images/`);
-    clearError("Add images");
+    setStatus(`画像を ${images.length} 件追加しました`);
+    clearError(uiText("Add images"));
   };
 
   const handleAddImage = async () => {
@@ -1010,7 +1085,7 @@ export default function App() {
     const result = await openDialog({
       multiple: true,
       filters: [
-        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
+        { name: "画像", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
       ],
     });
     const paths = Array.isArray(result) ? result : typeof result === "string" ? [result] : [];
@@ -1018,7 +1093,7 @@ export default function App() {
     try {
       addImportedImages(await Promise.all(paths.map(readImage)));
     } catch (e) {
-      reportError("Add images", e);
+      reportError(uiText("Add images"), e);
     }
   };
 
@@ -1042,8 +1117,8 @@ export default function App() {
     }
     setDoc(next);
     setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
-    setStatus(`Added ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} to attachments/`);
-    clearError("Add attachments");
+    setStatus(`添付ファイルを ${attachments.length} 件追加しました`);
+    clearError(uiText("Add attachments"));
   };
 
   const handleAddAttachment = async () => {
@@ -1054,16 +1129,16 @@ export default function App() {
     try {
       addImportedAttachments(await Promise.all(paths.map(readAttachment)));
     } catch (e) {
-      reportError("Add attachments", e);
+      reportError(uiText("Add attachments"), e);
     }
   };
 
   const handleDownloadAttachment = async (file: FileInfo) => {
     const notify = (event: AttachmentDownloadEvent, fileName: string) => {
       if (event === "started") {
-        showNotification(`ダウンロードを開始しました: ${fileName}`, "info");
+        showNotification(`${fileName} のダウンロードを開始しました`, "info");
       } else if (event === "completed") {
-        showNotification(`ダウンロードが完了しました: ${fileName}`, "success");
+        showNotification(`${fileName} のダウンロードが完了しました`, "success");
       }
     };
     try {
@@ -1077,11 +1152,11 @@ export default function App() {
         notify,
       );
       if (saved) {
-        setStatus(`Downloaded ${file.path}`);
-        clearError("Download attachment");
+        setStatus(`${file.path} を保存しました`);
+        clearError(uiText("Download attachment"));
       }
     } catch (e) {
-      reportError("Download attachment", e);
+      reportError(uiText("Download attachment"), e);
     }
   };
 
@@ -1098,19 +1173,34 @@ export default function App() {
     setSelectedPath(markdownFile.path);
     setTableEdit(null);
     setMode("split");
-    setStatus("Inserted 2 × 2 table");
+    setStatus(uiText("Inserted 2 × 2 table"));
   };
 
   const handleDropImages = async (files: File[]) => {
     const supported = files.filter((file) => isSupportedImageName(file.name));
     if (supported.length === 0) {
-      reportError("Add images", "Drop PNG, JPEG, GIF, WebP, or BMP image files.");
+      reportError(uiText("Add images"), uiText("Drop PNG, JPEG, GIF, WebP, or BMP image files."));
       return;
     }
     try {
       addImportedImages(await Promise.all(supported.map(droppedFileToImage)));
     } catch (e) {
-      reportError("Add images", e);
+      reportError(uiText("Add images"), e);
+    }
+  };
+
+  nativeImportImagesRef.current = addImportedImages;
+  nativeDropRef.current = (paths) => {
+    if (paths.length === 0) return;
+    if (doc && paths.every(isSupportedImageName)) {
+      const session = documentSessionRef.current;
+      void Promise.all(paths.map(readImage)).then((images) => {
+        if (documentSessionRef.current === session) nativeImportImagesRef.current(images);
+      }).catch((reason) => reportError(uiText("Add images"), reason));
+    } else if (paths.length === 1) {
+      void openDocument(paths[0], /\.mdpkg$/i.test(paths[0]) ? "package" : "folder");
+    } else {
+      reportError(uiText("Open document"), uiText("Drop one package or folder at a time."));
     }
   };
 
@@ -1118,22 +1208,33 @@ export default function App() {
     doc?.files.some((file) => file.path === path) === true ||
     doc?.directories?.includes(path) === true
   );
-  const handleRename = (path: string | null = selectedPath) => {
+  const handleRename = async (path: string | null = selectedPath) => {
     if (!doc || !path || !isRenameablePath(path)) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
-    const requested = window.prompt("New name", fileName);
-    if (requested === null || requested.trim() === "" || requested === fileName) return;
+    const snapshot = doc;
+    const extension = doc.files.some((file) => file.path === path) && fileName.lastIndexOf(".") > 0
+      ? fileName.match(/(\.draw\.json|\.[^.]+)$/i)?.[0] ?? "" : "";
+    const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+    const requested = await ask({
+      title: `${fileName} の名前を変更`, initialValue: extension ? fileName.slice(0, -extension.length) : fileName,
+      label: uiText("Name"), suffix: extension, confirmLabel: uiText("Rename"),
+      validate: (value) => nameError(value) ?? newPathError(parentPath + value + extension, path),
+    });
+    if (documentRef.current !== snapshot) return;
+    const renamedName = requested === null ? null : requested + extension;
+    if (renamedName === null || renamedName === fileName) return;
     const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    const destination = parent ? `${parent}/${requested}` : requested;
+    const destination = parent ? `${parent}/${renamedName}` : renamedName;
     try {
       const renamed = movePath(doc, path, destination);
-      recordDocumentOperation(renamed, `rename ${path}`);
+      recordDocumentOperation(renamed, `${path} の名前変更`);
+      setSelectedFolder((current) => current === path ? destination : current?.startsWith(path + "/") ? destination + current.slice(path.length) : current);
       setSelectedPath(destination);
       setMode("preview");
-      setStatus(`Renamed to ${destination}; Markdown links were updated`);
-      clearError("Rename");
+      setStatus(`${destination} に名前を変更し、Markdown のリンクを更新しました`);
+      clearError(uiText("Rename"));
     } catch (e) {
-      reportError("Rename", e);
+      reportError(uiText("Rename"), e);
     }
   };
 
@@ -1145,60 +1246,90 @@ export default function App() {
       const mapPath = (current: string | null) => current === path
         ? destination
         : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
-      recordDocumentOperation(moved, `move ${path}`);
+      recordDocumentOperation(moved, `${path} の移動`);
+      setSelectedFolder((current) => mapPath(current));
       setSelectedPath((current) => mapPath(current));
       setDrawingPath((current) => mapPath(current));
       setPlantUmlPath((current) => mapPath(current));
       setMermaidPath((current) => mapPath(current));
       setMathJaxPath((current) => mapPath(current));
-      setStatus(`Moved to ${destination}; Markdown links were updated`); clearError("Move");
-    } catch (reason) { reportError("Move", reason); }
+      setStatus(`${destination} に移動し、Markdown のリンクを更新しました`); clearError(uiText("Move"));
+    } catch (reason) { reportError(uiText("Move"), reason); }
   };
 
-  const handleMove = (path: string) => {
-    const destination = window.prompt("Destination path", path);
-    if (!destination) return;
-    applyMove(path, destination);
+  const handleMove = async (path: string) => {
+    if (!doc) return;
+    const snapshot = doc;
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const folders = [...new Set(["", "images", "attachments", ...doc.directories ?? []])]
+      .filter((folder) => folder !== path && !folder.startsWith(path + "/"));
+    const targetPath = (folder: string) => folder ? `${folder}/${name}` : name;
+    const folder = await ask({
+      title: `${name} を移動`, label: uiText("Destination folder"), initialValue: parent,
+      options: folders.map((folder) => ({ value: folder, label: folder || uiText("Package root") })),
+      confirmLabel: uiText("Move"),
+      validate: (folder) => targetPath(folder) === path ? uiText("Choose another folder.") : newPathError(targetPath(folder), path),
+    });
+    if (folder !== null && documentRef.current === snapshot) applyMove(path, targetPath(folder));
   };
 
   const contextDirectory = (contextPath?: string): string => {
     if (!doc || !contextPath) return "";
-    const isDirectory = doc.directories?.includes(contextPath) === true ||
+    const isDirectory = ["images", "attachments"].includes(contextPath) || doc.directories?.includes(contextPath) === true ||
       (!doc.files.some((file) => file.path === contextPath) &&
         doc.files.some((file) => file.path.startsWith(`${contextPath}/`)));
     if (isDirectory) return contextPath;
     return contextPath.includes("/") ? contextPath.slice(0, contextPath.lastIndexOf("/")) : "";
   };
 
-  const handleAddMarkdown = (contextPath?: string) => {
+  const handleAddMarkdown = async (contextPath?: string) => {
     if (!doc) return;
-    const directory = contextDirectory(contextPath);
-    const requested = window.prompt("Markdown path", `${directory ? `${directory}/` : ""}untitled.md`);
+    const directory = contextDirectory(contextPath ?? selectedFolder ?? selectedPath ?? undefined);
+    const snapshot = doc;
+    const requested = await ask({
+      title: uiText("Add Markdown"), label: uiText("Package path"), initialValue: `${directory ? `${directory}/` : ""}untitled.md`,
+      confirmLabel: uiText("Add"), validate: (value) => newPathError(value) ?? (/\.(md|markdown)$/i.test(value) ? null : uiText("Use .md or .markdown.")),
+    });
+    if (documentRef.current !== snapshot) return;
     if (!requested) return;
     try {
       const next = addMarkdown(doc, requested, `# ${requested.slice(requested.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "")}\n`);
-      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); clearError("Add Markdown");
-      setStatus(`Added ${requested}`);
-    } catch (reason) { reportError("Add Markdown", reason); }
+      setSelectedFolder(null);
+      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); clearError(uiText("Add Markdown"));
+      setStatus(`${requested} を追加しました`);
+    } catch (reason) { reportError(uiText("Add Markdown"), reason); }
   };
 
-  const handleAddFolder = (contextPath?: string) => {
+  const handleAddFolder = async (contextPath?: string) => {
     if (!doc) return;
-    const directory = contextDirectory(contextPath);
-    const requested = window.prompt("Folder path (empty folders are not saved)", `${directory ? `${directory}/` : ""}folder`);
+    const directory = contextDirectory(contextPath ?? selectedFolder ?? selectedPath ?? undefined);
+    const snapshot = doc;
+    const requested = await ask({
+      title: uiText("Add folder"), label: uiText("Package path"), initialValue: `${directory ? `${directory}/` : ""}folder`,
+      message: uiText("Empty folders are not saved. Add a file inside the folder to keep it when reopening the document."),
+      confirmLabel: uiText("Add folder"), validate: newPathError,
+    });
+    if (documentRef.current !== snapshot) return;
     if (!requested) return;
-    try { setDoc(addDirectory(doc, requested)); setStatus(`Added ${requested}; empty folders are not saved`); clearError("Add folder"); }
-    catch (reason) { reportError("Add folder", reason); }
+    try { setDoc(addDirectory(doc, requested)); setStatus(`${requested} を追加しました。空のフォルダは保存されません`); clearError(uiText("Add folder")); }
+    catch (reason) { reportError(uiText("Add folder"), reason); }
   };
 
-  const handleDelete = (path: string | null = selectedPath) => {
+  const handleDelete = async (path: string | null = selectedPath) => {
     if (!doc || !path) return;
     const fileName = path.slice(path.lastIndexOf("/") + 1);
     const references = pathReferenceCount(doc, path);
-    if (!window.confirm(`Delete ${fileName}? ${references} Markdown reference${references === 1 ? "" : "s"} will remain unchanged.`)) return;
+    const snapshot = doc;
+    const answer = await ask({
+      title: `${fileName} を削除しますか？`, confirmLabel: uiText("Delete"),
+      message: `Markdown 内の参照が ${references} 件残ります。ファイルメニューの「ファイル操作を元に戻す」で取り消せます。`,
+    });
+    if (answer === null || documentRef.current !== snapshot) return;
     try {
       const next = deletePath(doc, path);
-      recordDocumentOperation(next, `delete ${path}`);
+      recordDocumentOperation(next, `${path} の削除`);
+      setSelectedFolder(null);
       setSelectedPath(next.entrypoint);
       if (drawingPath && !next.files.some((file) => file.path === drawingPath)) {
         setDrawingDoc(null);
@@ -1217,10 +1348,10 @@ export default function App() {
         setMathJaxPath(null);
         setMode("preview");
       }
-      setStatus(`Deleted ${fileName}; Markdown links were not updated`);
-      clearError("Delete");
+      setStatus(`${fileName} を削除しました。Markdown のリンクは残っています`);
+      clearError(uiText("Delete"));
     } catch (e) {
-      reportError("Delete", e);
+      reportError(uiText("Delete"), e);
     }
   };
 
@@ -1236,17 +1367,17 @@ export default function App() {
   const handleDrawingImageRequest = async (): Promise<string | null> => {
     const result = await openDialog({
       filters: [
-        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
+        { name: "画像", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
       ],
     });
     if (typeof result !== "string") return null;
     try {
       const image = await readImage(result);
-      setStatus(`Added ${image.file_name} to drawing`);
-      clearError("Add image to drawing");
+      setStatus(`${image.file_name} を図に追加しました`);
+      clearError(uiText("Add image to drawing"));
       return importedImageDataUrl(image);
     } catch (e) {
-      reportError("Add image to drawing", e);
+      reportError(uiText("Add image to drawing"), e);
       return null;
     }
   };
@@ -1258,12 +1389,12 @@ export default function App() {
     try {
       const parsed = parseDrawingFile(file.content);
       setDrawingDoc(parsed);
-      clearError("Open drawing");
+      clearError(uiText("Open drawing"));
       setDrawingPath(drawPath);
       setMode("drawing");
       setSelectedPath(drawPath);
     } catch (e) {
-      reportError("Open drawing", e);
+      reportError(uiText("Open drawing"), e);
     }
   };
 
@@ -1288,7 +1419,7 @@ export default function App() {
   };
 
   const closeTableEditor = () => {
-    clearError("Edit table");
+    clearError(uiText("Edit table"));
     setTableEdit(null);
     setMode("split");
   };
@@ -1299,7 +1430,7 @@ export default function App() {
     const { path, start, end, content } = tableEdit;
     const file = current.files.find((candidate) => candidate.path === path);
     if (file?.content !== content) {
-      reportError("Edit table", "The source file changed. Cancel this draft and reopen the table to edit the latest version.");
+      reportError(uiText("Edit table"), uiText("The source file changed. Cancel this draft and reopen the table to edit the latest version."));
       return;
     }
     const next = content.slice(0, start) + markdown + content.slice(end);
@@ -1369,10 +1500,10 @@ export default function App() {
       const inserted = insertMarkdownBlock(displayFile.content, position, link);
       setDoc(updateFileContent(doc, displayFile.path, inserted.content));
       editorCursorsRef.current.set(displayFile.path, inserted.cursor);
-      setStatus(`Inserted link to ${path}`);
-      clearError("Insert link");
+      setStatus(`${path} へのリンクを挿入しました`);
+      clearError(uiText("Insert link"));
     } catch (reason) {
-      reportError("Insert link", reason);
+      reportError(uiText("Insert link"), reason);
     }
   };
 
@@ -1401,6 +1532,13 @@ export default function App() {
       maximum > 0 ? area.scrollTop / maximum : 0,
     );
   };
+
+  const aiDisabledReason = !displayIsMarkdown ? uiText("Open a Markdown file to use selection actions.")
+    : mode !== "split" ? uiText("Open the split editor to use selection actions.")
+    : aiSelectionRunning ? uiText("Wait for the current AI request to finish.")
+    : !isSelectionValid(editorSelection) ? uiText("Select text in the editor to use selection actions.")
+    : isEntirelyInsideCodeBlock(displayContent, editorSelection!.from, editorSelection!.to)
+      ? uiText("Select text outside a code block to use AI actions.") : undefined;
 
   return (
     <div className="app-shell">
@@ -1441,7 +1579,9 @@ export default function App() {
         onAbout={() => setAboutOpen(true)}
         onAiSettings={() => setAiSettingsOpen(true)}
         onThirdPartyLicenses={() => setThirdPartyLicensesOpen(true)}
-        aiSelectionEnabled={displayIsMarkdown && mode === "split" && isSelectionValid(editorSelection)}
+        aiSelectionEnabled={!aiDisabledReason}
+        aiDisabledReason={aiDisabledReason}
+        onShortcuts={() => setShortcutsOpen(true)}
         aiSelectionRunning={aiSelectionRunning}
         onAiSelection={handleAiSelection}
         aiChatOpen={aiChatOpen}
@@ -1457,9 +1597,9 @@ export default function App() {
       />
       {folderConflict && (
         <div className="folder-conflict">
-          <span role="alert">External changes conflict with unsaved edits. Saving to this folder is blocked.</span>
-          <button type="button" disabled={fileTask !== null} onClick={handleExportPackage}>Export Package...</button>
-          <button type="button" disabled={fileTask !== null} onClick={handleReloadFolder}>Reload Folder...</button>
+          <span role="alert">{uiText("External changes conflict with unsaved edits. Saving to this folder is blocked.")}</span>
+          <button type="button" disabled={fileTask !== null} onClick={handleExportPackage}>{uiText("Export Package...")}</button>
+          <button type="button" disabled={fileTask !== null} onClick={handleReloadFolder}>{uiText("Reload Folder...")}</button>
         </div>
       )}
       <div className="main-layout">
@@ -1471,8 +1611,11 @@ export default function App() {
                   files={doc?.files ?? []}
                   manifest={doc?.manifest}
                   directories={doc?.directories}
-                  selectedPath={selectedPath}
+                  selectedPath={selectedFolder ?? selectedPath}
                   onSelect={handleSelect}
+                  onSelectFolder={setSelectedFolder}
+                  collapsedPaths={treeCollapsed}
+                  onCollapsedPathsChange={setTreeCollapsed}
                   onEditMarkdown={handleEditMarkdown}
                   onDropImages={handleDropImages}
                   imageDropDirectory={resourceDirectoryForMarkdown(
@@ -1483,13 +1626,13 @@ export default function App() {
                   onRename={handleRename}
                   canDelete={(path) => doc !== null && !(doc.entrypoint === path || doc.entrypoint.startsWith(`${path}/`))}
                   onDelete={handleDelete}
-                  canMove={() => doc !== null}
+                  canMove={isRenameablePath}
                   onMove={handleMove}
                   canSetEntrypoint={(path) => path !== doc?.entrypoint && /\.(md|markdown)$/i.test(path)}
                   onSetEntrypoint={(path) => {
                     if (!doc) return;
-                    try { recordDocumentOperation(setEntrypoint(doc, path), `set entrypoint to ${path}`); setStatus(`Entrypoint set to ${path}`); clearError("Set entrypoint"); }
-                    catch (reason) { reportError("Set entrypoint", reason); }
+                    try { recordDocumentOperation(setEntrypoint(doc, path), `${path} の開始ファイルへの設定`); setStatus(`開始ファイルを ${path} に設定しました`); clearError(uiText("Set entrypoint")); }
+                    catch (reason) { reportError(uiText("Set entrypoint"), reason); }
                   }}
                   onAddMarkdown={handleAddMarkdown}
                   onAddFolder={handleAddFolder}
@@ -1508,15 +1651,30 @@ export default function App() {
           className={`document-area ${mode === "split" ? "document-area-editor" : ""}`}
           onScroll={handleDocumentAreaScroll}
         >
-          <Suspense fallback={<div className="empty-state">Loading…</div>}>
+          <Suspense fallback={<div className="empty-state">{uiText("Loading…")}</div>}>
           {!doc && (
             <div className="empty-state">
               <h2>MaCa Editor</h2>
-              <p>Markdown Package を開くか、新規作成してください。</p>
+              <p>{uiText("Create a document, open a package, or open a folder to start editing.")}</p>
+              <div className="empty-state-actions">
+                <button type="button" onClick={handleNew}>{uiText("New")}</button>
+                <button type="button" onClick={handleOpen}>{uiText("Open")}</button>
+                <button type="button" onClick={handleOpenFolder}>{uiText("Open Folder...")}</button>
+              </div>
+              <p>{uiText("Drop one .mdpkg file or folder anywhere in the window to open it.")}</p>
+              {recentDocuments.length > 0 && <section className="recent-documents">
+                <h3>{uiText("Recent documents")}</h3>
+                <ul>{recentDocuments.map((recent) => <li key={recent.kind + recent.path}>
+                  <button type="button" onClick={() => openDocument(recent.path, recent.kind)} title={recent.path}>
+                    {recent.path}
+                  </button>
+                </li>)}</ul>
+              </section>}
             </div>
           )}
           {doc && mode === "drawing" && drawingDoc && drawingPath && preferencesLoaded && (
             <DrawingEditor
+              translate={uiText}
               doc={drawingDoc}
               onChange={handleDrawingChange}
               onDirty={handleDrawingDirty}
@@ -1610,8 +1768,7 @@ export default function App() {
                     onNavigateMarkdown={(path) => { setSelectedPath(path); setMode("preview"); }}
                   />
                   <button className="edit-btn" onClick={handleEdit}>
-                    Edit
-                  </button>
+                    {uiText("Edit")}</button>
                 </div>
               )}
               {mode === "split" && (
@@ -1744,8 +1901,8 @@ export default function App() {
           onSave={(values) => {
             try {
               recordDocumentOperation(updateManifestMetadata(doc, values), "edit manifest");
-              setManifestEditorOpen(false); setStatus("Manifest updated"); clearError("Edit manifest");
-            } catch (reason) { reportError("Edit manifest", reason); }
+              setManifestEditorOpen(false); setStatus(uiText("Manifest updated")); clearError(uiText("Edit manifest"));
+            } catch (reason) { reportError(uiText("Edit manifest"), reason); }
           }}
           onClose={() => setManifestEditorOpen(false)} />
       )}
@@ -1754,7 +1911,7 @@ export default function App() {
           files={pendingInferredFolder.info.files.map((file) => file.path)}
           manifest={pendingInferredFolder.inference.manifest}
           warnings={pendingInferredFolder.inference.warnings}
-          confirmLabel={pendingInferredFolder.destination ? "Create Package" : "Open Folder"}
+          confirmLabel={pendingInferredFolder.destination ? uiText("Create Package") : uiText("Open Folder")}
           onConfirm={(manifest) => {
             const pending = pendingInferredFolder;
             void (async () => {
@@ -1763,12 +1920,12 @@ export default function App() {
                   await savePackage({ path: pending.destination, manifest, files: pending.info.files });
                   const imported = await openPackage(pending.destination);
                   replaceDocument(createDocumentState(imported, pending.destination));
-                  setStatus(`Imported ${pending.path}`);
+                  setStatus(`${pending.path} を取り込みました`);
                 } else {
                   const generatedInfo = { ...pending.info, manifest, entrypoint: manifest.entrypoint };
                   const next = createFolderDocumentState(generatedInfo, pending.path);
                   replaceDocument({ ...next, dirty: true, folderSnapshot: folderInfoFingerprint(pending.info) });
-                  setStatus(`Opened folder ${pending.path}; manifest.json will be created on save`);
+                  setStatus(`${pending.path} を開きました。保存時に manifest.json を作成します`);
                 }
                 setSelectedPath(manifest.entrypoint);
                 setMode("preview");
@@ -1779,13 +1936,13 @@ export default function App() {
                 setMathJaxPath(null);
                 setPendingInferredFolder(null);
               } catch (reason) {
-                reportError(pending.destination ? "Import folder" : "Open folder", reason);
+                reportError(pending.destination ? uiText("Import folder") : uiText("Open folder"), reason);
               }
             })();
           }}
           onCancel={() => {
             setPendingInferredFolder(null);
-            setStatus("Open folder cancelled");
+            setStatus(uiText("Open folder cancelled"));
           }}
         />
       )}
@@ -1808,15 +1965,31 @@ export default function App() {
         mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
         location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
       />
+      {shortcutsOpen && <Dialog title={uiText("Keyboard shortcuts")} onClose={() => setShortcutsOpen(false)}>
+        <dl className="shortcut-list">
+          <dt>{uiText("Save")}</dt><dd><kbd>Ctrl/Cmd+S</kbd></dd>
+          <dt>{uiText("Find in current document")}</dt><dd><kbd>Ctrl/Cmd+F</kbd></dd>
+          <dt>{uiText("Search package")}</dt><dd><kbd>Ctrl/Cmd+Shift+F</kbd></dd>
+          <dt>{uiText("Undo")}</dt><dd><kbd>Ctrl/Cmd+Z</kbd></dd>
+          <dt>{uiText("Redo")}</dt><dd><kbd>Ctrl+Y / Cmd+Shift+Z</kbd></dd>
+          <dt>{uiText("Tree and menu navigation")}</dt><dd>{uiText("Arrow keys, Home, End")}</dd>
+          <dt>{uiText("Open selected file")}</dt><dd>Enter</dd>
+          <dt>{uiText("Context menu")}</dt><dd>Shift+F10 / コンテキストメニューキー</dd>
+          <dt>{uiText("Close menu or dialog")}</dt><dd>Esc</dd>
+          <dt>{uiText("Save in Vim")}</dt><dd><kbd>:w</kbd></dd>
+        </dl>
+        <button type="button" onClick={() => setShortcutsOpen(false)}>{uiText("Close")}</button>
+      </Dialog>}
+      {actionDialog}
       <NotificationBanners notices={notifications} onDismiss={dismissNotification}>
         {error && (
           <div key={`${error.operation}:${error.detail}`} className="notification-banner notification-banner-error operation-error">
             <div role="alert">{error.summary}</div>
             <details>
-              <summary>Details</summary>
+              <summary>{uiText("Details")}</summary>
               <div className="operation-error-detail">{error.detail}</div>
             </details>
-            <button type="button" onClick={() => setError(null)}>Close error</button>
+            <button type="button" onClick={() => setError(null)}>{uiText("Close error")}</button>
           </div>
         )}
       </NotificationBanners>

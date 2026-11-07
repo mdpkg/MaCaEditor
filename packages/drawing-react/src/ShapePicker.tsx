@@ -15,6 +15,7 @@ export interface ShapePickerItem {
 
 interface Props {
   items: ShapePickerItem[];
+  translate?: (text: string) => string;
   onSelect: (tool: ToolKind) => void;
   onActivate: () => void;
 }
@@ -66,7 +67,7 @@ function ShapeIcon({ tool }: { tool: ToolKind }) {
   />;
 }
 
-export function ShapePicker({ items, onSelect, onActivate }: Props) {
+export function ShapePicker({ items, onSelect, onActivate, translate = (text) => text }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -94,17 +95,17 @@ export function ShapePicker({ items, onSelect, onActivate }: Props) {
     <button
       type="button"
       className="shape-picker-trigger"
-      aria-label="Shape"
+      aria-label={translate("Shape")}
       aria-haspopup="menu"
       aria-expanded={open}
       onClick={toggle}
       onKeyDown={(event) => {
         if (event.key === "Escape") setOpen(false);
       }}
-    >Shape <span aria-hidden="true">▾</span></button>
+    >{translate("Shape")}<span aria-hidden="true">▾</span></button>
     {open && <div className="shape-picker-menu" role="menu">
       {categories.map((category) => <div className="shape-picker-category" key={category}>
-        <div className="shape-picker-category-label">{category === "Legacy" ? "Basic Shapes" : category}</div>
+        <div className="shape-picker-category-label">{translate(category === "Legacy" ? "Basic Shapes" : category)}</div>
         {items.filter((item) => item.category === category).map((item) => <button
           type="button"
           role="menuitem"
@@ -113,7 +114,7 @@ export function ShapePicker({ items, onSelect, onActivate }: Props) {
           onClick={() => choose(item.id)}
         >
           <ShapeIcon tool={item.id} />
-          <span>{item.label}</span>
+          <span>{translate(item.label)}</span>
         </button>)}
       </div>)}
     </div>}

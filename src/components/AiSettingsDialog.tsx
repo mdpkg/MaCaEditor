@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { AiConfig } from "../types";
@@ -82,42 +83,38 @@ export function AiSettingsDialog({ onClose }: Props) {
   };
 
   return (
-    <Dialog onClose={onClose} title="AI Settings" initialFocus={closeButtonRef}>
+    <Dialog onClose={onClose} title={uiText("AI Settings")} initialFocus={closeButtonRef}>
       <label>
-        Provider
-        <select
+        {uiText("Provider")}<select
           value={config.provider}
           onChange={(event) =>
             update({ provider: event.target.value as AiConfig["provider"] })
           }
         >
-          <option value="OpenAiCompatible">OpenAI Compatible</option>
+          <option value="OpenAiCompatible">{uiText("OpenAI Compatible")}</option>
         </select>
       </label>
       <label>
-        Base URL
-        <input
+        {uiText("Base URL")}<input
           type="text"
           value={config.base_url}
           onChange={(event) => update({ base_url: event.target.value })}
         />
       </label>
       <label>
-        API Key
-        <div className="ai-field-row">
+        {uiText("API Key")}<div className="ai-field-row">
           <input
             type={showKey ? "text" : "password"}
             value={config.api_key ?? ""}
             onChange={(event) => update({ api_key: event.target.value })}
           />
           <button type="button" onClick={() => setShowKey((v) => !v)}>
-            {showKey ? "Hide" : "Show"}
+            {showKey ? uiText("Hide") : uiText("Show")}
           </button>
         </div>
       </label>
       <label>
-        Model
-        <input
+        {uiText("Model")}<input
           type="text"
           list="ai-model-list"
           value={config.model}
@@ -130,8 +127,7 @@ export function AiSettingsDialog({ onClose }: Props) {
         </datalist>
       </label>
       <label>
-        Temperature
-        <input
+        {uiText("Temperature")}<input
           type="number"
           step="0.1"
           value={config.temperature ?? ""}
@@ -141,8 +137,7 @@ export function AiSettingsDialog({ onClose }: Props) {
         />
       </label>
       <label>
-        Max Output Tokens
-        <input
+        {uiText("Max Output Tokens")}<input
           type="number"
           value={config.max_output_tokens ?? ""}
           onChange={(event) =>
@@ -151,8 +146,7 @@ export function AiSettingsDialog({ onClose }: Props) {
         />
       </label>
       <label>
-        Connection Timeout (seconds)
-        <input
+        {uiText("Connection Timeout (seconds)")}<input
           type="number"
           min={1}
           max={3600}
@@ -163,8 +157,7 @@ export function AiSettingsDialog({ onClose }: Props) {
         />
       </label>
       <label>
-        Request Timeout (seconds)
-        <input
+        {uiText("Request Timeout (seconds)")}<input
           type="number"
           min={1}
           max={3600}
@@ -176,33 +169,27 @@ export function AiSettingsDialog({ onClose }: Props) {
       </label>
       <div className="about-dialog-actions">
         <button type="button" onClick={handleRefreshModels} disabled={busy}>
-          Refresh Models
-        </button>
+          {uiText("Refresh Models")}</button>
         <button type="button" onClick={handleTestConnection} disabled={busy}>
-          Test Connection
-        </button>
+          {uiText("Test Connection")}</button>
         <button type="button" onClick={handleSave}>
-          Save
-        </button>
+          {uiText("Save")}</button>
         <button ref={closeButtonRef} type="button" onClick={onClose}>
-          Close
-        </button>
+          {uiText("Close")}</button>
       </div>
-      {status === "saved" && <p>Saved.</p>}
-      {status === "error" && <p>Failed to save.</p>}
-      {status === "models-loaded" && <p>Models loaded.</p>}
-      {status === "models-error" && <p>Failed to load models.</p>}
+      {status === "saved" && <p>{uiText("Saved.")}</p>}
+      {status === "error" && <p>{uiText("Failed to save.")}</p>}
+      {status === "models-loaded" && <p>{uiText("Models loaded.")}</p>}
+      {status === "models-error" && <p>{uiText("Failed to load models.")}</p>}
       {status === "testing" && (
         <p className="ai-status ai-status-testing">
           <span className="ai-spinner" aria-hidden="true" />
-          Connecting…
-        </p>
+          {uiText("Connecting…")}</p>
       )}
-      {status === "connected" && <p className="ai-status ai-status-ok">Connection OK.</p>}
+      {status === "connected" && <p className="ai-status ai-status-ok">{uiText("Connection OK.")}</p>}
       {status === "connection-error" && (
         <p className="ai-status ai-status-error">
-          Connection failed.
-          {errorDetail && <span className="ai-status-detail">{errorDetail}</span>}
+          {uiText("Connection failed.")}{errorDetail && <span className="ai-status-detail">{errorDetail}</span>}
         </p>
       )}
     </Dialog>

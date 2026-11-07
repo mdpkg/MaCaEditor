@@ -26,7 +26,7 @@ function markdownPath(path: string): boolean {
 
 function chooseEntrypoint(files: FileInfo[]): string {
   const paths = files.filter((file) => file.is_text && markdownPath(file.path)).map((file) => file.path).sort();
-  if (paths.length === 0) throw new Error("The selected folder does not contain a Markdown file");
+  if (paths.length === 0) throw new Error("選択したフォルダに Markdown ファイルがありません");
   return paths.find((path) => path === "index.md")
     ?? paths.find((path) => path === "README.md")
     ?? paths[0];
@@ -53,9 +53,9 @@ export function inferManifest(files: FileInfo[]): ManifestInference {
       const target = decodedPath(link.destination);
       const resolved = resolvePackagePath(baseDir, target);
       if (!resolved) {
-        warnings.push(`${file.path}: link escapes the folder: ${link.destination}`);
+        warnings.push(`${file.path}: フォルダ外へのリンクです。 ${link.destination}`);
       } else if (!paths.has(resolved)) {
-        warnings.push(`${file.path}: linked file does not exist: ${link.destination}`);
+        warnings.push(`${file.path}: リンク先がありません。 ${link.destination}`);
       } else if (link.image && /\.(?:svg|png)$/i.test(resolved) && !renderedPaths.includes(resolved)) {
         renderedPaths.push(resolved);
       }
@@ -67,7 +67,7 @@ export function inferManifest(files: FileInfo[]): ManifestInference {
     const candidates = sourceTypes.flatMap(({ suffix, type }) =>
       paths.has(`${stem}${suffix}`) ? [{ type, source: `${stem}${suffix}`, rendered }] : []);
     if (candidates.length > 1) {
-      warnings.push(`Multiple diagram sources match ${rendered}: ${candidates.map((item) => item.source).join(", ")}`);
+      warnings.push(`複数の図のソースが一致します。 ${rendered}: ${candidates.map((item) => item.source).join(", ")}`);
       return [];
     }
     return candidates;

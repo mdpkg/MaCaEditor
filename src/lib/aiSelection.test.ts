@@ -85,13 +85,13 @@ describe("isAiConfigured", () => {
 
 describe("aiErrorMessage", () => {
   test("maps each error kind to a user-friendly message", () => {
-    expect(aiErrorMessage("ConnectionFailed")).toContain("connect");
-    expect(aiErrorMessage("AuthenticationFailed")).toContain("API key");
-    expect(aiErrorMessage("ModelNotFound")).toContain("model");
-    expect(aiErrorMessage("RateLimited")).toContain("rate limited");
-    expect(aiErrorMessage("Timeout")).toContain("timed out");
-    expect(aiErrorMessage("ServerError")).toContain("server");
-    expect(aiErrorMessage("Cancelled")).toContain("cancelled");
-    expect(aiErrorMessage("Unknown")).toContain("unknown");
+    expect(aiErrorMessage("ConnectionFailed")).toContain("接続");
+    expect(aiErrorMessage("AuthenticationFailed")).toContain("API キー");
+    expect(aiErrorMessage("ModelNotFound")).toContain("モデル");
+    expect(aiErrorMessage("RateLimited")).toContain("回数制限");
+    expect(aiErrorMessage("Timeout")).toContain("タイムアウト");
+    expect(aiErrorMessage("ServerError")).toContain("サーバー");
+    expect(aiErrorMessage("Cancelled")).toContain("中止");
+    expect(aiErrorMessage("Unknown")).toContain("不明");
   });
 });

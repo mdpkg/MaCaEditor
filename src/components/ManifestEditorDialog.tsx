@@ -1,3 +1,5 @@
+import { uiText } from "../lib/uiText";
+import { ResourceTypeSelect } from "./ResourceTypeSelect";
 import { Dialog } from "./Dialog";
 import { useState } from "react";
 import type { EditableManifestResource } from "../lib/document";
@@ -30,36 +32,36 @@ export function ManifestEditorDialog({ manifest, files, onSave, onClose }: Props
     setResources((current) => current.map((resource, resourceIndex) =>
       resourceIndex === index ? { ...resource, [field]: value } : resource));
   };
-  return <Dialog className="about-dialog manifest-editor-dialog" onClose={onClose} title="Manifest">
+  return <Dialog className="about-dialog manifest-editor-dialog" onClose={onClose} title={uiText("Manifest")}>
     <label className="manifest-description-field">
-      <span>Entrypoint</span>
-      <select aria-label="Entrypoint" value={entrypoint}
+      <span>{uiText("Entrypoint")}</span>
+      <select aria-label={uiText("Entrypoint")} value={entrypoint}
         onChange={(event) => setEntrypoint(event.target.value)}>
         {markdownFiles.map((path) => <option key={path} value={path}>{path}</option>)}
       </select>
     </label>
     <label className="manifest-description-field">
-      <span>Description</span>
-      <textarea aria-label="Description" value={description}
+      <span>{uiText("Description")}</span>
+      <textarea aria-label={uiText("Description")} value={description}
         onChange={(event) => setDescription(event.target.value)} />
     </label>
-    <h3>Resources</h3>
+    <h3>{uiText("Resources")}</h3>
     <datalist id="manifest-file-paths">{files.map((path) => <option key={path} value={path} />)}</datalist>
     {resources.map((resource, index) => <div className="manifest-resource-row" key={index}>
-      <input aria-label={`Resource ${index + 1} type`} placeholder="type" value={resource.type}
-        onChange={(event) => update(index, "type", event.target.value)} />
-      <input aria-label={`Resource ${index + 1} source`} placeholder="source" list="manifest-file-paths"
+      <ResourceTypeSelect label={`リソース ${index + 1} 種類`} value={resource.type}
+        onChange={(value) => update(index, "type", value)} />
+      <input aria-label={`リソース ${index + 1} ソース`} placeholder="ソースのパス" list="manifest-file-paths"
         value={resource.source} onChange={(event) => update(index, "source", event.target.value)} />
-      <input aria-label={`Resource ${index + 1} rendered`} placeholder="rendered" list="manifest-file-paths"
+      <input aria-label={`リソース ${index + 1} 描画結果`} placeholder="描画結果のパス" list="manifest-file-paths"
         value={resource.rendered} onChange={(event) => update(index, "rendered", event.target.value)} />
-      <button type="button" onClick={() => setResources((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+      <button type="button" onClick={() => setResources((current) => current.filter((_, itemIndex) => itemIndex !== index))}>{uiText("Remove")}</button>
     </div>)}
     <button type="button" data-action="add-resource"
-      onClick={() => setResources((current) => [...current, { type: "", source: "", rendered: "" }])}>Add Resource</button>
+      onClick={() => setResources((current) => [...current, { type: "", source: "", rendered: "" }])}>{uiText("Add Resource")}</button>
     <div className="about-dialog-actions">
-      <button type="button" onClick={onClose}>Cancel</button>
+      <button type="button" onClick={onClose}>{uiText("Cancel")}</button>
       <button type="button" data-action="save"
-        onClick={() => onSave({ entrypoint, description, resources })}>Save</button>
+        onClick={() => onSave({ entrypoint, description, resources })}>{uiText("Save")}</button>
     </div>
   </Dialog>;
 }

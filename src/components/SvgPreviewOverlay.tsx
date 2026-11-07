@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
 import { useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
@@ -72,11 +73,11 @@ export function SvgPreviewOverlay({ svg, label, onClose, whiteBackground = false
   };
 
   return createPortal(
-    <Dialog className="preview-media-overlay" title="拡大表示" onClose={onClose} backdrop={false}>
+    <Dialog className="preview-media-overlay" title={uiText("Enlarged preview")} onClose={onClose} backdrop={false}>
       <button
         type="button"
         className="preview-media-close"
-        aria-label="拡大表示を閉じる"
+        aria-label={uiText("Close enlarged preview")}
         onClick={onClose}
       >×</button>
       <div

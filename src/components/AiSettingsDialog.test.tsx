@@ -33,17 +33,17 @@ describe("AiSettingsDialog", () => {
     });
 
     const dialog = container.querySelector('[role="dialog"]');
-    expect(document.getElementById(dialog!.getAttribute("aria-labelledby")!)?.textContent).toBe("AI Settings");
-    expect(dialog?.textContent).toContain("Base URL");
-    expect(dialog?.textContent).toContain("Model");
-    expect(dialog?.textContent).toContain("Connection Timeout");
-    expect(dialog?.textContent).toContain("Request Timeout");
+    expect(document.getElementById(dialog!.getAttribute("aria-labelledby")!)?.textContent).toBe("AI 設定");
+    expect(dialog?.textContent).toContain("ベース URL");
+    expect(dialog?.textContent).toContain("モデル");
+    expect(dialog?.textContent).toContain("接続タイムアウト");
+    expect(dialog?.textContent).toContain("リクエストタイムアウト");
 
     await act(async () => {
       (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
     });
     expect(save).toHaveBeenCalledOnce();
-    expect(dialog?.textContent).toContain("Saved.");
+    expect(dialog?.textContent).toContain("保存しました。");
     act(() => root.unmount());
   });
 
@@ -78,15 +78,15 @@ describe("AiSettingsDialog", () => {
     await act(async () => {
       (container.querySelectorAll("button")[2] as HTMLButtonElement).click();
     });
-    expect(container.textContent).toContain("Connecting…");
+    expect(container.textContent).toContain("接続しています…");
     // 接続中はスピナーが表示される
     expect(container.querySelector(".ai-spinner")).not.toBeNull();
 
-    // 接続完了で表示が切り替わる
+    // 接続Doneで表示が切り替わる
     await act(async () => {
       resolveTest?.();
     });
-    expect(container.textContent).toContain("Connection OK.");
+    expect(container.textContent).toContain("接続できました。");
     expect(container.querySelector(".ai-spinner")).toBeNull();
     act(() => root.unmount());
   });
@@ -117,7 +117,7 @@ describe("AiSettingsDialog", () => {
     await act(async () => {
       (container.querySelectorAll("button")[2] as HTMLButtonElement).click();
     });
-    expect(container.textContent).toContain("Connection failed.");
+    expect(container.textContent).toContain("接続できませんでした。");
     expect(container.textContent).toContain("connection refused");
     act(() => root.unmount());
   });
@@ -137,7 +137,7 @@ describe("AiSettingsDialog", () => {
     await act(async () => {
       (container.querySelectorAll("button")[3] as HTMLButtonElement).click();
     });
-    expect(container.textContent).toContain("Failed to save.");
+    expect(container.textContent).toContain("保存できませんでした。");
     act(() => root.unmount());
   });
 });

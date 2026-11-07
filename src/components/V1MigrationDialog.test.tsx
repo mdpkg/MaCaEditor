@@ -8,10 +8,10 @@ test("explains v1 migration and offers overwrite or copy", () => {
   const container = document.createElement("div"); const root = createRoot(container);
   act(() => root.render(<V1MigrationDialog entrypoint="README.md" onOverwrite={onOverwrite}
     onSaveAs={onSaveAs} onCancel={vi.fn()} />));
-  expect(container.textContent).toContain("version 2.0");
+  expect(container.textContent).toContain("MDPKG 2.0");
   expect(container.textContent).toContain("README.md");
   act(() => ([...container.querySelectorAll("button")]
-    .find((button) => button.textContent === "Upgrade Original") as HTMLButtonElement).click());
+    .find((button) => button.textContent === "元のファイルを更新") as HTMLButtonElement).click());
   expect(onOverwrite).toHaveBeenCalledOnce();
   act(() => root.unmount());
 });

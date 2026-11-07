@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { useEffect, useState } from "react";
 import { renderPlantUml } from "../lib/plantuml/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
@@ -56,7 +57,7 @@ export function PlantUmlEditor({
   return (
     <div className="plantuml-editor">
       <div className="plantuml-source-pane">
-        <div className="plantuml-pane-title">PlantUML {onAiEdit && <button type="button" onClick={onAiEdit}>AI Generate</button>}</div>
+        <div className="plantuml-pane-title">PlantUML {onAiEdit && <button type="button" onClick={onAiEdit}>{uiText("AI Generate")}</button>}</div>
         <CodeEditor
           className="plantuml-source"
           value={source}
@@ -68,7 +69,7 @@ export function PlantUmlEditor({
       </div>
       <div className="plantuml-preview-pane">
         <div className="plantuml-pane-title">
-          Preview{rendering ? " — Rendering…" : ""}
+          {uiText("Preview")}{rendering ? " — Rendering…" : ""}
         </div>
         {error && <div className="plantuml-error" role="alert">{error}</div>}
         {!error && svg && (
@@ -76,7 +77,7 @@ export function PlantUmlEditor({
             className="plantuml-preview"
             role="button"
             tabIndex={0}
-            title="クリックで拡大表示"
+            title={uiText("Click to enlarge")}
             onClick={() => setPreviewOpen(true)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -91,7 +92,7 @@ export function PlantUmlEditor({
       {previewOpen && (
         <SvgPreviewOverlay
           svg={sanitizedSvg}
-          label="PlantUMLダイアグラム"
+          label={uiText("PlantUML diagram")}
           whiteBackground
           onClose={() => setPreviewOpen(false)}
         />

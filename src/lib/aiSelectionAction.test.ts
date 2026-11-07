@@ -96,7 +96,7 @@ describe("AiSelectionActionService", () => {
     emit({ type: "error", request_id: "r1", error: { kind: "Timeout", message: "slow" } });
     expect(service.getState()).toBe("error");
     expect(service.getErrorKind()).toBe("Timeout");
-    expect(service.getErrorMessage()).toContain("timed out");
+    expect(service.getErrorMessage()).toContain("タイムアウト");
     expect(service.canApply()).toBe(false);
   });
 

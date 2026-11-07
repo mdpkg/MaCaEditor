@@ -18,6 +18,8 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   watchFolder: vi.fn(),
   stopWatchingFolder: vi.fn(),
   onFolderChanged: vi.fn(),
+  onNativeFileDrop: vi.fn(),
+  readImage: vi.fn(),
 }));
 vi.mock("./lib/editorPreferences", () => ({
   loadVimMode: async () => false,
@@ -75,9 +77,12 @@ describe("App persistence", () => {
   let root: Root;
   let container: HTMLDivElement;
   let folderChanged: (path: string) => void;
+  let nativeDrop: (paths: string[]) => void;
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    localStorage.clear();
+    vi.mocked(tauri.onNativeFileDrop).mockImplementation(async (callback) => { nativeDrop = callback; return () => {}; });
     vi.mocked(tauri.onFolderChanged).mockImplementation(async (callback) => {
       folderChanged = callback;
       return () => {};
@@ -121,9 +126,9 @@ describe("App persistence", () => {
   test("opens package search only for an unhandled shifted shortcut and returns focus on Escape", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
-    await click("File");
-    await click("Open");
-    await click("Edit");
+    await click("ファイル");
+    await click("開く");
+    await click("編集");
     const editor = container.querySelector("textarea")!;
     editor.focus();
     const press = (shiftKey: boolean, handled = false) => act(() => {
@@ -144,19 +149,151 @@ describe("App persistence", () => {
     expect(document.activeElement).toBe(editor);
   });
 
+  async function inputValue(input: HTMLInputElement | HTMLSelectElement, value: string) {
+    await act(async () => {
+      const select = input instanceof HTMLSelectElement;
+      Object.getOwnPropertyDescriptor(select ? HTMLSelectElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event(select ? "change" : "input", { bubbles: true }));
+    });
+  }
+
+  test("renames with a fixed extension, picks a move folder, and confirms deletion in the app", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    const info = documentInfo("[Guide](docs/guide.md)");
+    info.files.push({ path: "docs/guide.md", content: "Guide", is_text: true, base64: null });
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await click("開く", container.querySelector(".empty-state")!);
+    const nativePrompt = vi.spyOn(window, "prompt");
+    const nativeConfirm = vi.spyOn(window, "confirm");
+    const context = async (path: string, command: string) => {
+      await act(async () => container.querySelector<HTMLElement>(`[data-path="${path}"]`)!.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      ));
+      const menu = document.querySelector(".file-tree-context-menu")!;
+      await click(command, menu);
+    };
+    await context("docs/guide.md", "名前を変更");
+    let dialog = container.querySelector(".about-dialog")!;
+    expect(dialog.textContent).toContain(".md");
+    let input = dialog.querySelector("input")!;
+    expect(input.value).toBe("guide");
+    await inputValue(input, "bad/name");
+    expect(button("名前を変更", dialog).disabled).toBe(true);
+    await inputValue(input, "renamed");
+    await click("名前を変更", dialog);
+    expect(container.querySelector('[data-path="docs/renamed.md"]')).not.toBeNull();
+
+    await context("docs/renamed.md", "移動");
+    dialog = container.querySelector(".about-dialog")!;
+    await inputValue(dialog.querySelector("select")!, "");
+    await click("移動", dialog);
+    expect(container.querySelector('[data-path="renamed.md"]')).not.toBeNull();
+
+    await context("renamed.md", "削除");
+    dialog = container.querySelector(".about-dialog")!;
+    expect(dialog.textContent).toContain("参照が 1 件");
+    await click("キャンセル", dialog);
+    expect(container.querySelector('[data-path="renamed.md"]')).not.toBeNull();
+    await context("renamed.md", "削除");
+    await click("削除", container.querySelector(".about-dialog")!);
+    expect(container.querySelector('[data-path="renamed.md"]')).toBeNull();
+    expect(nativePrompt).not.toHaveBeenCalled();
+    expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  test("filters files, selects folders, and retains folder collapse across sidebar remounts", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    const info = documentInfo("Original");
+    info.files.push({ path: "docs/guide.md", content: "Guide", is_text: true, base64: null });
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await click("開く", container.querySelector(".empty-state")!);
+    await click("編集");
+    let folder = container.querySelector<HTMLElement>('[data-path="docs"]')!;
+    await act(async () => folder.click());
+    expect(folder.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector("textarea")?.value).toBe("Original");
+    await act(async () => folder.querySelector<HTMLElement>(".tree-item-disclosure")!.click());
+    expect(folder.getAttribute("aria-expanded")).toBe("false");
+    await click("☰");
+    await click("☰");
+    folder = container.querySelector<HTMLElement>('[data-path="docs"]')!;
+    expect(folder.getAttribute("aria-expanded")).toBe("false");
+    const filter = container.querySelector<HTMLInputElement>(".tree-filter input")!;
+    await inputValue(filter, "guide");
+    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    expect(container.querySelector('[data-path="index.md"]')).toBeNull();
+    await inputValue(filter, "");
+    expect(container.querySelector('[data-path="docs/guide.md"]')).toBeNull();
+
+    await click("ファイル");
+    await click("フォルダを追加...");
+    const dialog = container.querySelector(".about-dialog")!;
+    expect(dialog.textContent).toContain("空のフォルダは保存されません");
+    expect(dialog.querySelector("input")?.value).toBe("docs/folder");
+    await click("キャンセル", dialog);
+  });
+
+  test("reopens recent documents and exposes AI settings and keyboard help from the empty state", async () => {
+    const empty = container.querySelector(".empty-state")!;
+    expect([...empty.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["新規作成", "開く", "フォルダを開く..."]);
+    await click("AI");
+    expect(container.querySelector('[role="menu"]')?.textContent).toContain("Markdown ファイルを開く");
+    await click("AI 設定", container.querySelector('[role="menu"]')!);
+    expect(container.querySelector(".about-dialog")?.textContent).toContain("AI 設定");
+    await click("閉じる", container.querySelector(".about-dialog")!);
+    await click("ヘルプ");
+    await click("キーボードショートカット");
+    expect(container.querySelector(".shortcut-list")?.textContent).toContain("Ctrl/Cmd+Shift+F");
+    await click("閉じる", container.querySelector(".about-dialog")!);
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await click("開く", empty);
+    expect(document.title).toBe("original.mdpkg — MaCa Editor");
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<App />));
+    expect(container.querySelector(".recent-documents")?.textContent).toContain("original.mdpkg");
+    await click("original.mdpkg", container.querySelector(".recent-documents")!);
+    expect(tauri.openPackage).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".document-area")?.textContent).toContain("Original");
+  });
+
+
+  test("opens native drops with discard confirmation and preserves edits made while reading dropped images", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    await click("編集");
+    await edit("Unsaved");
+    vi.mocked(tauri.openFolder).mockResolvedValue(documentInfo("Folder"));
+    await act(async () => nativeDrop(["C:/folder"]));
+    await click("キャンセル", container.querySelector(".about-dialog")!);
+    expect(container.querySelector("textarea")?.value).toBe("Unsaved");
+    await act(async () => nativeDrop(["C:/folder"]));
+    await click("破棄して続行", container.querySelector(".about-dialog")!);
+    expect(container.querySelector(".document-area")?.textContent).toContain("Folder");
+    await click("編集");
+    let finishRead!: (image: { file_name: string; base64: string }) => void;
+    vi.mocked(tauri.readImage).mockImplementation(() => new Promise((resolve) => { finishRead = resolve; }));
+    await act(async () => nativeDrop(["C:/photo.png"]));
+    await edit("Latest edit");
+    await act(async () => finishRead({ file_name: "photo.png", base64: "aGVsbG8=" }));
+    expect(container.querySelector("textarea")?.value).toContain("Latest edit");
+    expect(container.querySelector('[data-path="images/photo.png"]')).not.toBeNull();
+  });
+
   test("restores cursor and scroll positions separately for each opened file", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     const info = documentInfo("0123456789");
     info.files.push({ ...info.files[0], path: "other.md" });
     vi.mocked(tauri.openPackage).mockResolvedValue(info);
-    await click("File");
-    await click("Open");
-    await click("Edit");
+    await click("ファイル");
+    await click("開く");
+    await click("編集");
 
     const editor = () => container.querySelector("textarea")!;
     const select = async (path: string) => {
       await act(async () => container.querySelector<HTMLElement>(`[data-path="${path}"]`)!.click());
-      await click("Edit");
+      await click("編集");
     };
     const move = (cursor: number, scrollTop: number) => act(() => {
       editor().setSelectionRange(cursor, cursor);
@@ -181,18 +318,18 @@ describe("App persistence", () => {
   test("debounces live diagnostics but validates the latest text on demand", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
-    await click("File");
-    await click("Open");
+    await click("ファイル");
+    await click("開く");
     const diagnose = vi.spyOn(diagnostics, "diagnosePackage");
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    await click("Edit");
+    await click("編集");
     await edit("[Link](first.md)");
     act(() => vi.advanceTimersByTime(250));
     await edit("[Link](latest.md)");
     act(() => vi.advanceTimersByTime(299));
     expect(diagnose).not.toHaveBeenCalled();
-    await click("File");
-    await click("Validate Package...");
+    await click("ファイル");
+    await click("パッケージを診断...");
     expect(container.querySelector(".package-diagnostics-dialog")?.textContent).toContain("latest.md");
     expect(diagnose).toHaveBeenCalledTimes(1);
     act(() => vi.advanceTimersByTime(1));
@@ -203,8 +340,8 @@ describe("App persistence", () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     const original = "Before\n\n|A|B|\n|---|---|\n|1|2|\n\nAfter";
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo(original));
-    await click("File");
-    await click("Open");
+    await click("ファイル");
+    await click("開く");
     await click("Edit test table");
     await act(async () => { await import("./components/MarkdownTableEditor"); });
     await click("完了");
@@ -212,7 +349,7 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).toBeNull();
 
     const changeHeader = async () => {
-      const cell = container.querySelector<HTMLTextAreaElement>('[aria-label="Header column 1"]')!;
+      const cell = container.querySelector<HTMLTextAreaElement>('[aria-label="1 列目の見出し"]')!;
       await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(cell, "Draft");
         cell.dispatchEvent(new Event("input", { bubbles: true }));
@@ -235,30 +372,30 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
   });
 
-  test.each(["Save", "Save As"])("%s keeps edits made while writing and blocks duplicate saves", async (command) => {
+  test.each(["保存", "名前を付けて保存"])("%s keeps edits made while writing and blocks duplicate saves", async (command) => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(save).mockResolvedValue("copy.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
-    await click("File");
-    await click("Open");
-    await click("Edit");
+    await click("ファイル");
+    await click("開く");
+    await click("編集");
     await edit("First edit");
 
     const write = deferred();
     vi.mocked(tauri.savePackage).mockReturnValueOnce(write.promise);
-    await click("File");
+    await click("ファイル");
     await click(command);
-    expect(container.textContent).toContain("Saving…");
+    expect(container.textContent).toContain("保存しています…");
     expect(tauri.savePackage).toHaveBeenCalledWith(expect.objectContaining({
-      path: command === "Save" ? "original.mdpkg" : "copy.mdpkg",
+      path: command === "保存" ? "original.mdpkg" : "copy.mdpkg",
       files: [expect.objectContaining({ content: "First edit" })],
     }));
 
-    await click("File");
-    expect(button("Save").disabled).toBe(true);
-    expect(button("Save As").disabled).toBe(true);
+    await click("ファイル");
+    expect(button("保存").disabled).toBe(true);
+    expect(button("名前を付けて保存").disabled).toBe(true);
     await act(async () => {
-      button("Save").click();
+      button("保存").click();
       saveShortcut();
       saveShortcut();
     });
@@ -267,11 +404,12 @@ describe("App persistence", () => {
     await act(async () => write.resolve());
     expect(container.querySelector("textarea")?.value).toBe("Later edit");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
-    expect(container.textContent).not.toContain("Saving…");
+    expect(document.title).toBe(`*${command === "保存" ? "original.mdpkg" : "copy.mdpkg"} — MaCa Editor`);
+    expect(container.textContent).not.toContain("保存しています…");
 
     await act(async () => saveShortcut());
     expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
-      path: command === "Save" ? "original.mdpkg" : "copy.mdpkg",
+      path: command === "保存" ? "original.mdpkg" : "copy.mdpkg",
       files: [expect.objectContaining({ content: "Later edit" })],
     }));
     expect(container.querySelector(".dirty-indicator")).toBeNull();
@@ -281,25 +419,25 @@ describe("App persistence", () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
     const confirm = vi.spyOn(window, "confirm");
-    await click("File");
-    await click("Open");
-    await click("Edit");
+    await click("ファイル");
+    await click("開く");
+    await click("編集");
     await edit("Unsaved edit");
 
     vi.mocked(tauri.savePackage).mockRejectedValueOnce(new Error("Disk full\nWriter detail"));
     await act(async () => saveShortcut());
     const banner = container.querySelector(".operation-error")!;
-    expect(banner.querySelector('[role="alert"]')?.textContent).toBe("Save failed: Disk full");
-    expect([...banner.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["Close error"]);
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe("保存に失敗しました。ディスクの空き容量が不足しています。");
+    expect([...banner.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["エラーを閉じる"]);
     const details = banner.querySelector("details")!;
     expect(details.open).toBe(false);
     act(() => details.querySelector("summary")!.click());
     expect(details.open).toBe(true);
     expect(details.textContent).toContain("Writer detail");
 
-    await click("Close error", banner);
+    await click("エラーを閉じる", banner);
     expect(container.querySelector(".operation-error")).toBeNull();
-    expect(container.querySelector(".status-message")?.textContent).toBe("Save failed: Disk full");
+    expect(container.querySelector(".status-message")?.textContent).toBe("保存に失敗しました。ディスクの空き容量が不足しています。");
     expect(container.querySelector("textarea")?.value).toBe("Unsaved edit");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
     expect(confirm).not.toHaveBeenCalled();
@@ -308,24 +446,30 @@ describe("App persistence", () => {
   test("keeps a save error through unrelated edits and clears it after a successful retry", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
-    await click("File");
-    await click("Open");
-    await click("Edit");
+    await click("ファイル");
+    await click("開く");
+    await click("編集");
     await edit("First edit");
 
     vi.mocked(tauri.savePackage).mockRejectedValueOnce("Permission denied");
     await act(async () => saveShortcut());
     await edit("Later edit");
-    expect(container.querySelector(".operation-error")?.textContent).toContain("Save failed: Permission denied");
-    vi.spyOn(window, "prompt").mockReturnValueOnce("notes");
-    await click("File");
-    await click("Add Folder...");
-    expect(container.querySelector(".status-message")?.textContent).toContain("Added notes");
-    expect(container.querySelector(".operation-error")?.textContent).toContain("Save failed: Permission denied");
+    expect(container.querySelector(".operation-error")?.textContent).toContain("保存に失敗しました。アクセス権限がありません。");
+    await click("ファイル");
+    await click("フォルダを追加...");
+    const dialog = container.querySelector(".about-dialog")!;
+    const input = dialog.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "notes");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("フォルダを追加", dialog);
+    expect(container.querySelector(".status-message")?.textContent).toContain("notes を追加しました");
+    expect(container.querySelector(".operation-error")?.textContent).toContain("保存に失敗しました。アクセス権限がありません。");
 
     await act(async () => saveShortcut());
     expect(container.querySelector(".operation-error")).toBeNull();
-    expect(container.querySelector(".status-message")?.textContent).toBe("Saved original.mdpkg");
+    expect(container.querySelector(".status-message")?.textContent).toBe("original.mdpkg を保存しました");
     expect(container.querySelector(".dirty-indicator")).toBeNull();
   });
 
@@ -333,9 +477,9 @@ describe("App persistence", () => {
     vi.mocked(open).mockResolvedValue(folderPath);
     vi.mocked(save).mockResolvedValue("backup");
     vi.mocked(tauri.openFolder).mockResolvedValue(documentInfo("Original"));
-    await click("File");
-    await click("Open Folder...");
-    await click("Edit");
+    await click("ファイル");
+    await click("フォルダを開く...");
+    await click("編集");
 
     const read = deferred();
     const external = documentInfo("External edit");
@@ -353,14 +497,14 @@ describe("App persistence", () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     const banner = container.querySelector(".folder-conflict")!;
-    expect(banner.textContent).toContain("Saving to this folder is blocked");
-    await click("File");
-    expect(button("Save").disabled).toBe(true);
+    expect(banner.textContent).toContain("このフォルダへの保存を停止しています");
+    await click("ファイル");
+    expect(button("保存").disabled).toBe(true);
     await act(async () => saveShortcut());
     expect(tauri.saveFolder).not.toHaveBeenCalled();
-    await click("File");
+    await click("ファイル");
 
-    await click("Export Package...", banner);
+    await click("パッケージに書き出し...", banner);
     expect(tauri.exportPackage).toHaveBeenCalledWith(expect.objectContaining({
       path: "backup.mdpkg",
       files: [expect.objectContaining({ content: "Local edit" })],
@@ -368,20 +512,21 @@ describe("App persistence", () => {
     expect(container.querySelector("textarea")?.value).toBe("Local edit");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
 
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
-    await click("Reload Folder...", banner);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Discard unsaved changes"));
+    await click("フォルダを再読込...", banner);
+    expect(container.querySelector(".about-dialog")?.textContent).toContain("未保存の変更を破棄して");
+    await click("キャンセル", container.querySelector(".about-dialog")!);
     expect(tauri.openFolder).toHaveBeenCalledTimes(2);
     expect(container.querySelector("textarea")?.value).toBe("Local edit");
     expect(container.querySelector(".folder-conflict")).not.toBeNull();
 
-    await click("Reload Folder...", banner);
+    await click("フォルダを再読込...", banner);
+    await click("破棄して続行", container.querySelector(".about-dialog")!);
     expect(tauri.openFolder).toHaveBeenCalledTimes(3);
     expect(tauri.openFolder).toHaveBeenLastCalledWith(folderPath);
     expect(container.querySelector(".document-area")?.textContent).toContain("External edit");
     expect(container.querySelector(".dirty-indicator")).toBeNull();
     expect(container.querySelector(".folder-conflict")).toBeNull();
-    await click("File");
-    expect(button("Save").disabled).toBe(false);
+    await click("ファイル");
+    expect(button("保存").disabled).toBe(false);
   });
 });

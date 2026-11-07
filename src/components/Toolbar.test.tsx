@@ -72,10 +72,10 @@ describe("Toolbar menus", () => {
     const topLevel = Array.from(container.querySelectorAll(".toolbar > .toolbar-menu > button, .toolbar > button"))
       .map((button) => button.textContent);
     expect(topLevel).toEqual([
-      "☰", "File", "Insert Diagram", "Insert Table", "Add Image", "Add Attachment", "AI", "AI Chat", "Help",
+      "☰", "ファイル", "図を挿入", "表を挿入", "画像を追加", "添付ファイルを追加", "AI", "AI チャット", "ヘルプ",
     ]);
     const addAttachmentButton = [...container.querySelectorAll(".toolbar > button")]
-      .find((button) => button.textContent === "Add Attachment") as HTMLButtonElement;
+      .find((button) => button.textContent === "添付ファイルを追加") as HTMLButtonElement;
     act(() => addAttachmentButton.click());
     expect(onAddAttachment).toHaveBeenCalledOnce();
 
@@ -85,27 +85,27 @@ describe("Toolbar menus", () => {
     expect(onToggleFileList).toHaveBeenCalledOnce();
 
     const fileButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent === "File") as HTMLButtonElement;
+      .find((button) => button.textContent === "ファイル") as HTMLButtonElement;
     const press = (key: string) => act(() => document.activeElement!.dispatchEvent(
       new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
     ));
     fileButton.focus();
     press("ArrowDown");
-    expect(document.activeElement?.textContent).toBe("New");
+    expect(document.activeElement?.textContent).toBe("新規作成");
     press("ArrowDown");
-    expect(document.activeElement?.textContent).toBe("Open");
+    expect(document.activeElement?.textContent).toBe("開く");
     press("End");
-    expect(document.activeElement?.textContent).toBe("Redo File Operation");
+    expect(document.activeElement?.textContent).toBe("ファイル操作をやり直す");
     press("Home");
-    expect(document.activeElement?.textContent).toBe("New");
+    expect(document.activeElement?.textContent).toBe("新規作成");
     press("Escape");
     expect(container.querySelector('[role="menu"]')).toBeNull();
     expect(document.activeElement).toBe(fileButton);
     act(() => fileButton.click());
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
-      .toEqual(["New", "Open", "Open Folder...", "Start with New Empty Folder", "Save", "Save As", "Print", "Add Markdown...", "Add Folder...", "Import Folder", "Export Folder", "Export Package...", "Validate Package...", "Edit Manifest...", "Search Package...", "Undo File Operation", "Redo File Operation"]);
+      .toEqual(["新規作成", "開く", "フォルダを開く...", "新しい空のフォルダで開始", "保存", "名前を付けて保存", "印刷", "Markdown を追加...", "フォルダを追加...", "フォルダから取り込み", "フォルダへ書き出し", "パッケージに書き出し...", "パッケージを診断...", "manifest を編集...", "パッケージを検索...", "ファイル操作を元に戻す", "ファイル操作をやり直す"]);
     const printButton = Array.from(container.querySelectorAll(".toolbar-menu-items button"))
-      .find((button) => button.textContent === "Print") as HTMLButtonElement;
+      .find((button) => button.textContent === "印刷") as HTMLButtonElement;
     act(() => printButton.click());
     expect(onPrint).toHaveBeenCalledOnce();
     act(() => fileButton.click());
@@ -115,9 +115,9 @@ describe("Toolbar menus", () => {
     const tocCheckbox = checkboxes[0] as HTMLInputElement;
     const rspressCheckbox = checkboxes[1] as HTMLInputElement;
     const vimCheckbox = checkboxes[2] as HTMLInputElement;
-    expect(tocCheckbox.closest("label")?.textContent).toContain("TOC");
+    expect(tocCheckbox.closest("label")?.textContent).toContain("目次");
     expect(tocCheckbox.closest("label")?.nextElementSibling?.textContent).toContain("Rspress");
-    expect(rspressCheckbox.closest("label")?.nextElementSibling?.textContent).toContain("Vim mode");
+    expect(rspressCheckbox.closest("label")?.nextElementSibling?.textContent).toContain("Vim モード");
     act(() => tocCheckbox.click());
     expect(onShowTocChange).toHaveBeenCalledWith(true);
     expect(vimCheckbox.checked).toBe(false);
@@ -127,7 +127,7 @@ describe("Toolbar menus", () => {
     expect(onVimModeChange).toHaveBeenCalledWith(true);
 
     const diagramButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent === "Insert Diagram") as HTMLButtonElement;
+      .find((button) => button.textContent === "図を挿入") as HTMLButtonElement;
     act(() => diagramButton.click());
     const diagramItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
     expect(diagramItems.map((button) => button.textContent)).toEqual(["SVG", "PlantUML", "Mermaid", "MathJax"]);
@@ -139,37 +139,38 @@ describe("Toolbar menus", () => {
     expect(aiButton.disabled).toBe(false);
     act(() => aiButton.click());
     const aiItems = Array.from(container.querySelectorAll(".toolbar-menu-items button"));
-    expect(aiItems.map((button) => button.textContent)).toEqual(["Rewrite", "Summarize", "Proofread"]);
+    expect(aiItems.map((button) => button.textContent)).toEqual(["書き換え", "要約", "校正", "AI 設定"]);
     act(() => (aiItems[0] as HTMLButtonElement).click());
     expect(noop).toHaveBeenCalled();
 
     const helpButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent === "Help") as HTMLButtonElement;
+      .find((button) => button.textContent === "ヘルプ") as HTMLButtonElement;
     act(() => helpButton.click());
     const helpItems = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'));
     expect(helpItems.map((button) => button.textContent)).toEqual([
-      "AI Settings",
-      "About MaCa Editor",
-      "Third party licenses",
+      "キーボードショートカット",
+      "AI 設定",
+      "MaCa Editor について",
+      "サードパーティライセンス",
     ]);
     expect(container.querySelector('.toolbar-menu-items [role="separator"]')).not.toBeNull();
-    const aiSettingsButton = helpItems.find((button) => button.textContent === "AI Settings") as HTMLButtonElement;
+    const aiSettingsButton = helpItems.find((button) => button.textContent === "AI 設定") as HTMLButtonElement;
     act(() => aiSettingsButton.click());
     expect(onAiSettings).toHaveBeenCalledOnce();
     act(() => helpButton.click());
     const aboutButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
-      .find((button) => button.textContent === "About MaCa Editor") as HTMLButtonElement;
+      .find((button) => button.textContent === "MaCa Editor について") as HTMLButtonElement;
     act(() => aboutButton.click());
     expect(onAbout).toHaveBeenCalledOnce();
     act(() => helpButton.click());
     const licensesButton = Array.from(container.querySelectorAll('.toolbar-menu-items [role="menuitem"]'))
-      .find((button) => button.textContent === "Third party licenses") as HTMLButtonElement;
+      .find((button) => button.textContent === "サードパーティライセンス") as HTMLButtonElement;
     expect(licensesButton).toBeInstanceOf(HTMLButtonElement);
     act(() => licensesButton.click());
     expect(onThirdPartyLicenses).toHaveBeenCalledOnce();
 
-    expect(container.textContent).not.toContain("Rename");
-    expect(container.textContent).not.toContain("Delete");
+    expect(container.textContent).not.toContain("名前を変更");
+    expect(container.textContent).not.toContain("削除");
     act(() => root.unmount());
   });
 });

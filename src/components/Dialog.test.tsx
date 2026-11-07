@@ -14,7 +14,7 @@ test("traps focus in the top dialog and restores each opener", () => {
     const [open, setOpen] = useState(false);
     const [nested, setNested] = useState(false);
     return <>
-      <button onClick={() => setOpen(true)}>Open</button>
+      <button onClick={() => setOpen(true)}>"開く"</button>
       {nested && <Dialog title="Nested" onClose={() => setNested(false)}><button>Close nested</button></Dialog>}
       {open && <Dialog title="Parent" onClose={() => setOpen(false)}>
         <button onClick={() => setNested(true)}>Open nested</button>

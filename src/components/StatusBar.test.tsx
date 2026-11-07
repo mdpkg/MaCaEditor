@@ -8,16 +8,16 @@ describe("StatusBar document mode", () => {
   test("shows Folder mode and location", () => {
     const host = document.createElement("div");
     const root = createRoot(host);
-    act(() => root.render(createElement(StatusBar, { message: "Ready", mode: "Folder", location: "C:/docs/book" })));
-    expect(host.textContent).toContain("Folder — C:/docs/book");
+    act(() => root.render(createElement(StatusBar, { message: "準備完了", mode: "Folder", location: "C:/docs/book" })));
+    expect(host.textContent).toContain("フォルダ — C:/docs/book");
     act(() => root.unmount());
   });
 
   test("shows Package mode", () => {
     const host = document.createElement("div");
     const root = createRoot(host);
-    act(() => root.render(createElement(StatusBar, { message: "Ready", mode: "Package" })));
-    expect(host.textContent).toContain("Package");
+    act(() => root.render(createElement(StatusBar, { message: "準備完了", mode: "Package" })));
+    expect(host.textContent).toContain("パッケージ");
     act(() => root.unmount());
   });
 });

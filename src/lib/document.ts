@@ -48,7 +48,7 @@ function inferDirectories(paths: string[]): string[] {
   return [...directories].sort();
 }
 
-function validateNewPackagePath(path: string): string {
+export function validateNewPackagePath(path: string): string {
   const normalized = path.normalize("NFC").replace(/\\/g, "/");
   if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) {
     throw new Error("A relative package path is required");

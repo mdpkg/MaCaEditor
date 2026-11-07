@@ -69,6 +69,7 @@ export interface DrawingEditorProps {
   onDirty: (doc: DrawingDocument) => void;
   onRequestImage?: () => Promise<string | null>;
   propertiesPanelId?: string;
+  translate?: (text: string) => string;
   preferences?: DrawingPreferences;
   onPreferencesChange?: (preferences: DrawingPreferences) => void;
 }
@@ -112,15 +113,16 @@ const COLOR_PRESETS = [
   { name: "Purple", value: "#7030a0" }, { name: "Dark Navy", value: "#1f4e78" },
 ] as const;
 
-function ColorPicker({ kind, value, onChange }: {
+function ColorPicker({ kind, value, onChange, translate }: {
+  translate: (text: string) => string;
   kind: "fill" | "stroke"; value: string; onChange: (color: string) => void;
 }) {
   return <div className="color-picker-with-presets">
-    <input aria-label={`${kind === "fill" ? "Fill" : "Line"} color`} type="color" value={value}
+    <input aria-label={translate(`${kind === "fill" ? translate("Fill") : translate("Line")} color`)} type="color" value={value}
       onChange={(event) => onChange(event.target.value)} />
     <div className="color-presets">{COLOR_PRESETS.map((preset) => <button
       key={preset.value} type="button" className="color-preset" data-color-kind={kind}
-      title={preset.name} aria-label={`${kind} ${preset.name}`}
+      title={translate(preset.name)} aria-label={translate(kind === "fill" ? translate("Fill") : translate("Line")) + " " + translate(preset.name)}
       style={{ backgroundColor: preset.value }} onClick={() => onChange(preset.value)}
     />)}</div>
   </div>;
@@ -151,6 +153,7 @@ export function DrawingEditor({
   onDirty,
   onRequestImage,
   propertiesPanelId,
+  translate = (text) => text,
   preferences,
   onPreferencesChange,
 }: DrawingEditorProps) {
@@ -1123,11 +1126,10 @@ export function DrawingEditor({
             setTool("select");
             setConnectorStart(null);
           }}
-          title="Select"
+          title={translate("Select")}
         >
-          Select
-        </button>
-        <ShapePicker
+          {translate("Select")}</button>
+        <ShapePicker translate={translate}
           items={SHAPE_TOOLS}
           onActivate={() => {
             setTool("select");
@@ -1139,8 +1141,8 @@ export function DrawingEditor({
           }}
         />
         <select
-          aria-label="Connector"
-          title="Connector"
+          aria-label={translate("Connector")}
+          title={translate("Connector")}
           className={CONNECTOR_TOOLS.some((connector) => connector.id === tool) ? "active" : ""}
           value={CONNECTOR_TOOLS.some((connector) => connector.id === tool) ? tool : ""}
           onChange={(event) => {
@@ -1148,9 +1150,9 @@ export function DrawingEditor({
             setConnectorStart(null);
           }}
         >
-          <option value="">Connector</option>
+          <option value="">{translate("Connector")}</option>
           {CONNECTOR_TOOLS.map((connector) => (
-            <option key={connector.id} value={connector.id}>{connector.label}</option>
+            <option key={connector.id} value={connector.id}>{translate(connector.label)}</option>
           ))}
         </select>
         {DIRECT_TOOLS.map((t) => (
@@ -1161,27 +1163,27 @@ export function DrawingEditor({
               setTool(t.id);
               setConnectorStart(null);
             }}
-            title={t.label}
+            title={translate(t.label)}
           >
-            {t.label}
+            {translate(t.label)}
           </button>
         ))}
         {onRequestImage && (
-          <button onClick={() => void addImage()} title="Add Image">Image</button>
+          <button onClick={() => void addImage()} title={translate("Add Image")}>{translate("Image")}</button>
         )}
         <span className="drawing-toolbar-spacer" />
-        <button onClick={() => setZoom(1)} title="Reset Zoom">100%</button>
-        <button onClick={() => setZoom(1)} title="Fit to Canvas">Fit</button>
-        <button onClick={() => togglePreference("gridVisible")} title="Toggle Grid">
-          Grid {gridVisible ? "On" : "Off"}
+        <button onClick={() => setZoom(1)} title={translate("Reset Zoom")}>100%</button>
+        <button onClick={() => setZoom(1)} title={translate("Fit to Canvas")}>{translate("Fit")}</button>
+        <button onClick={() => togglePreference("gridVisible")} title={translate("Toggle Grid")}>
+          {translate("Grid")}{gridVisible ? translate("On") : translate("Off")}
         </button>
-        <button onClick={() => togglePreference("snap")} title="Toggle Snap">
-          Snap {snap ? "On" : "Off"}
+        <button onClick={() => togglePreference("snap")} title={translate("Toggle Snap")}>
+          {translate("Snap")}{snap ? translate("On") : translate("Off")}
         </button>
-        <button aria-label="Smart guides" aria-pressed={smartGuidesEnabled}
-          title="Align to shape edges and centers (Alt to bypass)"
+        <button aria-label={translate("Smart guides")} aria-pressed={smartGuidesEnabled}
+          title={translate("Align to shape edges and centers (Alt to bypass)")}
           onClick={() => { togglePreference("smartGuidesEnabled"); setSmartGuides([]); }}>
-          Guides {smartGuidesEnabled ? "On" : "Off"}
+          {translate("Guides")}{smartGuidesEnabled ? translate("On") : translate("Off")}
         </button>
       </div>
       <div className="drawing-canvas-wrap">
@@ -1269,7 +1271,7 @@ export function DrawingEditor({
                   {geometry.curveHandle && <circle
                       className="curve-connector-adjust-handle"
                       data-curve-adjust={id}
-                      aria-label="Curve connector adjustment handle"
+                      aria-label={translate("Curve connector adjustment handle")}
                       cx={geometry.curveHandle.x}
                       cy={geometry.curveHandle.y}
                       r={7 / zoom}
@@ -1282,7 +1284,7 @@ export function DrawingEditor({
                     className="connector-endpoint-handle"
                     data-connector-endpoint={end}
                     data-object-id={id}
-                    aria-label={`Connector ${end} endpoint handle`}
+                    aria-label={translate(`Connector ${end} endpoint handle`)}
                     cx={geometry[end].x}
                     cy={geometry[end].y}
                     r={7 / zoom}
@@ -1341,7 +1343,7 @@ export function DrawingEditor({
                         className="arc-adjust-handle arc-adjust-handle-start"
                         data-arc-adjust="start"
                         data-object-id={obj.id}
-                        aria-label="Arc arrow start handle"
+                        aria-label={translate("Arc arrow start handle")}
                         cx={geometry.start[0]}
                         cy={geometry.start[1]}
                         r={6 / zoom}
@@ -1353,7 +1355,7 @@ export function DrawingEditor({
                         className="arc-adjust-handle arc-adjust-handle-end"
                         data-arc-adjust="end"
                         data-object-id={obj.id}
-                        aria-label="Arc arrow end handle"
+                        aria-label={translate("Arc arrow end handle")}
                         cx={geometry.end[0]}
                         cy={geometry.end[1]}
                         r={6 / zoom}
@@ -1368,7 +1370,7 @@ export function DrawingEditor({
                     return <circle
                       className="callout-tail-handle"
                       data-callout-tail={obj.id}
-                      aria-label="Callout tail handle"
+                      aria-label={translate("Callout tail handle")}
                       cx={tail[0]}
                       cy={tail[1]}
                       r={6 / zoom}
@@ -1382,7 +1384,7 @@ export function DrawingEditor({
                     return <circle
                       className="brace-tail-handle"
                       data-brace-tail={obj.id}
-                      aria-label="Brace tail handle"
+                      aria-label={translate("Brace tail handle")}
                       cx={tail[0]}
                       cy={tail[1]}
                       r={6 / zoom}
@@ -1473,8 +1475,8 @@ export function DrawingEditor({
       </div>
       <div className="drawing-statusbar">
         <span>{Math.round(zoom * 100)}%</span>
-        <span>Grid {gridVisible ? "On" : "Off"}</span>
-        <span>Snap {snap ? "On" : "Off"}</span>
+        <span>{translate("Grid")}{gridVisible ? translate("On") : translate("Off")}</span>
+        <span>{translate("Snap")}{snap ? translate("On") : translate("Off")}</span>
         <span>{Math.round(doc.canvas.width)} × {Math.round(doc.canvas.height)}</span>
       </div>
       {contextMenu && (() => {
@@ -1492,12 +1494,12 @@ export function DrawingEditor({
           >
             {isTextShapeType(object.type) && <>
               <div className="inspector-row">
-                <label>Fill</label>
-                <ColorPicker kind="fill" value={toColor(style.fill)} onChange={updateFill} />
+                <label>{translate("Fill")}</label>
+                <ColorPicker translate={translate} kind="fill" value={toColor(style.fill)} onChange={updateFill} />
               </div>
               <div className="inspector-row">
-                <label>Fill opacity</label>
-                <input aria-label="Fill opacity" type="number" min="0" max="100"
+                <label>{translate("Fill opacity")}</label>
+                <input aria-label={translate("Fill opacity")} type="number" min="0" max="100"
                   value={Math.round((style.fillOpacity ?? 1) * 100)}
                   onChange={(event) => updateOpacity("fill", Number(event.target.value))} />
                 <span>%</span>
@@ -1505,13 +1507,13 @@ export function DrawingEditor({
             </>}
             {supportsLine && <>
               <div className="inspector-row">
-                <label>Color</label>
-                <ColorPicker kind="stroke" value={toColor(style.stroke)} onChange={updateStroke} />
+                <label>{translate("Color")}</label>
+                <ColorPicker translate={translate} kind="stroke" value={toColor(style.stroke)} onChange={updateStroke} />
               </div>
               <div className="inspector-row">
-                <label>Weight</label>
+                <label>{translate("Weight")}</label>
                 <select
-                  aria-label="Line weight"
+                  aria-label={translate("Line weight")}
                   value={style.strokeWidth ?? 1}
                   onChange={(event) => updateStrokeWidth(Number(event.target.value))}
                 >
@@ -1520,104 +1522,104 @@ export function DrawingEditor({
                 </select>
               </div>
               <div className="inspector-row">
-                <label>Line opacity</label>
-                <input aria-label="Line opacity" type="number" min="0" max="100"
+                <label>{translate("Line opacity")}</label>
+                <input aria-label={translate("Line opacity")} type="number" min="0" max="100"
                   value={Math.round((style.strokeOpacity ?? 1) * 100)}
                   onChange={(event) => updateOpacity("stroke", Number(event.target.value))} />
                 <span>%</span>
               </div>
               <div className="inspector-row">
-                <label>Dashes</label>
+                <label>{translate("Dashes")}</label>
                 <select value={style.dashStyle ?? "solid"}
                   onChange={(event) => updateDashStyle(event.target.value as LineDashStyle)}>
                   {LINE_DASH_OPTIONS.map((option) =>
-                    <option key={option.value} value={option.value}>{option.label}</option>)}
+                    <option key={option.value} value={option.value}>{translate(option.label)}</option>)}
                 </select>
               </div>
             </>}
             {isTextShapeType(object.type) && <>
               <div className="inspector-row">
-                <label>H Align</label>
+                <label>{translate("H Align")}</label>
                 <select
-                  aria-label="H Align"
+                  aria-label={translate("H Align")}
                   value={(object as DrawingObject & { textStyle?: { align?: string } }).textStyle?.align ?? "center"}
                   onChange={(event) => updateShapeHorizontalAlign(
                     event.target.value as "left" | "center" | "right",
                   )}
                 >
-                  <option value="left">Left</option>
-                  <option value="center">Center</option>
-                  <option value="right">Right</option>
+                  <option value="left">{translate("Left")}</option>
+                  <option value="center">{translate("Center")}</option>
+                  <option value="right">{translate("Right")}</option>
                 </select>
               </div>
               <div className="inspector-row">
-                <label>V Align</label>
+                <label>{translate("V Align")}</label>
                 <select
-                  aria-label="V Align"
+                  aria-label={translate("V Align")}
                   value={(object as DrawingObject & { textStyle?: { verticalAlign?: string } }).textStyle?.verticalAlign ?? "middle"}
                   onChange={(event) => updateShapeVerticalAlign(
                     event.target.value as "top" | "middle" | "bottom",
                   )}
                 >
-                  <option value="top">Top</option>
-                  <option value="middle">Middle</option>
-                  <option value="bottom">Bottom</option>
+                  <option value="top">{translate("Top")}</option>
+                  <option value="middle">{translate("Middle")}</option>
+                  <option value="bottom">{translate("Bottom")}</option>
                 </select>
               </div>
               <div className="inspector-arrange">
-                <button aria-label="Bring to Front"
-                  onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>
-                <button aria-label="Bring Forward"
-                  onClick={() => commit(bringForward(doc, selectedIds))}>Fwd</button>
-                <button aria-label="Send Backward"
-                  onClick={() => commit(sendBackward(doc, selectedIds))}>Back</button>
-                <button aria-label="Send to Back"
-                  onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
+                <button aria-label={translate("Bring to Front")}
+                  onClick={() => commit(bringToFront(doc, selectedIds))}>{translate("Front")}</button>
+                <button aria-label={translate("Bring Forward")}
+                  onClick={() => commit(bringForward(doc, selectedIds))}>{translate("Fwd")}</button>
+                <button aria-label={translate("Send Backward")}
+                  onClick={() => commit(sendBackward(doc, selectedIds))}>{translate("Back")}</button>
+                <button aria-label={translate("Send to Back")}
+                  onClick={() => commit(sendToBack(doc, selectedIds))}>{translate("Back")}</button>
               </div>
             </>}
             {(object.type === "image" || object.type === "group") && (
               <div className="inspector-arrange">
-                <button aria-label="Bring to Front"
-                  onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>
-                <button aria-label="Bring Forward"
-                  onClick={() => commit(bringForward(doc, selectedIds))}>Fwd</button>
-                <button aria-label="Send Backward"
-                  onClick={() => commit(sendBackward(doc, selectedIds))}>Back</button>
-                <button aria-label="Send to Back"
-                  onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
+                <button aria-label={translate("Bring to Front")}
+                  onClick={() => commit(bringToFront(doc, selectedIds))}>{translate("Front")}</button>
+                <button aria-label={translate("Bring Forward")}
+                  onClick={() => commit(bringForward(doc, selectedIds))}>{translate("Fwd")}</button>
+                <button aria-label={translate("Send Backward")}
+                  onClick={() => commit(sendBackward(doc, selectedIds))}>{translate("Back")}</button>
+                <button aria-label={translate("Send to Back")}
+                  onClick={() => commit(sendToBack(doc, selectedIds))}>{translate("Back")}</button>
               </div>
             )}
             {object.type === "connector" && <>
               <div className="inspector-row">
-                <label>Start</label>
+                <label>{translate("Start")}</label>
                 <select value={object.startMarker ?? "none"}
                   onChange={(event) => updateConnectorEnd("start", event.target.value as ConnectorEndMarker)}>
-                  <option value="none">None</option><option value="arrow">Arrow</option>
-                  <option value="crowFoot">Crow's Foot</option>
+                  <option value="none">{translate("None")}</option><option value="arrow">{translate("Arrow")}</option>
+                  <option value="crowFoot">{translate("Crow's Foot")}</option>
                 </select>
               </div>
               <div className="inspector-row">
-                <label>Start size</label>
-                <select aria-label="Connector start size" value={object.startMarkerSize ?? "medium"}
+                <label>{translate("Start size")}</label>
+                <select aria-label={translate("Connector start size")} value={object.startMarkerSize ?? "medium"}
                   onChange={(event) => updateConnectorEndSize("start", event.target.value as ConnectorEndMarkerSize)}>
-                  <option value="small">Small</option><option value="medium">Medium</option>
-                  <option value="large">Large</option>
+                  <option value="small">{translate("Small")}</option><option value="medium">{translate("Medium")}</option>
+                  <option value="large">{translate("Large")}</option>
                 </select>
               </div>
               <div className="inspector-row">
-                <label>End</label>
+                <label>{translate("End")}</label>
                 <select value={object.endMarker ?? "arrow"}
                   onChange={(event) => updateConnectorEnd("end", event.target.value as ConnectorEndMarker)}>
-                  <option value="none">None</option><option value="arrow">Arrow</option>
-                  <option value="crowFoot">Crow's Foot</option>
+                  <option value="none">{translate("None")}</option><option value="arrow">{translate("Arrow")}</option>
+                  <option value="crowFoot">{translate("Crow's Foot")}</option>
                 </select>
               </div>
               <div className="inspector-row">
-                <label>End size</label>
-                <select aria-label="Connector end size" value={object.endMarkerSize ?? "medium"}
+                <label>{translate("End size")}</label>
+                <select aria-label={translate("Connector end size")} value={object.endMarkerSize ?? "medium"}
                   onChange={(event) => updateConnectorEndSize("end", event.target.value as ConnectorEndMarkerSize)}>
-                  <option value="small">Small</option><option value="medium">Medium</option>
-                  <option value="large">Large</option>
+                  <option value="small">{translate("Small")}</option><option value="medium">{translate("Medium")}</option>
+                  <option value="large">{translate("Large")}</option>
                 </select>
               </div>
             </>}
@@ -1627,7 +1629,7 @@ export function DrawingEditor({
       })()}
       {(() => {
         const inspector = <div className="drawing-inspector">
-        <h4>Properties</h4>
+        <h4>{translate("Properties")}</h4>
         {selected ? (
           <>
             {selected.type !== "connector" && <><div className="inspector-row">
@@ -1664,9 +1666,9 @@ export function DrawingEditor({
             </div></>}
             {([...TEXT_SHAPE_TYPES, "text", "image", "group"] as string[]).includes(selected.type) && (
               <div className="inspector-row">
-                <label>Rotation</label>
+                <label>{translate("Rotation")}</label>
                 <input
-                  aria-label="Rotation"
+                  aria-label={translate("Rotation")}
                   type="number"
                   step="1"
                   value={selected.rotation}
@@ -1677,17 +1679,17 @@ export function DrawingEditor({
             {isTextShapeType(selected.type) && (
               <>
                 <div className="inspector-row">
-                  <label>Fill</label>
-                  <ColorPicker
+                  <label>{translate("Fill")}</label>
+                  <ColorPicker translate={translate}
                     kind="fill"
                     value={toColor((selected.style as { fill?: string }).fill)}
                     onChange={updateFill}
                   />
                 </div>
                 <div className="inspector-row">
-                  <label>Fill opacity</label>
+                  <label>{translate("Fill opacity")}</label>
                   <input
-                    aria-label="Fill opacity"
+                    aria-label={translate("Fill opacity")}
                     type="number"
                     min="0"
                     max="100"
@@ -1701,15 +1703,15 @@ export function DrawingEditor({
             {([...TEXT_SHAPE_TYPES, "line", "arrow", "connector"] as string[]).includes(selected.type) && (
               <>
                 <div className="inspector-row">
-                  <label>Color</label>
-                  <ColorPicker
+                  <label>{translate("Color")}</label>
+                  <ColorPicker translate={translate}
                     kind="stroke"
                     value={toColor((selected.style as { stroke?: string }).stroke)}
                     onChange={updateStroke}
                   />
                 </div>
                 <div className="inspector-row">
-                  <label>Weight</label>
+                  <label>{translate("Weight")}</label>
                   <input
                     type="number"
                     min="0.25"
@@ -1723,9 +1725,9 @@ export function DrawingEditor({
                   </datalist>
                 </div>
                 <div className="inspector-row">
-                  <label>Line opacity</label>
+                  <label>{translate("Line opacity")}</label>
                   <input
-                    aria-label="Line opacity"
+                    aria-label={translate("Line opacity")}
                     type="number"
                     min="0"
                     max="100"
@@ -1735,13 +1737,13 @@ export function DrawingEditor({
                   <span>%</span>
                 </div>
                 <div className="inspector-row">
-                  <label>Dashes</label>
+                  <label>{translate("Dashes")}</label>
                   <select
                     value={(selected.style as { dashStyle?: LineDashStyle }).dashStyle ?? "solid"}
                     onChange={(e) => updateDashStyle(e.target.value as LineDashStyle)}
                   >
                     {LINE_DASH_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>{translate(option.label)}</option>
                     ))}
                   </select>
                 </div>
@@ -1750,66 +1752,66 @@ export function DrawingEditor({
             {selected.type === "connector" && (
               <>
                 <div className="inspector-row">
-                  <label htmlFor="connector-label-input">Label</label>
-                  <textarea ref={shapeTextRef} id="connector-label-input" aria-label="Connector label" rows={3}
+                  <label htmlFor="connector-label-input">{translate("Label")}</label>
+                  <textarea ref={shapeTextRef} id="connector-label-input" aria-label={translate("Connector label")} rows={3}
                     value={selected.label ?? ""}
                     onChange={event => commit(updateConnectorLabel(doc, selected.id, event.target.value))} />
                 </div>
                 <div className="inspector-row">
-                  <label>Start</label>
+                  <label>{translate("Start")}</label>
                   <select
-                    aria-label="Connector start"
+                    aria-label={translate("Connector start")}
                     value={selected.startMarker ?? "none"}
                     onChange={(e) => updateConnectorEnd("start", e.target.value as ConnectorEndMarker)}
                   >
-                    <option value="none">None</option>
-                    <option value="arrow">Arrow</option>
-                    <option value="crowFoot">Crow's Foot</option>
+                    <option value="none">{translate("None")}</option>
+                    <option value="arrow">{translate("Arrow")}</option>
+                    <option value="crowFoot">{translate("Crow's Foot")}</option>
                   </select>
                 </div>
                 <div className="inspector-row">
-                  <label>Start size</label>
+                  <label>{translate("Start size")}</label>
                   <select
-                    aria-label="Connector start size"
+                    aria-label={translate("Connector start size")}
                     value={selected.startMarkerSize ?? "medium"}
                     onChange={(e) => updateConnectorEndSize("start", e.target.value as ConnectorEndMarkerSize)}
                   >
-                    <option value="small">Small</option>
-                    <option value="medium">Medium</option>
-                    <option value="large">Large</option>
+                    <option value="small">{translate("Small")}</option>
+                    <option value="medium">{translate("Medium")}</option>
+                    <option value="large">{translate("Large")}</option>
                   </select>
                 </div>
                 <div className="inspector-row">
-                  <label>End</label>
+                  <label>{translate("End")}</label>
                   <select
-                    aria-label="Connector end"
+                    aria-label={translate("Connector end")}
                     value={selected.endMarker ?? "arrow"}
                     onChange={(e) => updateConnectorEnd("end", e.target.value as ConnectorEndMarker)}
                   >
-                    <option value="none">None</option>
-                    <option value="arrow">Arrow</option>
-                    <option value="crowFoot">Crow's Foot</option>
+                    <option value="none">{translate("None")}</option>
+                    <option value="arrow">{translate("Arrow")}</option>
+                    <option value="crowFoot">{translate("Crow's Foot")}</option>
                   </select>
                 </div>
                 <div className="inspector-row">
-                  <label>End size</label>
+                  <label>{translate("End size")}</label>
                   <select
-                    aria-label="Connector end size"
+                    aria-label={translate("Connector end size")}
                     value={selected.endMarkerSize ?? "medium"}
                     onChange={(e) => updateConnectorEndSize("end", e.target.value as ConnectorEndMarkerSize)}
                   >
-                    <option value="small">Small</option>
-                    <option value="medium">Medium</option>
-                    <option value="large">Large</option>
+                    <option value="small">{translate("Small")}</option>
+                    <option value="medium">{translate("Medium")}</option>
+                    <option value="large">{translate("Large")}</option>
                   </select>
                 </div>
               </>
             )}
             {selected.type === "autoShape" && selected.preset === "callout" && (
               <div className="inspector-row">
-                <label>Tail direction</label>
+                <label>{translate("Tail direction")}</label>
                 <input
-                  aria-label="Callout tail direction"
+                  aria-label={translate("Callout tail direction")}
                   type="range"
                   min="0"
                   max="359"
@@ -1822,33 +1824,33 @@ export function DrawingEditor({
             {selected.type === "autoShape" && selected.preset === "arcArrow" && (
               <>
                 <div className="inspector-row">
-                  <label>Start</label>
+                  <label>{translate("Start")}</label>
                   <select
-                    aria-label="Arc arrow start marker"
+                    aria-label={translate("Arc arrow start marker")}
                     value={selected.startMarker ?? "none"}
                     onChange={(e) => updateArcArrowEnd("start", e.target.value as ConnectorEndMarker)}
                   >
-                    <option value="none">None</option>
-                    <option value="arrow">Arrow</option>
-                    <option value="crowFoot">Crow's Foot</option>
+                    <option value="none">{translate("None")}</option>
+                    <option value="arrow">{translate("Arrow")}</option>
+                    <option value="crowFoot">{translate("Crow's Foot")}</option>
                   </select>
                 </div>
                 <div className="inspector-row">
-                  <label>End</label>
+                  <label>{translate("End")}</label>
                   <select
-                    aria-label="Arc arrow end marker"
+                    aria-label={translate("Arc arrow end marker")}
                     value={selected.endMarker ?? "arrow"}
                     onChange={(e) => updateArcArrowEnd("end", e.target.value as ConnectorEndMarker)}
                   >
-                    <option value="none">None</option>
-                    <option value="arrow">Arrow</option>
-                    <option value="crowFoot">Crow's Foot</option>
+                    <option value="none">{translate("None")}</option>
+                    <option value="arrow">{translate("Arrow")}</option>
+                    <option value="crowFoot">{translate("Crow's Foot")}</option>
                   </select>
                 </div>
                 <div className="inspector-row">
-                  <label>Start angle</label>
+                  <label>{translate("Start angle")}</label>
                   <input
-                    aria-label="Arc arrow start angle"
+                    aria-label={translate("Arc arrow start angle")}
                     type="range"
                     min="0"
                     max="359"
@@ -1858,9 +1860,9 @@ export function DrawingEditor({
                   <span>{Math.round(selected.adjustments?.startAngle ?? 200)}°</span>
                 </div>
                 <div className="inspector-row">
-                  <label>Arc angle</label>
+                  <label>{translate("Arc angle")}</label>
                   <input
-                    aria-label="Arc arrow sweep angle"
+                    aria-label={translate("Arc arrow sweep angle")}
                     type="range"
                     min="1"
                     max="359"
@@ -1873,7 +1875,7 @@ export function DrawingEditor({
             )}
             {(isTextShapeType(selected.type) || selected.type === "text") && (
               <div className="inspector-row">
-                <label>Text</label>
+                <label>{translate("Text")}</label>
                 <textarea
                   ref={shapeTextRef}
                   rows={4}
@@ -1885,32 +1887,32 @@ export function DrawingEditor({
             {isTextShapeType(selected.type) && (
               <>
                 <div className="inspector-row">
-                  <label>H Align</label>
+                  <label>{translate("H Align")}</label>
                   <select
                     value={(selected as DrawingObject & { textStyle?: { align?: string } }).textStyle?.align ?? "center"}
                     onChange={(e) => updateShapeHorizontalAlign(e.target.value as "left" | "center" | "right")}
                   >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
+                    <option value="left">{translate("Left")}</option>
+                    <option value="center">{translate("Center")}</option>
+                    <option value="right">{translate("Right")}</option>
                   </select>
                 </div>
                 <div className="inspector-row">
-                  <label>V Align</label>
+                  <label>{translate("V Align")}</label>
                   <select
                     value={(selected as DrawingObject & { textStyle?: { verticalAlign?: string } }).textStyle?.verticalAlign ?? "middle"}
                     onChange={(e) => updateShapeVerticalAlign(e.target.value as "top" | "middle" | "bottom")}
                   >
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
+                    <option value="top">{translate("Top")}</option>
+                    <option value="middle">{translate("Middle")}</option>
+                    <option value="bottom">{translate("Bottom")}</option>
                   </select>
                 </div>
               </>
             )}
             {selected.type === "text" && (
               <div className="inspector-row">
-                <label>Size</label>
+                <label>{translate("Size")}</label>
                 <input
                   type="number"
                   value={(selected as DrawingObject & { style: { fontSize?: number } }).style.fontSize ?? 16}
@@ -1920,51 +1922,51 @@ export function DrawingEditor({
             )}
             {selected.type === "text" && (
               <div className="inspector-row">
-                <label>Align</label>
+                <label>{translate("Align")}</label>
                 <select
                   value={(selected as DrawingObject & { style: { align?: string } }).style.align ?? "left"}
                   onChange={(e) =>
                     updateTextAlign(e.target.value as "left" | "center" | "right")
                   }
                 >
-                  <option value="left">Left</option>
-                  <option value="center">Center</option>
-                  <option value="right">Right</option>
+                  <option value="left">{translate("Left")}</option>
+                  <option value="center">{translate("Center")}</option>
+                  <option value="right">{translate("Right")}</option>
                 </select>
               </div>
             )}
           </>
         ) : (
-          <p className="inspector-empty">Select an object</p>
+          <p className="inspector-empty">{translate("Select an object")}</p>
         )}
         {selectedIds.length > 1 && (
           <div className="inspector-align">
-            <button onClick={() => applyAlign("left")}>L</button>
-            <button onClick={() => applyAlign("center")}>C</button>
-            <button onClick={() => applyAlign("right")}>R</button>
-            <button onClick={() => applyAlign("top")}>T</button>
-            <button onClick={() => applyAlign("middle")}>M</button>
-            <button onClick={() => applyAlign("bottom")}>B</button>
-            <button aria-label="Distribute horizontally" title="Equal horizontal gaps"
+            <button onClick={() => applyAlign("left")}>{translate("Left")}</button>
+            <button onClick={() => applyAlign("center")}>{translate("Center")}</button>
+            <button onClick={() => applyAlign("right")}>{translate("Right")}</button>
+            <button onClick={() => applyAlign("top")}>{translate("Top")}</button>
+            <button onClick={() => applyAlign("middle")}>{translate("Middle")}</button>
+            <button onClick={() => applyAlign("bottom")}>{translate("Bottom")}</button>
+            <button aria-label={translate("Distribute horizontally")} title={translate("Equal horizontal gaps")}
               disabled={selectedObjects.filter(o => o.type !== "connector").length < 3}
-              onClick={() => commit(distributeObjects(doc, selectedIds, "horizontal"))}>H gaps</button>
-            <button aria-label="Distribute vertically" title="Equal vertical gaps"
+              onClick={() => commit(distributeObjects(doc, selectedIds, "horizontal"))}>{translate("H gaps")}</button>
+            <button aria-label={translate("Distribute vertically")} title={translate("Equal vertical gaps")}
               disabled={selectedObjects.filter(o => o.type !== "connector").length < 3}
-              onClick={() => commit(distributeObjects(doc, selectedIds, "vertical"))}>V gaps</button>
+              onClick={() => commit(distributeObjects(doc, selectedIds, "vertical"))}>{translate("V gaps")}</button>
           </div>
         )}
         <div className="inspector-group">
-          {selectedIds.length > 1 && <button onClick={groupSelection}>Group</button>}
+          {selectedIds.length > 1 && <button onClick={groupSelection}>{translate("Group")}</button>}
           {selectedObjects.some((object) => object.type === "group") && (
-            <button onClick={ungroupSelection}>Ungroup</button>
+            <button onClick={ungroupSelection}>{translate("Ungroup")}</button>
           )}
         </div>
         {selectedIds.length > 0 && (
           <div className="inspector-arrange">
-            <button onClick={() => commit(bringToFront(doc, selectedIds))}>Front</button>
-            <button onClick={() => commit(bringForward(doc, selectedIds))}>Fwd</button>
-            <button onClick={() => commit(sendBackward(doc, selectedIds))}>Back</button>
-            <button onClick={() => commit(sendToBack(doc, selectedIds))}>Back</button>
+            <button onClick={() => commit(bringToFront(doc, selectedIds))}>{translate("Front")}</button>
+            <button onClick={() => commit(bringForward(doc, selectedIds))}>{translate("Fwd")}</button>
+            <button onClick={() => commit(sendBackward(doc, selectedIds))}>{translate("Back")}</button>
+            <button onClick={() => commit(sendToBack(doc, selectedIds))}>{translate("Back")}</button>
           </div>
         )}
         </div>;

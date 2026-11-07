@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 interface Props {
   message: string;
   mode?: "Package" | "Folder";
@@ -7,6 +8,6 @@ interface Props {
 export function StatusBar({ message, mode, location }: Props) {
   return <div className="status-bar">
     <span className="status-message" title={message}>{message}</span>
-    {mode && <span className="document-origin" title={location}>{mode}{location ? ` — ${location}` : ""}</span>}
+    {mode && <span className="document-origin" title={location}>{uiText(mode)}{location ? ` — ${location}` : ""}</span>}
   </div>;
 }

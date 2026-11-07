@@ -9,11 +9,11 @@ type MarkdownNode = {
 };
 
 const alertTitles = {
-  NOTE: "Note",
-  TIP: "Tip",
-  IMPORTANT: "Important",
-  WARNING: "Warning",
-  CAUTION: "Caution",
+  NOTE: "補足",
+  TIP: "ヒント",
+  IMPORTANT: "重要",
+  WARNING: "警告",
+  CAUTION: "注意",
 } as const;
 
 type AlertKind = keyof typeof alertTitles;

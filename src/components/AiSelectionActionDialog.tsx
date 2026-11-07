@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { AiConfig } from "../types";
@@ -81,72 +82,70 @@ export function AiSelectionActionDialog({
   const configured = config !== null && isAiConfigured(config);
 
   return (
-    <Dialog className="about-dialog ai-result-dialog" onClose={() => void close()} title={<>AI {task}</>} initialFocus={closeButtonRef}>
+    <Dialog className="about-dialog ai-result-dialog" onClose={() => void close()} title={<>AI {uiText(task)}</>} initialFocus={closeButtonRef}>
       {!configured && (
         <>
           <p className="ai-status ai-status-error">
-            AI is not configured. Open AI Settings to configure an OpenAI Compatible API.
-          </p>
+            {uiText("AI is not configured. Open AI Settings to configure an OpenAI Compatible API.")}</p>
           <div className="about-dialog-actions">
-            <button type="button" onClick={onOpenAiSettings}>Open AI Settings</button>
-            <button ref={closeButtonRef} type="button" onClick={() => void close()}>Close</button>
+            <button type="button" onClick={onOpenAiSettings}>{uiText("Open AI Settings")}</button>
+            <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>
           </div>
         </>
       )}
       {configured && state === "idle" && (
         <div className="about-dialog-actions">
-          <button type="button" onClick={() => void run()}>Generate</button>
-          <button ref={closeButtonRef} type="button" onClick={() => void close()}>Close</button>
+          <button type="button" onClick={() => void run()}>{uiText("Generate")}</button>
+          <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>
         </div>
       )}
       {state === "running" && (
         <>
           <p className="ai-status ai-status-testing">
             <span className="ai-spinner" aria-hidden="true" />
-            Generating…
-          </p>
+            {uiText("Generating…")}</p>
           <pre className="ai-result-preview">{result}</pre>
           <div className="about-dialog-actions">
-            <button type="button" onClick={() => void service.cancel()}>Cancel</button>
-            <button ref={closeButtonRef} type="button" onClick={() => void close()}>Close</button>
+            <button type="button" onClick={() => void service.cancel()}>{uiText("Cancel")}</button>
+            <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>
           </div>
         </>
       )}
       {state === "completed" && (
         <>
           <div className="ai-result-labels">
-            <span>Result</span>
+            <span>{uiText("Result")}</span>
             <button type="button" onClick={() => setShowOriginal((v) => !v)}>
-              {showOriginal ? "Hide Original" : "Show Original"}
+              {showOriginal ? uiText("Hide Original") : uiText("Show Original")}
             </button>
           </div>
           {showOriginal && <pre className="ai-result-original">{snapshot.text}</pre>}
           <pre className="ai-result-preview">{result}</pre>
           <div className="about-dialog-actions">
-            <button type="button" onClick={() => handleApply("replace")}>Replace Selection</button>
-            <button type="button" onClick={() => handleApply("insert")}>Insert Below</button>
-            <button type="button" onClick={discard}>Discard</button>
-            <button ref={closeButtonRef} type="button" onClick={() => void close()}>Close</button>
+            <button type="button" onClick={() => handleApply("replace")}>{uiText("Replace Selection")}</button>
+            <button type="button" onClick={() => handleApply("insert")}>{uiText("Insert Below")}</button>
+            <button type="button" onClick={discard}>{uiText("Discard")}</button>
+            <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>
           </div>
         </>
       )}
       {state === "cancelled" && (
         <>
-          <p className="ai-status ai-status-error">Cancelled</p>
+          <p className="ai-status ai-status-error">{uiText("Cancelled")}</p>
           <div className="about-dialog-actions">
-            <button type="button" onClick={() => void run()}>Retry</button>
-            <button ref={closeButtonRef} type="button" onClick={() => void close()}>Close</button>
+            <button type="button" onClick={() => void run()}>{uiText("Retry")}</button>
+            <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>
           </div>
         </>
       )}
       {state === "error" && (
         <>
           <p className="ai-status ai-status-error">
-            {errorKind ? aiErrorMessage(errorKind) : "An error occurred."}
+            {errorKind ? aiErrorMessage(errorKind) : uiText("An error occurred.")}
           </p>
           <div className="about-dialog-actions">
-            <button type="button" onClick={() => void run()}>Retry</button>
-            <button ref={closeButtonRef} type="button" onClick={() => void close()}>Close</button>
+            <button type="button" onClick={() => void run()}>{uiText("Retry")}</button>
+            <button ref={closeButtonRef} type="button" onClick={() => void close()}>{uiText("Close")}</button>
           </div>
         </>
       )}

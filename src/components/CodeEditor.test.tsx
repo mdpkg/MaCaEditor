@@ -268,7 +268,7 @@ describe("CodeEditor", () => {
     key("End");
     expect(document.activeElement?.textContent).toBe("AI");
     key("ArrowRight");
-    expect(document.activeElement?.textContent).toBe("Rewrite");
+    expect(document.activeElement?.textContent).toBe("書き換え");
     key("Escape");
     expect(document.activeElement?.textContent).toBe("AI");
     key("ArrowRight");
