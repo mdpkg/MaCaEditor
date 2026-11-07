@@ -16,6 +16,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   saveFolder: vi.fn(),
   exportPackage: vi.fn(),
   watchFolder: vi.fn(),
+  watchPrint: vi.fn(),
   stopWatchingFolder: vi.fn(),
   onFolderChanged: vi.fn(),
   onNativeFileDrop: vi.fn(),
@@ -200,6 +201,30 @@ describe("App persistence", () => {
     expect(container.querySelector('[data-path="renamed.md"]')).toBeNull();
     expect(nativePrompt).not.toHaveBeenCalled();
     expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  test("shows a Windows print failure in Japanese and retains the system message", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await click("開く", container.querySelector(".empty-state")!);
+    vi.mocked(tauri.watchPrint).mockResolvedValue("MaCa Editor [print-id]");
+    const print = vi.spyOn(window, "print").mockImplementation(() => {
+      expect(document.title).toBe("MaCa Editor [print-id] — original.mdpkg — MaCa Editor");
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    await click("ファイル");
+    await click("印刷");
+    expect(print).toHaveBeenCalledOnce();
+    expect(document.title).toBe("original.mdpkg — MaCa Editor");
+
+    const detail = "Win32 エラー コード: 5\nアクセスが拒否されました。\n";
+    act(() => vi.mocked(tauri.watchPrint).mock.calls[0][0](detail));
+    const summary = "印刷に失敗しました。詳しくは詳細欄を確認してください。";
+    const banner = container.querySelector(".operation-error")!;
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe(summary);
+    expect(container.querySelector(".status-message")?.textContent).toBe(summary);
+    expect(banner.querySelector("details")?.open).toBe(false);
+    expect(banner.querySelector(".error-detail")?.textContent).toBe(detail);
   });
 
   test("keeps a move collision with a Japanese path in the error details", async () => {

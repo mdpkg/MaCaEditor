@@ -9,6 +9,7 @@ pub mod package_loader;
 pub mod package_validation;
 pub mod package_writer;
 pub mod path_validator;
+mod print_monitor;
 
 #[cfg(all(test, desktop))]
 mod startup_visibility_tests {
@@ -55,6 +56,9 @@ pub fn run() {
         }
     });
 
+    #[cfg(windows)]
+    let builder = builder.manage(print_monitor::PrintMonitor::default());
+
     builder
         .manage(folder_watcher::FolderWatcherState::default())
         .setup(|app| {
@@ -88,6 +92,7 @@ pub fn run() {
             commands::read_attachment,
             commands::read_image,
             commands::save_attachment,
+            print_monitor::watch_print,
             folder_watcher::watch_folder,
             folder_watcher::stop_watching_folder,
             commands::save_ai_config,
