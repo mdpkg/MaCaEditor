@@ -27,6 +27,12 @@ function mountPrintPages(printDoc: Document): () => void {
   const pages = document.importNode(prepared, true);
   pages.hidden = true;
   pages.classList.add("maca-print-pages");
+  for (const page of Array.from(pages.children)) {
+    const sheet = document.createElement("div");
+    sheet.className = "maca-print-sheet";
+    page.replaceWith(sheet);
+    sheet.append(page);
+  }
   const stylesheet = document.createElement("style");
   stylesheet.media = "print";
   const paginatorStyles = Array.from(
@@ -35,12 +41,35 @@ function mountPrintPages(printDoc: Document): () => void {
   ).join("\n");
   stylesheet.textContent = `
     ${paginatorStyles}
-    @page { size: A4; margin: 0; }
+    @page { margin: 0; }
     body > :not(.maca-print-pages) { display: none !important; }
     body > .maca-print-pages { display: block !important; }
-    /* Leave vertical clearance for print rounding while keeping the sheet width. */
+    .maca-print-pages {
+      --maca-print-scale: 1;
+    }
+    @supports (transform: scale(calc(1px / 1px))) {
+      .maca-print-pages {
+        --maca-print-scale: min(1, calc((100vw - 4px) / 210mm), calc((100vh - 4px) / 297mm));
+      }
+    }
+    .maca-print-sheet {
+      position: relative;
+      overflow: hidden;
+      margin-inline: auto;
+      width: calc(210mm * var(--maca-print-scale));
+      /* Leave vertical clearance for rounding in the print engine. */
+      height: calc((297mm - 4px) * var(--maca-print-scale));
+      break-after: page;
+    }
+    .maca-print-sheet:last-child {
+      break-after: auto;
+    }
     .maca-print-pages .pm-page {
-      max-height: calc(297mm - 4px);
+      position: absolute;
+      inset: 0 auto auto 0;
+      break-after: auto;
+      transform: scale(var(--maca-print-scale));
+      transform-origin: top left;
     }
   `;
   document.head.append(stylesheet);
