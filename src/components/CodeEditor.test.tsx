@@ -1,3 +1,4 @@
+import { isPackageSearchShortcut } from "../lib/shortcuts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -175,6 +176,34 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test.each([false, true])("separates search shortcuts with Vim = %s", (vimMode) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const openPackageSearch = vi.fn();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.defaultPrevented && isPackageSearchShortcut(event)) openPackageSearch();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    try {
+      act(() => root.render(<CodeEditor value="hello world" onChange={vi.fn()} vimMode={vimMode} />));
+      const editor = container.querySelector<HTMLElement>(".cm-content")!;
+      const press = (shiftKey: boolean) => act(() => editor.dispatchEvent(new KeyboardEvent("keydown", {
+        key: shiftKey ? "F" : "f", code: "KeyF", ctrlKey: true, shiftKey, bubbles: true, cancelable: true,
+      })));
+      editor.focus();
+      press(true);
+      expect(openPackageSearch).toHaveBeenCalledOnce();
+      expect(container.querySelector(".cm-search")).toBeNull();
+      press(false);
+      expect(container.querySelector(".cm-search input")).not.toBeNull();
+      expect(openPackageSearch).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("keydown", onKeyDown);
+      act(() => root.unmount());
+    }
+  });
+
   test("opens an AI context menu on right-click with a selection", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -198,12 +227,23 @@ describe("CodeEditor", () => {
     const menu = document.querySelector(".editor-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     const buttons = [...menu.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread"]);
+    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "AI"]);
 
-    const rewrite = menu.querySelectorAll("button")[4] as HTMLButtonElement;
-    act(() => rewrite.click());
+    expect(document.activeElement?.textContent).toBe("コピー");
+    const key = (key: string) => act(() => document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    ));
+    key("End");
+    expect(document.activeElement?.textContent).toBe("AI");
+    key("ArrowRight");
+    expect(document.activeElement?.textContent).toBe("Rewrite");
+    key("Escape");
+    expect(document.activeElement?.textContent).toBe("AI");
+    key("ArrowRight");
+    act(() => (document.activeElement as HTMLButtonElement).click());
     expect(onAiSelection).toHaveBeenCalledWith("Rewrite");
     expect(document.querySelector(".editor-context-menu")).toBeNull();
+    expect(document.activeElement).toBe(contentElement);
 
     act(() => root.unmount());
   });
@@ -228,7 +268,7 @@ describe("CodeEditor", () => {
     const menu = document.querySelector(".editor-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     const buttons = [...menu.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread"]);
+    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "AI"]);
 
     act(() => root.unmount());
   });
@@ -253,7 +293,7 @@ describe("CodeEditor", () => {
     const menu = document.querySelector(".editor-context-menu") as HTMLDivElement;
     expect(menu).not.toBeNull();
     const buttons = [...menu.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "Rewrite", "Summarize", "Proofread"]);
+    expect(buttons).toEqual(["コピー", "切り取り", "貼り付け", "削除", "AI"]);
 
     act(() => root.unmount());
   });

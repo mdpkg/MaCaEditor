@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPackageSearchShortcut, isSaveShortcut } from "./shortcuts";
+import { isDocumentSearchShortcut, isPackageSearchShortcut, isSaveShortcut } from "./shortcuts";
 
 describe("isSaveShortcut", () => {
   it("accepts Ctrl+S case-insensitively", () => {
@@ -18,15 +18,16 @@ describe("isSaveShortcut", () => {
   });
 });
 
-describe("isPackageSearchShortcut", () => {
-  it("accepts Ctrl+F and Cmd+F case-insensitively", () => {
-    expect(isPackageSearchShortcut({ key: "f", ctrlKey: true, metaKey: false, altKey: false })).toBe(true);
-    expect(isPackageSearchShortcut({ key: "F", ctrlKey: false, metaKey: true, altKey: false })).toBe(true);
-  });
-
-  it("rejects modified or unrelated keys", () => {
-    expect(isPackageSearchShortcut({ key: "f", ctrlKey: false, metaKey: false, altKey: false })).toBe(false);
-    expect(isPackageSearchShortcut({ key: "f", ctrlKey: true, metaKey: false, altKey: true })).toBe(false);
-    expect(isPackageSearchShortcut({ key: "s", ctrlKey: true, metaKey: false, altKey: false })).toBe(false);
+describe("search shortcuts", () => {
+  it.each([
+    { ctrlKey: true, metaKey: false },
+    { ctrlKey: false, metaKey: true },
+  ])("separates the document and package searches for %o", (modifiers) => {
+    const event = { key: "f", altKey: false, ...modifiers };
+    expect(isDocumentSearchShortcut(event)).toBe(true);
+    expect(isPackageSearchShortcut(event)).toBe(false);
+    expect(isDocumentSearchShortcut({ ...event, key: "F", shiftKey: true })).toBe(false);
+    expect(isPackageSearchShortcut({ ...event, key: "F", shiftKey: true })).toBe(true);
+    expect(isPackageSearchShortcut({ ...event, altKey: true, shiftKey: true })).toBe(false);
   });
 });

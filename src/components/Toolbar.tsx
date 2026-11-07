@@ -1,3 +1,4 @@
+import { Menu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
@@ -138,10 +139,18 @@ export function Toolbar({
           className="toolbar-menu-trigger"
           aria-haspopup="menu"
           aria-expanded={openMenu === "file"}
-          onClick={() => setOpenMenu((current) => current === "file" ? null : "file")}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            setOpenMenu((current) => current === "file" ? null : "file");
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown") return;
+            event.preventDefault();
+            setOpenMenu("file");
+          }}
         >File</button>
         {openMenu === "file" && (
-          <div className="toolbar-menu-items" role="menu">
+          <Menu className="toolbar-menu-items" label="File" onClose={() => setOpenMenu(null)}>
             <button type="button" role="menuitem" onClick={() => run(onNew)}>New</button>
             <button type="button" role="menuitem" onClick={() => run(onOpen)}>Open</button>
             <button type="button" role="menuitem" onClick={() => run(onOpenFolder ?? (() => {}))}>Open Folder...</button>
@@ -159,10 +168,10 @@ export function Toolbar({
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>Validate Package...</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>Edit Manifest...</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSearchPackage)}>Search Package...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} aria-keyshortcuts="Control+Shift+F Meta+Shift+F" title="Ctrl/Cmd+Shift+F" onClick={() => run(onSearchPackage)}>Search Package...</button>
             <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>Undo File Operation</button>
             <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>Redo File Operation</button>
-          </div>
+          </Menu>
         )}
       </div>
 
@@ -173,15 +182,23 @@ export function Toolbar({
           aria-haspopup="menu"
           aria-expanded={openMenu === "diagram"}
           disabled={!hasDocument}
-          onClick={() => setOpenMenu((current) => current === "diagram" ? null : "diagram")}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            setOpenMenu((current) => current === "diagram" ? null : "diagram");
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown") return;
+            event.preventDefault();
+            setOpenMenu("diagram");
+          }}
         >Insert Diagram</button>
         {openMenu === "diagram" && (
-          <div className="toolbar-menu-items" role="menu">
+          <Menu className="toolbar-menu-items" label="Insert Diagram" onClose={() => setOpenMenu(null)}>
             <button type="button" role="menuitem" onClick={() => run(onInsertDrawing)}>SVG</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertPlantUml)}>PlantUML</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertMermaid)}>Mermaid</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertMathJax)}>MathJax</button>
-          </div>
+          </Menu>
         )}
       </div>
 
@@ -195,14 +212,22 @@ export function Toolbar({
           aria-haspopup="menu"
           aria-expanded={openMenu === "ai"}
           disabled={!aiSelectionEnabled || aiSelectionRunning}
-          onClick={() => setOpenMenu((current) => current === "ai" ? null : "ai")}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            setOpenMenu((current) => current === "ai" ? null : "ai");
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown") return;
+            event.preventDefault();
+            setOpenMenu("ai");
+          }}
         >AI</button>
         {openMenu === "ai" && (
-          <div className="toolbar-menu-items" role="menu">
+          <Menu className="toolbar-menu-items" label="AI" onClose={() => setOpenMenu(null)}>
             <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Rewrite"))}>Rewrite</button>
             <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Summarize"))}>Summarize</button>
             <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Proofread"))}>Proofread</button>
-          </div>
+          </Menu>
         )}
       </div>
       <button type="button" aria-pressed={aiChatOpen} disabled={!aiChatEnabled} onClick={onToggleAiChat}>AI Chat</button>
@@ -212,15 +237,23 @@ export function Toolbar({
           className="toolbar-menu-trigger"
           aria-haspopup="menu"
           aria-expanded={openMenu === "help"}
-          onClick={() => setOpenMenu((current) => current === "help" ? null : "help")}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            setOpenMenu((current) => current === "help" ? null : "help");
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown") return;
+            event.preventDefault();
+            setOpenMenu("help");
+          }}
         >Help</button>
         {openMenu === "help" && (
-          <div className="toolbar-menu-items" role="menu">
+          <Menu className="toolbar-menu-items" label="Help" onClose={() => setOpenMenu(null)}>
             <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>AI Settings</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
             <button type="button" role="menuitem" onClick={() => run(onThirdPartyLicenses)}>Third party licenses</button>
-          </div>
+          </Menu>
         )}
       </div>
       <label className="toolbar-vim-mode toolbar-toc">

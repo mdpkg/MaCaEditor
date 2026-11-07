@@ -10,6 +10,61 @@ afterEach(() => {
 });
 
 describe("FileTree", () => {
+  test("opens a file using the tree keyboard and keeps its context menu on screen", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onSelect = vi.fn();
+    const measure = HTMLElement.prototype.getBoundingClientRect;
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.matches(".file-tree-context-menu") ? new DOMRect(0, 0, 140, 110) : measure.call(this);
+    });
+    try {
+      act(() => root.render(<FileTree
+        files={[{ path: "docs/guide.md", is_text: true, content: "", base64: null }]}
+        selectedPath="docs/guide.md" onSelect={onSelect} onDropImages={vi.fn()}
+        canRename={() => true} onRename={vi.fn()} canDelete={() => true} onDelete={vi.fn()} />));
+      const tree = container.querySelector('[role="tree"]')!;
+      const folder = tree.querySelector<HTMLElement>('[data-path="docs"]')!;
+      const file = () => tree.querySelector<HTMLElement>('[data-path="docs/guide.md"]');
+      const press = (key: string, shiftKey = false) => act(() => document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }),
+      ));
+      expect(tree.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+      act(() => file()!.focus());
+      press("ArrowLeft");
+      expect(document.activeElement).toBe(folder);
+      press("ArrowLeft");
+      expect(folder.getAttribute("aria-expanded")).toBe("false");
+      expect(file()).toBeNull();
+      press("ArrowRight");
+      press("ArrowRight");
+      expect(document.activeElement).toBe(file());
+      press("Enter");
+      expect(onSelect).toHaveBeenCalledWith("docs/guide.md");
+
+      press("F10", true);
+      expect(document.activeElement?.textContent).toBe("Rename");
+      press("ArrowDown");
+      expect(document.activeElement?.textContent).toBe("Delete");
+      press("Escape");
+      expect(document.activeElement).toBe(file());
+
+      act(() => file()!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true, clientX: window.innerWidth - 1, clientY: window.innerHeight - 1,
+      })));
+      const menu = document.querySelector<HTMLElement>(".file-tree-context-menu")!;
+      expect(menu.style.left).toBe(`${window.innerWidth - 140 - 8}px`);
+      expect(menu.style.top).toBe(`${window.innerHeight - 110 - 8}px`);
+      press("Escape");
+      expect(document.querySelector(".file-tree-context-menu")).toBeNull();
+      expect(document.activeElement).toBe(file());
+    } finally {
+      bounds.mockRestore();
+      act(() => root.unmount());
+    }
+  });
+
   test("shows icons for folders and each file kind", () => {
     const container = document.createElement("div"); document.body.appendChild(container);
     const root = createRoot(container);

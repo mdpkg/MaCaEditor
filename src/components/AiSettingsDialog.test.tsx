@@ -33,7 +33,7 @@ describe("AiSettingsDialog", () => {
     });
 
     const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog?.getAttribute("aria-label")).toBe("AI Settings");
+    expect(document.getElementById(dialog!.getAttribute("aria-labelledby")!)?.textContent).toBe("AI Settings");
     expect(dialog?.textContent).toContain("Base URL");
     expect(dialog?.textContent).toContain("Model");
     expect(dialog?.textContent).toContain("Connection Timeout");

@@ -21,7 +21,7 @@ describe("ThirdPartyLicensesDialog", () => {
     ));
 
     const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog?.getAttribute("aria-label")).toBe("Third party licenses");
+    expect(document.getElementById(dialog!.getAttribute("aria-labelledby")!)?.textContent).toBe("Third party licenses");
     expect(dialog?.querySelector("pre")?.textContent).toContain("React MIT");
     act(() => (container.querySelector("button") as HTMLButtonElement).click());
     expect(onClose).toHaveBeenCalledOnce();

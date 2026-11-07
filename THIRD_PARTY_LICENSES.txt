@@ -12,6 +12,10 @@ MIT-licensed software
 Copyright (C) 2018-2021 by Marijn Haverbeke
 <marijn@haverbeke.berlin> and others
 
+@codemirror/search 6.7.1
+Copyright (C) 2018-2021 by Marijn Haverbeke
+<marijn@haverbeke.berlin> and others
+
 @plantuml/core 1.2026.6
 Copyright (C) 2009-2024, Arnaud Roques
 

@@ -1,3 +1,4 @@
+import { Dialog } from "./Dialog";
 import ReactMarkdown from "react-markdown";
 import type { Components, UrlTransform } from "react-markdown";
 import type {
@@ -5,7 +6,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
 } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
@@ -125,27 +126,27 @@ export function MarkdownPreview({
     originY: number;
   } | null>(null);
 
-  const showPreviewMedia = (media: PreviewMedia) => {
+  const showPreviewMedia = useCallback((media: PreviewMedia) => {
     setMediaTransform(initialMediaTransform);
     setPreviewMedia(media);
-  };
+  }, []);
 
-  const cancelDiagramClick = () => {
+  const cancelDiagramClick = useCallback(() => {
     if (diagramClickTimer.current !== null) {
       window.clearTimeout(diagramClickTimer.current);
       diagramClickTimer.current = null;
     }
-  };
+  }, []);
 
-  const showDiagramAfterDoubleClickDelay = (media: PreviewMedia) => {
+  const showDiagramAfterDoubleClickDelay = useCallback((media: PreviewMedia) => {
     cancelDiagramClick();
     diagramClickTimer.current = window.setTimeout(() => {
       showPreviewMedia(media);
       diagramClickTimer.current = null;
     }, 200);
-  };
+  }, [cancelDiagramClick, showPreviewMedia]);
 
-  useEffect(() => () => cancelDiagramClick(), []);
+  useEffect(() => cancelDiagramClick, [cancelDiagramClick]);
 
   useEffect(() => {
     const preview = previewRef.current;
@@ -165,15 +166,6 @@ export function MarkdownPreview({
     const maximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
     onScrollRatioChange(maximum > 0 ? preview.scrollTop / maximum : 0);
   };
-
-  useEffect(() => {
-    if (!previewMedia) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewMedia(null);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [previewMedia]);
 
   const zoomPreviewMedia = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -226,7 +218,15 @@ export function MarkdownPreview({
     previewMedia.onEdit();
   };
 
-  const components: Components = {
+  const actions = {
+    onEditDrawing, onEditPlantUml, onEditMermaid, onEditMathJax,
+    onEditTable, onDownloadAttachment, onNavigateMarkdown,
+  };
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
+  // Keep the media opener mounted when the overlay or app controls re-render.
+  const components = useMemo<Components>(() => ({
     ...Object.fromEntries(([1, 2, 3, 4, 5, 6] as const).map((level) => {
       const Tag = `h${level}` as const;
       return [Tag, ({ node, ...props }: ComponentProps<typeof Tag> & { node?: { position?: { start: { offset?: number } } } }) => {
@@ -238,6 +238,7 @@ export function MarkdownPreview({
       }];
     })),
     table({ node, ...props }) {
+      const { onEditTable } = actionsRef.current;
       const previewStart = node?.position?.start.offset;
       const previewEnd = node?.position?.end.offset;
       const start = previewStart === undefined || previewStart < tocPrefixLength
@@ -275,7 +276,10 @@ export function MarkdownPreview({
           role="button"
           tabIndex={0}
           title="クリックで拡大表示"
-          onClick={() => showPreviewMedia({ kind: "image", src: imageSrc, alt })}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            showPreviewMedia({ kind: "image", src: imageSrc, alt });
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
@@ -285,6 +289,7 @@ export function MarkdownPreview({
         />;
       }
       if (file?.is_text && file.content?.trim().startsWith("<svg")) {
+        const { onEditDrawing, onEditPlantUml, onEditMermaid, onEditMathJax } = actionsRef.current;
         const sanitizedSvg = sanitizeHtml(file.content);
         const drawingResource = manifest ? findResourceByRendered(manifest, resolved ?? "") : undefined;
         const plantUmlResource = manifest
@@ -300,31 +305,32 @@ export function MarkdownPreview({
         const editDiagram = drawingResource
           ? onEditDrawing
           : plantUmlResource ? onEditPlantUml : mermaidResource ? onEditMermaid : onEditMathJax;
+        const media: PreviewMedia = {
+          kind: "diagram", html: sanitizedSvg, alt,
+          onEdit: sourcePath && editDiagram ? () => editDiagram(sourcePath) : undefined,
+          whiteBackground: true,
+        };
         return <span
           className="drawing-image preview-diagram"
           data-drawpath={sourcePath ?? ""}
-          role={sourcePath && editDiagram ? "button" : undefined}
-          tabIndex={sourcePath && editDiagram ? 0 : undefined}
+          role="button"
+          tabIndex={0}
+          aria-label={alt || "ダイアグラムを拡大表示"}
           title={sourcePath && editDiagram
             ? "クリックで拡大、ダブルクリックでダイアグラムを編集"
             : "クリックで拡大表示"}
-          onClick={() => showDiagramAfterDoubleClickDelay({
-            kind: "diagram",
-            html: sanitizedSvg,
-            alt,
-            onEdit: sourcePath && editDiagram
-              ? () => editDiagram(sourcePath)
-              : undefined,
-            whiteBackground: true,
-          })}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            showDiagramAfterDoubleClickDelay(media);
+          }}
           onDoubleClick={() => {
             cancelDiagramClick();
             if (sourcePath) editDiagram?.(sourcePath);
           }}
           onKeyDown={(event) => {
-            if (sourcePath && (event.key === "Enter" || event.key === " ")) {
+            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
               event.preventDefault();
-              editDiagram?.(sourcePath);
+              showPreviewMedia(media);
             }
           }}
         >
@@ -349,6 +355,7 @@ export function MarkdownPreview({
       return <span className="missing-image">⚠️ 画像が見つかりません: {src}</span>;
     },
     a({ href = "", ...props }) {
+      const { onDownloadAttachment, onNavigateMarkdown } = actionsRef.current;
       const packagePath = decodePackageUrl(href);
       const resolvedPath = files.some((file) => file.path === packagePath)
         ? packagePath
@@ -379,7 +386,10 @@ export function MarkdownPreview({
       }
       return <a {...props} href={packageUrl(baseDir, href)} />;
     },
-  };
+  }), [
+    baseDir, files, manifest, tocPrefixLength, showPreviewMedia,
+    showDiagramAfterDoubleClickDelay, cancelDiagramClick,
+  ]);
   const urlTransform: UrlTransform = (url, key) =>
     key === "href" ? packageUrl(baseDir, url) : url;
   const compatibleMarkdown = normalizeLegacyImageDestinations(markdown, baseDir, files);
@@ -403,12 +413,7 @@ export function MarkdownPreview({
       </ReactMarkdown>
     </div>
     {previewMedia && createPortal(
-      <div
-        className="preview-media-overlay"
-        role="dialog"
-        aria-modal="true"
-        aria-label="拡大表示"
-      >
+      <Dialog className="preview-media-overlay" title="拡大表示" onClose={() => setPreviewMedia(null)} backdrop={false}>
         <button
           type="button"
           className="preview-media-close"
@@ -445,7 +450,7 @@ export function MarkdownPreview({
             )}
           </div>
         </div>
-      </div>,
+      </Dialog>,
       document.body,
     )}
   </>;

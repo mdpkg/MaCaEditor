@@ -86,6 +86,21 @@ describe("Toolbar menus", () => {
 
     const fileButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "File") as HTMLButtonElement;
+    const press = (key: string) => act(() => document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    ));
+    fileButton.focus();
+    press("ArrowDown");
+    expect(document.activeElement?.textContent).toBe("New");
+    press("ArrowDown");
+    expect(document.activeElement?.textContent).toBe("Open");
+    press("End");
+    expect(document.activeElement?.textContent).toBe("Redo File Operation");
+    press("Home");
+    expect(document.activeElement?.textContent).toBe("New");
+    press("Escape");
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(fileButton);
     act(() => fileButton.click());
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
       .toEqual(["New", "Open", "Open Folder...", "Start with New Empty Folder", "Save", "Save As", "Print", "Add Markdown...", "Add Folder...", "Import Folder", "Export Folder", "Export Package...", "Validate Package...", "Edit Manifest...", "Search Package...", "Undo File Operation", "Redo File Operation"]);

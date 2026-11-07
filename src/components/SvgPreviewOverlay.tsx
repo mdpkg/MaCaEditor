@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { Dialog } from "./Dialog";
+import { useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -24,14 +25,6 @@ export function SvgPreviewOverlay({ svg, label, onClose, whiteBackground = false
     originX: number;
     originY: number;
   } | null>(null);
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
 
   const zoom = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -79,7 +72,7 @@ export function SvgPreviewOverlay({ svg, label, onClose, whiteBackground = false
   };
 
   return createPortal(
-    <div className="preview-media-overlay" role="dialog" aria-modal="true" aria-label="拡大表示">
+    <Dialog className="preview-media-overlay" title="拡大表示" onClose={onClose} backdrop={false}>
       <button
         type="button"
         className="preview-media-close"
@@ -106,7 +99,7 @@ export function SvgPreviewOverlay({ svg, label, onClose, whiteBackground = false
           />
         </div>
       </div>
-    </div>,
+    </Dialog>,
     document.body,
   );
 }

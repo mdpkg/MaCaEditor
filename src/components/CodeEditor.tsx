@@ -1,12 +1,15 @@
+import { Menu, MenuSubmenu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
-import { Compartment } from "@codemirror/state";
+import { openSearchPanel } from "@codemirror/search";
+import { Compartment, Prec } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { isDocumentSearchShortcut } from "../lib/shortcuts";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
 
 interface Props {
@@ -69,7 +72,7 @@ export function CodeEditor({
   const onSaveRef = useRef(onSave);
   const onPackagePathDropRef = useRef(onPackagePathDrop);
   const onMarkdownLinkOpenRef = useRef(onMarkdownLinkOpen);
-  const [contextMenu, setContextMenu] = useState<{ from: number; to: number; text: string; hasSelection: boolean; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ from: number; to: number; x: number; y: number } | null>(null);
   const diagnosticsCompartmentRef = useRef(new Compartment());
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -82,7 +85,22 @@ export function CodeEditor({
 
   useEffect(() => {
     if (!hostRef.current) return;
+    const openMenu = (view: EditorView, x: number, y: number) => {
+      const { from, to } = view.state.selection.main;
+      view.focus();
+      setContextMenu({ from, to, x, y });
+    };
     const extensions = [
+      Prec.highest(EditorView.domEventHandlers({
+        keydown: (event, view) => {
+          if (event.isComposing) return false;
+          if (isDocumentSearchShortcut(event)) return openSearchPanel(view);
+          if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return false;
+          const anchor = view.coordsAtPos(view.state.selection.main.head) ?? view.contentDOM.getBoundingClientRect();
+          openMenu(view, anchor.left, anchor.bottom);
+          return true;
+        },
+      })),
       ...(vimMode ? [vim({ status: true })] : []),
       basicSetup,
       ...(language === "markdown" ? [markdown()] : []),
@@ -130,17 +148,8 @@ export function CodeEditor({
           return true;
         },
         contextmenu: (event, view) => {
-          event.preventDefault?.();
-          const sel = view.state.selection.main;
-          const text = view.state.doc.sliceString(sel.from, sel.to);
-          setContextMenu({
-            from: sel.from,
-            to: sel.to,
-            text,
-            hasSelection: sel.from !== sel.to,
-            x: event.clientX,
-            y: event.clientY,
-          });
+          openMenu(view, event.clientX, event.clientY);
+          return true;
         },
       }),
       EditorView.theme({
@@ -208,7 +217,10 @@ export function CodeEditor({
 
   useEffect(() => {
     if (!contextMenu) return;
-    const close = () => setContextMenu(null);
+    const close = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest(".editor-context-menu")) return;
+      setContextMenu(null);
+    };
     window.addEventListener("pointerdown", close);
     window.addEventListener("blur", close);
     return () => {
@@ -265,27 +277,19 @@ export function CodeEditor({
         className={`code-editor ${className}`.trim()}
       />
       {contextMenu && createPortal(
-        <div
-          className="editor-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onContextMenu={(event) => event.preventDefault()}
-        >
-          <button type="button" onClick={copy}>コピー</button>
-          <button type="button" onClick={cut}>切り取り</button>
-          <button type="button" onClick={paste}>貼り付け</button>
-          <button type="button" onClick={deleteSelection}>削除</button>
-          <div className="editor-context-menu-divider" />
-          <div className="editor-context-menu-submenu">
-            <span className="editor-context-menu-submenu-label">AI</span>
-            <div className="editor-context-menu-submenu-items">
-              <button type="button" onClick={() => run("Rewrite")}>Rewrite</button>
-              <button type="button" onClick={() => run("Summarize")}>Summarize</button>
-              <button type="button" onClick={() => run("Proofread")}>Proofread</button>
-            </div>
-          </div>
-        </div>,
-        document.body,
+        <Menu className="editor-context-menu" label="Editor actions" position={contextMenu} onClose={closeMenu}>
+          <button type="button" role="menuitem" onClick={copy}>コピー</button>
+          <button type="button" role="menuitem" onClick={cut}>切り取り</button>
+          <button type="button" role="menuitem" onClick={paste}>貼り付け</button>
+          <button type="button" role="menuitem" onClick={deleteSelection}>削除</button>
+          <div className="editor-context-menu-divider" role="separator" />
+          <MenuSubmenu title="AI">
+            <button type="button" role="menuitem" onClick={() => run("Rewrite")}>Rewrite</button>
+            <button type="button" role="menuitem" onClick={() => run("Summarize")}>Summarize</button>
+            <button type="button" role="menuitem" onClick={() => run("Proofread")}>Proofread</button>
+          </MenuSubmenu>
+        </Menu>,
+        hostRef.current?.closest('[role="dialog"]') ?? document.body,
       )}
     </>
   );
