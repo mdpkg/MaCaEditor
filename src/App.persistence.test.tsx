@@ -290,16 +290,38 @@ describe("App persistence", () => {
     await act(async () => nativeDrop(["original.mdpkg"]));
     vi.mocked(tauri.readImage).mockImplementation(async (path) => {
       if (path.endsWith("bad.png")) throw new Error("unreadable");
+      if (path.endsWith("missing.png")) throw "  File not found (os error 2)\n";
       return { file_name: "good.png", base64: "aGVsbG8=" };
     });
-    await act(async () => nativeDrop(["C:/good.png", "C:/bad.png", "C:/skip.svg"]));
+    await act(async () => nativeDrop(["C:/good.png", "C:/bad.png", "C:/skip.svg", "C:/missing.png"]));
     expect(container.querySelector('[data-path="images/good.png"]')).not.toBeNull();
     expect(container.querySelector('[data-path="images/bad.png"]')).toBeNull();
     const warning = container.querySelector(".notification-banner-warning")!;
-    expect(warning.textContent).toContain("取り込み 1 件: good.png");
-    expect(warning.textContent).toContain("除外 1 件（非対応形式）: skip.svg");
-    expect(warning.textContent).toContain("失敗 1 件: bad.png");
+    const summary = warning.querySelector('[role="status"]')?.textContent;
+    expect(summary).toContain("取り込み 1 件: good.png");
+    expect(summary).toContain("除外 1 件（非対応形式）: skip.svg");
+    expect(summary).toContain("失敗 2 件: bad.png、missing.png");
+    expect(summary).not.toContain("unreadable");
+    const details = warning.querySelector("details")!;
+    expect(details.open).toBe(false);
+    act(() => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(details.querySelector(".error-detail")?.textContent)
+      .toBe("bad.png\nunreadable\n\nmissing.png\n  File not found (os error 2)\n");
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("keeps the native image read error out of the summary and status bar", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    vi.mocked(open).mockResolvedValue(["C:/missing.png"]);
+    const detail = "指定されたファイルが見つかりません。 (os error 2)";
+    vi.mocked(tauri.readImage).mockRejectedValueOnce(detail);
+    await click("画像を追加");
+    const summary = "画像の追加に失敗しました。詳しくは詳細欄を確認してください。";
+    expect(container.querySelector('.operation-error [role="alert"]')?.textContent).toBe(summary);
+    expect(container.querySelector(".status-message")?.textContent).toBe(summary);
+    expect(container.querySelector(".operation-error .error-detail")?.textContent).toBe(detail);
   });
 
   test("confirms root drops and offers safe undo without losing later edits", async () => {
@@ -609,7 +631,17 @@ describe("App persistence", () => {
     expect(tauri.saveFolder).not.toHaveBeenCalled();
     await click("ファイル");
 
+    const exportError = "failed to save file: アクセスが拒否されました。 (os error 5)";
+    vi.mocked(tauri.exportPackage).mockRejectedValueOnce(exportError);
     await click("パッケージに書き出し...", banner);
+    expect(container.querySelector('.operation-error [role="alert"]')?.textContent)
+      .toBe("パッケージの書き出しに失敗しました。詳しくは詳細欄を確認してください。");
+    expect(container.querySelector(".operation-error .error-detail")?.textContent).toBe(exportError);
+    expect(container.querySelector("textarea")?.value).toBe("Local edit");
+    expect(container.querySelector(".folder-conflict")).toBe(banner);
+
+    await click("パッケージに書き出し...", banner);
+    expect(container.querySelector(".operation-error")).toBeNull();
     expect(tauri.exportPackage).toHaveBeenCalledWith(expect.objectContaining({
       path: "backup.mdpkg",
       files: [expect.objectContaining({ content: "Local edit" })],

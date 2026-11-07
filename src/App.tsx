@@ -158,6 +158,16 @@ const MarkdownTableEditor = lazy(() => import("./components/MarkdownTableEditor"
   default: module.MarkdownTableEditor,
 })));
 
+const nativeFileErrorOperations = new Set([
+  "Save", "Reload folder", "Export folder", "Export package",
+  "Add images", "Add attachments", "Download attachment", "Add image to drawing",
+].map(uiText));
+
+function errorDetail(reason: unknown): string {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return message.trim() ? message : uiText("Unknown error");
+}
+
 type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "mathjax" | "table";
 
 interface TableEditContext {
@@ -415,13 +425,15 @@ export default function App() {
   };
 
   const reportError = (operation: string, reason: unknown) => {
-    const detail = (reason instanceof Error ? reason.message : String(reason)).trim() || uiText("Unknown error");
-    const firstLine = detail.split(/\r?\n/, 1)[0];
+    const detail = errorDetail(reason);
+    const firstLine = detail.trim().split(/\r?\n/, 1)[0];
     const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
     const translated = uiText(shortReason);
     // Native file errors can mix an English backend prefix with a localized Windows error.
-    const nativeFileError = operation === uiText("Save") || operation === uiText("Reload folder");
-    const localized = translated !== shortReason || (!nativeFileError && /[ぁ-んァ-ヶ一-龠]/.test(translated));
+    const localized = typeof translated === "string" && (
+      translated !== shortReason ||
+      (!nativeFileErrorOperations.has(operation) && /[ぁ-んァ-ヶ一-龠]/.test(translated))
+    );
     const reasonText = localized ? translated : "詳しくは詳細欄を確認してください。";
     const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
     setError({ operation, summary, detail });
@@ -1211,18 +1223,19 @@ export default function App() {
     const results = await Promise.allSettled(supported.map(read));
     if (documentSessionRef.current !== session) return;
     const images: ImportedImage[] = [];
-    const failed: string[] = [];
+    const failed: Array<{ fileName: string; detail: string }> = [];
     results.forEach((result, index) => {
       if (result.status === "fulfilled") images.push(result.value);
-      else failed.push(name(supported[index]));
+      else failed.push({ fileName: name(supported[index]), detail: errorDetail(result.reason) });
     });
     if (images.length) nativeImportImagesRef.current(images);
     const message = [
       `取り込み ${images.length} 件${images.length ? ": " + images.map((image) => image.file_name).join("、") : ""}`,
       excluded.length ? `除外 ${excluded.length} 件（非対応形式）: ${excluded.join("、")}` : "",
-      failed.length ? `失敗 ${failed.length} 件: ${failed.join("、")}。ファイルを読み直してください` : "",
+      failed.length ? `失敗 ${failed.length} 件: ${failed.map(({ fileName }) => fileName).join("、")}。ファイルを読み直してください` : "",
     ].filter(Boolean).join("。");
-    showNotification(message, excluded.length || failed.length ? "warning" : "success");
+    const detail = failed.map(({ fileName, detail }) => `${fileName}\n${detail}`).join("\n\n");
+    showNotification(message, excluded.length || failed.length ? "warning" : "success", { detail });
   };
   const handleDropImages = (files: File[]) => importDroppedImages(files, (file) => file.name, droppedFileToImage);
 
