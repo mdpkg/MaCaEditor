@@ -18,6 +18,7 @@ const labels: Record<string, string> = {
   "Add Folder...": "フォルダを追加...",
   "Add Folder": "フォルダを追加",
   "Add folder": "フォルダを追加",
+  "The item could not be added.": "追加できませんでした。",
   "Import Folder": "フォルダから取り込み",
   "Export Folder": "フォルダへ書き出し",
   "Export Package...": "パッケージに書き出し...",

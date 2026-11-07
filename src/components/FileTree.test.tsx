@@ -398,7 +398,7 @@ describe("FileTree", () => {
   });
 
   test("offers add actions without changing the current selection", () => {
-    const onSelect = vi.fn(); const onAddMarkdown = vi.fn(); const onAddFolder = vi.fn();
+    const onSelect = vi.fn(); const onAdd = vi.fn(() => null);
     const container = document.createElement("div"); document.body.appendChild(container);
     const root = createRoot(container);
     act(() => root.render(<FileTree
@@ -406,7 +406,7 @@ describe("FileTree", () => {
       selectedPath="docs/guide.md" onSelect={onSelect} onDropImages={vi.fn()}
       canRename={() => true} onRename={vi.fn()} canDelete={() => true} onDelete={vi.fn()}
       canMove={() => true} onMove={vi.fn()}
-      onAddMarkdown={onAddMarkdown} onAddFolder={onAddFolder} />));
+      onAdd={onAdd} />));
     const docs = [...container.querySelectorAll(".tree-dir")]
       .find((item) => item.textContent?.trim().endsWith("docs")) as HTMLDivElement;
     act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
@@ -421,10 +421,17 @@ describe("FileTree", () => {
     ]);
     expect(menu.children[3].className).toBe("file-tree-context-menu-divider");
     act(() => buttons[3].click());
-    expect(onAddMarkdown).toHaveBeenCalledWith("docs");
+    const inline = container.querySelector(".tree-inline-add form")!;
+    expect(document.activeElement).toBe(inline.querySelector("input"));
+    act(() => inline.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(onAdd).toHaveBeenCalledWith("markdown", "docs", "untitled.md");
     act(() => docs.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])[4].click());
-    expect(onAddFolder).toHaveBeenCalledWith("docs");
+    const folderDraft = container.querySelector(".tree-inline-add input")!;
+    act(() => folderDraft.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector(".tree-inline-add")).toBeNull();
+    expect(document.activeElement).toBe(docs);
+    expect(onAdd).toHaveBeenCalledTimes(1);
     act(() => root.unmount());
   });
 });

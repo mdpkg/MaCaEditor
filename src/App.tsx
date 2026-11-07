@@ -8,7 +8,7 @@ import { loadRecentDocuments, saveRecentDocuments, type RecentDocument } from ".
 import { fileTreeStateKey, loadCollapsedPaths, saveCollapsedPaths } from "./lib/fileTreeState";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { FileTree } from "./components/FileTree";
+import { FileTree, type TreeAddKind } from "./components/FileTree";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { AboutDialog } from "./components/AboutDialog";
@@ -1395,7 +1395,7 @@ export default function App() {
     const folder = await ask({
       title: `${name} を移動`, label: uiText("Destination folder"), initialValue: parent,
       message: "移動先を選んで確定してください。フォルダ内のファイルと Markdown のリンクも更新します。",
-      options: folders.map((folder) => ({ value: folder, label: folder || uiText("Package root") })),
+      folderPaths: folders,
       confirmLabel: uiText("Move"),
       validate: (folder) => targetPath(folder) === path ? uiText("Choose another folder.") : newPathError(targetPath(folder), path),
     });
@@ -1411,37 +1411,57 @@ export default function App() {
     return contextPath.includes("/") ? contextPath.slice(0, contextPath.lastIndexOf("/")) : "";
   };
 
-  const handleAddMarkdown = async (contextPath?: string) => {
-    if (!doc) return;
-    const directory = contextDirectory(contextPath ?? selectedFolder ?? selectedPath ?? undefined);
-    const snapshot = doc;
-    const requested = await ask({
-      title: uiText("Add Markdown"), label: uiText("Package path"), initialValue: `${directory ? `${directory}/` : ""}untitled.md`,
-      confirmLabel: uiText("Add"), validate: (value) => newPathError(value) ?? (/\.(md|markdown)$/i.test(value) ? null : uiText("Use .md or .markdown.")),
-    });
-    if (documentRef.current !== snapshot) return;
-    if (!requested) return;
+  const addTreeItem = (kind: TreeAddKind, requested: string): string | null => {
+    const current = documentRef.current;
+    if (!current) return null;
+    const operation = uiText(kind === "markdown" ? "Add Markdown" : "Add folder");
     try {
-      const next = addMarkdown(doc, requested, `# ${requested.slice(requested.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "")}\n`);
-      setSelectedFolder(null);
-      setDoc(next); setSelectedPath(requested.replace(/\\/g, "/")); setMode("split"); clearError(uiText("Add Markdown"));
-      setStatus(`${requested} を追加しました`);
-    } catch (reason) { reportError(uiText("Add Markdown"), reason); }
+      const path = validateNewPackagePath(requested);
+      if (kind === "markdown") {
+        const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.(md|markdown)$/i, "");
+        setDoc(addMarkdown(current, path, `# ${name}\n`));
+        setSelectedFolder(null);
+        setSelectedPath(path);
+        setMode("split");
+        setStatus(`${path} を追加しました`);
+      } else {
+        setDoc(addDirectory(current, path));
+        setStatus(`${path} を追加しました。空のフォルダは保存されません`);
+      }
+      clearError(operation);
+      return path;
+    } catch (reason) {
+      reportError(operation, reason);
+      return null;
+    }
   };
 
-  const handleAddFolder = async (contextPath?: string) => {
+  const validateTreeItem = (kind: TreeAddKind, path: string): string | null =>
+    newPathError(path) ?? (kind === "markdown" && !/\.(md|markdown)$/i.test(path) ? uiText("Use .md or .markdown.") : null);
+
+  const handleInlineAdd = (kind: TreeAddKind, directory: string, name: string): string | null => {
+    const requested = directory ? `${directory}/${name}` : name;
+    const error = nameError(name) ?? validateTreeItem(kind, requested);
+    if (error) return error;
+    const path = addTreeItem(kind, requested);
+    if (!path) return uiText("The item could not be added.");
+    if (kind === "folder") setSelectedFolder(path);
+    return null;
+  };
+
+  const handleAdd = async (kind: TreeAddKind) => {
     if (!doc) return;
-    const directory = contextDirectory(contextPath ?? selectedFolder ?? selectedPath ?? undefined);
+    const directory = contextDirectory(selectedFolder ?? selectedPath ?? undefined);
     const snapshot = doc;
+    const folder = kind === "folder";
+    const title = uiText(folder ? "Add folder" : "Add Markdown");
     const requested = await ask({
-      title: uiText("Add folder"), label: uiText("Package path"), initialValue: `${directory ? `${directory}/` : ""}folder`,
-      message: uiText("Empty folders are not saved. Add a file inside the folder to keep it when reopening the document."),
-      confirmLabel: uiText("Add folder"), validate: newPathError,
+      title, label: uiText("Package path"),
+      initialValue: `${directory ? `${directory}/` : ""}${folder ? "folder" : "untitled.md"}`,
+      message: folder ? uiText("Empty folders are not saved. Add a file inside the folder to keep it when reopening the document.") : undefined,
+      confirmLabel: folder ? title : uiText("Add"), validate: (path) => validateTreeItem(kind, path),
     });
-    if (documentRef.current !== snapshot) return;
-    if (!requested) return;
-    try { setDoc(addDirectory(doc, requested)); setStatus(`${requested} を追加しました。空のフォルダは保存されません`); clearError(uiText("Add folder")); }
-    catch (reason) { reportError(uiText("Add folder"), reason); }
+    if (requested && documentRef.current === snapshot) addTreeItem(kind, requested);
   };
 
   const handleDelete = async (path: string | null = selectedPath) => {
@@ -1707,8 +1727,8 @@ export default function App() {
         canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
         onEditManifest={() => setManifestEditorOpen(true)}
         onSearchPackage={() => { setPackageDiagnostics(null); setPackageSearchOpen(true); }}
-        onAddMarkdown={handleAddMarkdown}
-        onAddFolder={handleAddFolder}
+        onAddMarkdown={() => void handleAdd("markdown")}
+        onAddFolder={() => void handleAdd("folder")}
         documentKind={doc?.origin.kind ?? null}
         onInsertDrawing={handleInsertDrawing}
         onInsertPlantUml={handleInsertPlantUml}
@@ -1749,6 +1769,7 @@ export default function App() {
             {fileListOpen && (
               <div className="sidebar-tree">
                 <FileTree
+                  key={editorSession}
                   files={doc?.files ?? []}
                   manifest={doc?.manifest}
                   directories={doc?.directories}
@@ -1775,8 +1796,7 @@ export default function App() {
                     try { recordDocumentOperation(setEntrypoint(doc, path), `${path} の開始ファイルへの設定`); setStatus(`開始ファイルを ${path} に設定しました`); clearError(uiText("Set entrypoint")); }
                     catch (reason) { reportError(uiText("Set entrypoint"), reason); }
                   }}
-                  onAddMarkdown={handleAddMarkdown}
-                  onAddFolder={handleAddFolder}
+                  onAdd={doc ? handleInlineAdd : undefined}
                   onDropPath={handleDropMove}
                   onShowReferences={setBacklinksTarget}
                 />

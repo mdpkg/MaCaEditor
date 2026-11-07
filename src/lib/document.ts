@@ -92,7 +92,8 @@ export function addMarkdown(state: DocumentState, requestedPath: string, content
   if (!/\.(md|markdown)$/i.test(path)) throw new Error("Markdown files must use .md or .markdown");
   if (pathExists(state, path)) throw new Error(`Path already exists: ${path}`);
   const files = [...state.files, { path, is_text: true, content, base64: null }];
-  return { ...state, dirty: true, files, directories: inferDirectories(files.map((file) => file.path)) };
+  const directories = [...new Set([...(state.directories ?? []), ...inferDirectories(files.map((file) => file.path))])].sort();
+  return { ...state, dirty: true, files, directories };
 }
 
 export function setEntrypoint(state: DocumentState, requestedPath: string): DocumentState {
