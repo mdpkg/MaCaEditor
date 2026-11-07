@@ -27,7 +27,7 @@ export function AboutDialog({ version, onClose }: Props) {
         </div>
       </dl>
       <div className="about-dialog-actions">
-        <button ref={closeButtonRef} type="button" onClick={onClose}>OK</button>
+        <button ref={closeButtonRef} type="button" onClick={onClose}>{uiText("Close")}</button>
       </div>
     </Dialog>
   );
