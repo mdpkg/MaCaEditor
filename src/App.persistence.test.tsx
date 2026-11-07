@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import App from "./App";
 import * as diagnostics from "./lib/packageDiagnostics";
+import { saveEditorPreferences } from "./lib/editorPreferences";
 import * as tauri from "./lib/tauri";
 import type { PackageInfo } from "./types";
 
@@ -27,10 +28,7 @@ vi.mock("./lib/editorPreferences", () => ({
   loadShowToc: async () => false,
   loadRspressMode: async () => false,
   loadDrawingPreferences: async () => ({ gridVisible: true, snap: false, smartGuidesEnabled: true }),
-  saveVimMode: vi.fn(),
-  saveShowToc: vi.fn(),
-  saveRspressMode: vi.fn(),
-  saveDrawingPreferences: vi.fn(),
+  saveEditorPreferences: vi.fn(),
 }));
 vi.mock("./components/MarkdownPreview", () => ({
   MarkdownPreview: ({ markdown, onEditTable }: {
@@ -201,6 +199,24 @@ describe("App persistence", () => {
     expect(container.querySelector('[data-path="renamed.md"]')).toBeNull();
     expect(nativePrompt).not.toHaveBeenCalled();
     expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  test("reports a preference autosave failure and clears it after a successful retry", async () => {
+    const detail = "アクセスが拒否されました。 (os error 5)";
+    vi.mocked(saveEditorPreferences).mockRejectedValueOnce(detail).mockResolvedValueOnce();
+    const vim = [...container.querySelectorAll("label")].find((label) => label.textContent?.trim() === "Vim モード")!
+      .querySelector("input")!;
+    await act(async () => vim.click());
+    expect(vim.checked).toBe(true);
+    const summary = "エディタ設定の保存に失敗しました。詳しくは詳細欄を確認してください。";
+    const banner = container.querySelector(".operation-error")!;
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe(summary);
+    expect(container.querySelector(".status-message")?.textContent).toBe(summary);
+    expect(banner.querySelector("details")?.open).toBe(false);
+    expect(banner.querySelector(".error-detail")?.textContent).toBe(detail);
+    await act(async () => vim.click());
+    expect(container.querySelector(".operation-error")).toBeNull();
+    expect(container.querySelector(".status-message")?.textContent).toBe("エディタ設定を保存しました。");
   });
 
   test("shows a Windows print failure in Japanese and retains the system message", async () => {

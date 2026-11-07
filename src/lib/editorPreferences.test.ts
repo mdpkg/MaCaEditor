@@ -1,13 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   loadDrawingPreferences,
-  saveDrawingPreferences,
+  saveEditorPreferences,
   loadRspressMode,
   loadShowToc,
   loadVimMode,
-  saveRspressMode,
-  saveShowToc,
-  saveVimMode,
   type PreferenceStore,
 } from "./editorPreferences";
 
@@ -21,17 +18,26 @@ class MemoryStore implements PreferenceStore {
   async set(key: string, value: unknown): Promise<void> {
     this.values.set(key, value);
   }
+
+  async save(): Promise<void> {}
 }
 
+const preferences = {
+  vimMode: true,
+  showToc: true,
+  rspressMode: true,
+  drawingPreferences: { gridVisible: false, snap: true, smartGuidesEnabled: false },
+};
+
 describe("editor preferences", () => {
-  test("defaults snap to off and restores each saved switch", async () => {
+  test("defaults snap to off and restores the saved editor settings", async () => {
     const store = new MemoryStore();
     await expect(loadDrawingPreferences(store)).resolves.toEqual({ gridVisible: true, snap: false, smartGuidesEnabled: true });
-    const preferences = { gridVisible: false, snap: true, smartGuidesEnabled: false };
-    await saveDrawingPreferences(preferences, store);
-    await expect(loadDrawingPreferences(store)).resolves.toEqual(preferences);
-    await saveDrawingPreferences({ gridVisible: true, snap: false, smartGuidesEnabled: true }, store);
-    await expect(loadDrawingPreferences(store)).resolves.toEqual({ gridVisible: true, snap: false, smartGuidesEnabled: true });
+    await saveEditorPreferences(preferences, store);
+    await expect(loadVimMode(store)).resolves.toBe(true);
+    await expect(loadShowToc(store)).resolves.toBe(true);
+    await expect(loadRspressMode(store)).resolves.toBe(true);
+    await expect(loadDrawingPreferences(store)).resolves.toEqual(preferences.drawingPreferences);
   });
 
   test("uses defaults for missing or invalid drawing values and tolerates unavailable storage", async () => {
@@ -40,38 +46,16 @@ describe("editor preferences", () => {
     await expect(loadDrawingPreferences(store)).resolves.toEqual({ gridVisible: false, snap: false, smartGuidesEnabled: true });
     store.get = async () => { throw new Error("unavailable"); };
     await expect(loadDrawingPreferences(store)).resolves.toEqual({ gridVisible: true, snap: false, smartGuidesEnabled: true });
-    store.set = async () => { throw new Error("unavailable"); };
-    await expect(saveDrawingPreferences({ gridVisible: false, snap: false, smartGuidesEnabled: false }, store)).resolves.toBeUndefined();
   });
   test("uses standard mode when no preference has been saved", async () => {
     await expect(loadVimMode(new MemoryStore())).resolves.toBe(false);
   });
 
-  test("persists and restores Vim mode", async () => {
+  test("propagates the original error when flushing the preference store to disk fails", async () => {
     const store = new MemoryStore();
-    await saveVimMode(true, store);
-    await expect(loadVimMode(store)).resolves.toBe(true);
-
-    await saveVimMode(false, store);
-    await expect(loadVimMode(store)).resolves.toBe(false);
-  });
-
-  test("persists and restores the table of contents setting", async () => {
-    const store = new MemoryStore();
-    await saveShowToc(true, store);
-    await expect(loadShowToc(store)).resolves.toBe(true);
-
-    await saveShowToc(false, store);
-    await expect(loadShowToc(store)).resolves.toBe(false);
-  });
-
-  test("persists and restores Rspress mode", async () => {
-    const store = new MemoryStore();
-    await saveRspressMode(true, store);
-    await expect(loadRspressMode(store)).resolves.toBe(true);
-
-    await saveRspressMode(false, store);
-    await expect(loadRspressMode(store)).resolves.toBe(false);
+    const reason = "アクセスが拒否されました。 (os error 5)";
+    store.save = async () => { throw reason; };
+    await expect(saveEditorPreferences(preferences, store)).rejects.toBe(reason);
   });
 
   test("falls back to standard mode when the store cannot be read", async () => {
