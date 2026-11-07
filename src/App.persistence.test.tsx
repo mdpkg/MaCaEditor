@@ -297,6 +297,27 @@ describe("App persistence", () => {
     expect(banner.querySelector(".error-detail")?.textContent).toBe(detail);
   });
 
+  test("reports a rejected native print request and allows retrying", async () => {
+    vi.mocked(open).mockResolvedValue("original.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    await click("開く", container.querySelector(".empty-state")!);
+    const detail = "plugin:webview|print rejected the request";
+    const print = vi.spyOn(window, "print").mockRejectedValueOnce(detail).mockImplementation(() => {});
+
+    await click("ファイル");
+    await click("印刷");
+
+    const summary = "印刷に失敗しました。詳しくは詳細欄を確認してください。";
+    const banner = container.querySelector(".operation-error")!;
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe(summary);
+    expect(container.querySelector(".status-message")?.textContent).toBe(summary);
+    expect(banner.querySelector(".error-detail")?.textContent).toBe(detail);
+
+    await click("ファイル");
+    await click("印刷");
+    expect(print).toHaveBeenCalledTimes(2);
+  });
+
   test("keeps a move collision with a Japanese path in the error details", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     const info = documentInfo("Original");

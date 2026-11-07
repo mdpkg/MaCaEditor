@@ -793,7 +793,7 @@ export default function App() {
     }
     if (jobTitle || dispose) window.addEventListener("afterprint", restoreTitle);
     try {
-      window.print();
+      await window.print();
     } catch (reason) {
       restoreTitle();
       reportError(uiText("Print"), reason);
