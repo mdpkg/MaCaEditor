@@ -5,7 +5,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
-import { Compartment, Prec } from "@codemirror/state";
+import { Annotation, Compartment, Prec } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
@@ -25,10 +25,16 @@ interface Props {
   onAiSelection?: (task: AiTaskKind) => void;
   onPackagePathDrop?: (path: string, position: number) => void;
   onMarkdownLinkOpen?: (destination: string) => void;
-  cursorPosition?: number | null;
+  initialCursorPosition?: number;
+  initialScrollTop?: number;
+  onScrollTopChange?: (position: number) => void;
+  navigation?: { offset: number };
+  onNavigationComplete?: () => void;
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
+const noDiagnosticRanges: NonNullable<Props["diagnosticRanges"]> = [];
+const controlledChange = Annotation.define<boolean>();
 const vimSaveHandlers = new WeakMap<object, () => void>();
 Vim.defineEx("write", "w", (editor) => {
   vimSaveHandlers.get(editor)?.();
@@ -59,8 +65,12 @@ export function CodeEditor({
   onAiSelection,
   onPackagePathDrop,
   onMarkdownLinkOpen,
-  cursorPosition = null,
-  diagnosticRanges = [],
+  initialCursorPosition = 0,
+  initialScrollTop,
+  onScrollTopChange,
+  navigation,
+  onNavigationComplete,
+  diagnosticRanges = noDiagnosticRanges,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -73,6 +83,12 @@ export function CodeEditor({
   const onPackagePathDropRef = useRef(onPackagePathDrop);
   const onMarkdownLinkOpenRef = useRef(onMarkdownLinkOpen);
   const [contextMenu, setContextMenu] = useState<{ from: number; to: number; x: number; y: number } | null>(null);
+  const vimCompartmentRef = useRef(new Compartment());
+  const scrollFrameRef = useRef<number | null>(null);
+  const onScrollTopChangeRef = useRef(onScrollTopChange);
+  const onNavigationCompleteRef = useRef(onNavigationComplete);
+  onScrollTopChangeRef.current = onScrollTopChange;
+  onNavigationCompleteRef.current = onNavigationComplete;
   const diagnosticsCompartmentRef = useRef(new Compartment());
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -101,17 +117,16 @@ export function CodeEditor({
           return true;
         },
       })),
-      ...(vimMode ? [vim({ status: true })] : []),
+      vimCompartmentRef.current.of([]),
       basicSetup,
       ...(language === "markdown" ? [markdown()] : []),
       EditorView.lineWrapping,
-      diagnosticsCompartmentRef.current.of(EditorView.decorations.of(Decoration.set(
-        diagnosticRanges.map((range) => Decoration.mark({ class: "cm-broken-package-link" })
-          .range(Math.max(0, range.from), Math.min(valueRef.current.length, range.to))),
-      ))),
+      diagnosticsCompartmentRef.current.of([]),
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": ariaLabel })] : []),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+        if (update.docChanged && update.transactions.some((tr) => tr.docChanged && !tr.annotation(controlledChange))) {
+          onChangeRef.current(update.state.doc.toString());
+        }
         if (update.docChanged || update.selectionSet) {
           onCursorChangeRef.current?.(update.state.selection.main.head);
           const sel = update.state.selection.main;
@@ -159,7 +174,7 @@ export function CodeEditor({
     ];
     const view = new EditorView({
       doc: valueRef.current,
-      selection: cursorPosition === null ? undefined : { anchor: Math.min(cursorPosition, valueRef.current.length) },
+      selection: { anchor: Math.min(initialCursorPosition, valueRef.current.length) },
       extensions,
       parent: hostRef.current,
     });
@@ -172,16 +187,35 @@ export function CodeEditor({
       preserveScrollPosition(view, scrollTop, scrollLeft);
     };
     view.dom.addEventListener("keydown", preserveScrollOnUndo, true);
-    const vimEditor = vimMode ? getCM(view) : null;
-    if (vimEditor) {
-      vimSaveHandlers.set(vimEditor, () => { void onSaveRef.current?.(); });
+    const recordScroll = () => onScrollTopChangeRef.current?.(view.scrollDOM.scrollTop);
+    view.scrollDOM.addEventListener("scroll", recordScroll, { passive: true });
+    if (initialScrollTop !== undefined && !navigation) {
+      scrollFrameRef.current = requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        view.scrollDOM.scrollTop = initialScrollTop;
+        view.scrollDOM.dispatchEvent(new Event("scroll"));
+      });
     }
     return () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+      view.scrollDOM.removeEventListener("scroll", recordScroll);
       view.dom.removeEventListener("keydown", preserveScrollOnUndo, true);
-      if (vimEditor) vimSaveHandlers.delete(vimEditor);
       view.destroy();
       viewRef.current = null;
     };
+  }, [language]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: vimCompartmentRef.current.reconfigure(vimMode ? vim({ status: true }) : []) });
+    const vimEditor = getCM(view);
+    if (!vimEditor) return;
+    vimSaveHandlers.set(vimEditor, () => { void onSaveRef.current?.(); });
+    return () => { vimSaveHandlers.delete(vimEditor); };
   }, [language, vimMode]);
 
   useEffect(() => {
@@ -192,16 +226,22 @@ export function CodeEditor({
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
       selection: { anchor: head },
+      annotations: controlledChange.of(true),
     });
     preserveScrollPosition(view, scrollTop, scrollLeft);
   }, [value]);
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || cursorPosition === null) return;
-    view.dispatch({ selection: { anchor: Math.min(cursorPosition, view.state.doc.length) }, scrollIntoView: true });
+    if (!view || !navigation) return;
+    if (scrollFrameRef.current !== null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+    view.dispatch({ selection: { anchor: Math.min(navigation.offset, view.state.doc.length) }, scrollIntoView: true });
     view.focus();
-  }, [cursorPosition]);
+    onNavigationCompleteRef.current?.();
+  }, [language, navigation]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -213,7 +253,7 @@ export function CodeEditor({
     view.dispatch({ effects: diagnosticsCompartmentRef.current.reconfigure(
       EditorView.decorations.of(Decoration.set(ranges)),
     ) });
-  }, [diagnosticRanges]);
+  }, [language, diagnosticRanges]);
 
   useEffect(() => {
     if (!contextMenu) return;

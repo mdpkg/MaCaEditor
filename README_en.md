@@ -173,6 +173,7 @@ Use **File** → **Print** to print the Markdown preview. To save it as PDF, sel
 - Click a table in the Markdown preview to open the table editor.
 - In the table editor, you can edit cells directly, add or remove rows and columns, set column alignment to left, center, or right, and paste TSV data.
 - Click **Done** to apply the changes to the Markdown and return to the split editor.
+- Click **Cancel** to discard the table draft and return to the split editor.
 - Use `Ctrl+Z` or `Cmd+Z` to undo table editing operations.
 
 ### Renaming and Deleting Files

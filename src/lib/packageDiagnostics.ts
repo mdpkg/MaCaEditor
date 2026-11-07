@@ -1,5 +1,6 @@
 import type { DocumentState } from "./document";
 import { isMarkdownPath, resolvePackagePath } from "./markdown";
+import type { FileInfo } from "../types";
 import { markdownLinks } from "./markdownLinks";
 
 export type DiagnosticCode =
@@ -27,6 +28,18 @@ function lineAt(content: string, offset: number): number {
   return content.slice(0, offset).split("\n").length;
 }
 
+// Document edits replace only changed FileInfo objects. Removed files can be collected with their links.
+const linksByFile = new WeakMap<FileInfo, ReturnType<typeof markdownLinks>>();
+
+function parsedLinks(file: FileInfo, content: string) {
+  let links = linksByFile.get(file);
+  if (!links) {
+    links = markdownLinks(content);
+    linksByFile.set(file, links);
+  }
+  return links;
+}
+
 export function diagnosePackage(state: DocumentState): PackageDiagnostic[] {
   const diagnostics: PackageDiagnostic[] = [];
   const exactPaths = new Set(state.files.map((file) => file.path));
@@ -36,19 +49,19 @@ export function diagnosePackage(state: DocumentState): PackageDiagnostic[] {
   for (const file of state.files) {
     if (!file.is_text || file.content === null || !isMarkdownPath(file.path)) continue;
     const baseDir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
-    for (const link of markdownLinks(file.content)) {
+    for (const link of parsedLinks(file, file.content)) {
       const targetPath = link.destination.split(/[?#]/, 1)[0];
       if (!targetPath || link.destination.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(link.destination)) continue;
       let decoded = targetPath;
       try { decoded = decodeURIComponent(targetPath); } catch { /* diagnose using the literal path */ }
       const resolved = resolvePackagePath(baseDir, decoded);
+      if (resolved && exactPaths.has(resolved)) {
+        referenced.add(resolved);
+        continue;
+      }
       const location = { path: file.path, target: link.destination, offset: link.start, line: lineAt(file.content, link.start) };
       if (!resolved) {
         diagnostics.push({ code: "outside-package-link", severity: "error", message: `Link escapes the package: ${link.destination}`, ...location });
-        continue;
-      }
-      if (exactPaths.has(resolved)) {
-        referenced.add(resolved);
         continue;
       }
       const caseMatch = foldedPaths.get(resolved.normalize("NFC").toLocaleLowerCase());

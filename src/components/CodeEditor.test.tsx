@@ -111,10 +111,42 @@ describe("CodeEditor", () => {
   test("moves the selection to a requested navigation position", () => {
     const container = document.createElement("div"); document.body.appendChild(container);
     const root = createRoot(container);
-    act(() => root.render(<CodeEditor value="0123456789" onChange={vi.fn()} cursorPosition={6} />));
+    act(() => root.render(<CodeEditor value="0123456789" onChange={vi.fn()} navigation={{ offset: 6 }} />));
     const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;
     expect(view.state.selection.main.head).toBe(6);
     act(() => root.unmount());
+  });
+
+  test("keeps the editor, selection, and undo history when toggling Vim", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+    const render = (vimMode: boolean, value: string) => act(() => root.render(
+      <CodeEditor value={value} onChange={onChange} vimMode={vimMode} initialCursorPosition={4} />,
+    ));
+    try {
+      render(false, "0123456789");
+      const editor = container.querySelector<HTMLElement>(".cm-editor")!;
+      const view = EditorView.findFromDOM(editor)!;
+      expect(view.state.selection.main.head).toBe(4);
+      act(() => view.dispatch({ changes: { from: 4, insert: "!" }, selection: { anchor: 5 } }));
+      render(true, "0123!456789");
+      expect(EditorView.findFromDOM(editor)).toBe(view);
+      expect(view.state.selection.main.head).toBe(5);
+      expect(container.querySelector(".cm-vim-panel")).not.toBeNull();
+      render(false, "0123!456789");
+      expect(container.querySelector(".cm-editor")).toBe(editor);
+      expect(view.state.selection.main.head).toBe(5);
+      expect(container.querySelector(".cm-vim-panel")).toBeNull();
+      act(() => view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+      })));
+      expect(view.state.doc.toString()).toBe("0123456789");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 
   test("highlights broken package link destinations", () => {
