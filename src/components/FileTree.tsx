@@ -1,6 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { Menu } from "./Menu";
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { File as FileIcon, FileText, Folder, FolderOpen, Image as ImageIcon, Workflow, type LucideIcon } from "lucide-react";
@@ -70,6 +70,7 @@ export function FileTree({
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
+  const selectedRowRef = useRef<HTMLDivElement>(null);
   const [localCollapsed, setLocalCollapsed] = useState(new Set<string>());
   const collapsed = collapsedPaths ?? localCollapsed;
   const setCollapsed = onCollapsedPathsChange ?? setLocalCollapsed;
@@ -102,8 +103,14 @@ export function FileTree({
     });
   };
   visit(tree, 0, null);
+  const selectedVisible = visible.some(({ node }) => node.path === selectedPath);
   const tabPath = visible.some(({ node }) => node.path === focusedPath) ? focusedPath
-    : visible.some(({ node }) => node.path === selectedPath) ? selectedPath : visible[0]?.node.path;
+    : selectedVisible ? selectedPath : visible[0]?.node.path;
+
+  useLayoutEffect(() => {
+    selectedRowRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selectedPath, selectedVisible]);
+
   const toggle = (path: string) => {
     if (filter) return;
     const next = new Set(collapsed);
@@ -217,6 +224,7 @@ export function FileTree({
       {visible.length === 0 && <p>{uiText("No matching files.")}</p>}
       {visible.map(({ node, depth, parent, position, size }, index) => (
         <div key={node.path} role="treeitem" aria-label={node.name}
+          ref={node.path === selectedPath ? selectedRowRef : undefined}
           aria-level={depth + 1} aria-posinset={position} aria-setsize={size}
           aria-expanded={node.isDir ? Boolean(filter) || !collapsed.has(node.path) : undefined}
           aria-selected={node.path === selectedPath} data-path={node.path}

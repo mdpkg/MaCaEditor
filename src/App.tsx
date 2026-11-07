@@ -5,6 +5,7 @@ import { useActionDialog } from "./components/ActionDialog";
 import { Dialog } from "./components/Dialog";
 import { ErrorDetails } from "./components/ErrorDetails";
 import { loadRecentDocuments, saveRecentDocuments, type RecentDocument } from "./lib/recentDocuments";
+import { fileTreeStateKey, loadCollapsedPaths, saveCollapsedPaths } from "./lib/fileTreeState";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { FileTree } from "./components/FileTree";
@@ -276,9 +277,10 @@ export default function App() {
   };
 
   const replaceDocument = (next: DocumentState) => {
-    const oldOrigin = documentRef.current?.origin;
-    if (oldOrigin && oldOrigin.kind !== "untitled") treeStatesRef.current.set(oldOrigin.path, treeCollapsed);
-    setTreeCollapsed(next.origin.kind === "untitled" ? new Set() : treeStatesRef.current.get(next.origin.path) ?? new Set());
+    const key = fileTreeStateKey(next.origin);
+    const collapsed = key ? treeStatesRef.current.get(key) ?? loadCollapsedPaths(key) : new Set<string>();
+    if (key) treeStatesRef.current.set(key, collapsed);
+    setTreeCollapsed(collapsed);
     setSelectedFolder(null);
     documentSessionRef.current += 1;
     editorCursorsRef.current.clear();
@@ -318,15 +320,22 @@ export default function App() {
     return () => { active = false; dispose?.(); };
   }, []);
 
+  const treeStateKey = fileTreeStateKey(doc?.origin);
   useEffect(() => {
-    if (!selectedPath) return;
+    if (!treeStateKey || treeStatesRef.current.get(treeStateKey) === treeCollapsed) return;
+    treeStatesRef.current.set(treeStateKey, treeCollapsed);
+    saveCollapsedPaths(treeStateKey, treeCollapsed);
+  }, [treeStateKey, treeCollapsed]);
+
+  useEffect(() => {
+    if (!selectedPath?.includes("/")) return;
     setTreeCollapsed((current) => {
       const parents = selectedPath.split("/").slice(0, -1);
       const next = new Set(current);
       for (let index = 1; index <= parents.length; index++) next.delete(parents.slice(0, index).join("/"));
-      return next;
+      return next.size === current.size ? current : next;
     });
-  }, [selectedPath]);
+  }, [selectedPath, treeStateKey]);
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,

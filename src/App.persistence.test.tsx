@@ -366,6 +366,33 @@ describe("App persistence", () => {
     expect(container.querySelector(".document-area textarea")).toBeNull();
   });
 
+  test("restores a different folder collapse for each reopened package after remounting the app", async () => {
+    const info = documentInfo("Original");
+    info.files.push(
+      { path: "docs/guide.md", content: "Guide", is_text: true, base64: null },
+      { path: "notes/note.md", content: "Note", is_text: true, base64: null },
+    );
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    const row = (path: string) => container.querySelector(`[data-path="${path}"]`)!;
+    const toggle = (path: string) => act(async () => row(path).querySelector<HTMLElement>(".tree-item-disclosure")!.click());
+
+    await act(async () => nativeDrop(["first.mdpkg"]));
+    await toggle("docs");
+    await act(async () => nativeDrop(["second.mdpkg"]));
+    expect(row("docs").getAttribute("aria-expanded")).toBe("true");
+    await toggle("notes");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<App />));
+    await act(async () => nativeDrop(["first.mdpkg"]));
+    expect(row("docs").getAttribute("aria-expanded")).toBe("false");
+    expect(row("notes").getAttribute("aria-expanded")).toBe("true");
+    await act(async () => nativeDrop(["second.mdpkg"]));
+    expect(row("docs").getAttribute("aria-expanded")).toBe("true");
+    expect(row("notes").getAttribute("aria-expanded")).toBe("false");
+  });
+
 
   test("opens native drops with discard confirmation and preserves edits made while reading dropped images", async () => {
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
