@@ -199,8 +199,20 @@ export async function updateWindowTitle(title: string): Promise<void> {
   if (isTauri()) await getCurrentWindow().setTitle(title);
 }
 
-export async function onNativeFileDrop(handler: (paths: string[]) => void): Promise<UnlistenFn> {
+export type NativeFileDropAction = "folder" | "package" | "images";
+
+export function setImageDropEnabled(enabled: boolean): Promise<void> {
+  if (!isTauri() || !navigator.userAgent.includes("Windows")) return Promise.resolve();
+  return invoke("set_image_drop_enabled", { enabled });
+}
+
+export async function onNativeFileDrop(handler: (paths: string[], action?: NativeFileDropAction) => void): Promise<UnlistenFn> {
   if (!isTauri()) return () => {};
+  if (navigator.userAgent.includes("Windows")) {
+    return getCurrentWebview().listen<{ paths: string[]; action: NativeFileDropAction }>("maca://file-drop", ({ payload }) => {
+      handler(payload.paths, payload.action);
+    });
+  }
   return getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") handler(event.payload.paths);
   });
