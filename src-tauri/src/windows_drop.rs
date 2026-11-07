@@ -8,9 +8,9 @@ use std::{
 use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller4;
 use windows::{
-    core::{implement, Interface, Ref, Result},
+    core::{implement, Interface, Ref, Result, BOOL},
     Win32::{
-        Foundation::{E_FAIL, HWND, LPARAM, LRESULT, POINTL, WPARAM},
+        Foundation::{DRAGDROP_E_INVALIDHWND, E_FAIL, HWND, LPARAM, LRESULT, POINTL, WPARAM},
         System::{
             Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL},
             Ole::{
@@ -23,7 +23,7 @@ use windows::{
             Shell::{
                 DefSubclassProc, DragQueryFileW, RemoveWindowSubclass, SetWindowSubclass, HDROP,
             },
-            WindowsAndMessaging::WM_NCDESTROY,
+            WindowsAndMessaging::{EnumChildWindows, IsChild, WM_DESTROY},
         },
     },
 };
@@ -63,7 +63,7 @@ pub fn install(window: &WebviewWindow) -> tauri::Result<()> {
                 controller
                     .cast::<ICoreWebView2Controller4>()?
                     .SetAllowExternalDrop(false)?;
-                register(parent, app)
+                register_in_webview(parent, app)
             })
         };
         if let Err(error) = result {
@@ -72,34 +72,83 @@ pub fn install(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
+unsafe fn register_in_webview(parent: HWND, app: AppHandle) -> Result<()> {
+    let mut children = Vec::new();
+    let _ = EnumChildWindows(
+        Some(parent),
+        Some(collect_child),
+        LPARAM(&mut children as *mut Vec<HWND> as isize),
+    );
+    let mut registrations = Box::new(DropRegistrations {
+        parent,
+        children: Vec::new(),
+    });
+    // WebView2 routes external drags through Chromium's child windows, including
+    // HWNDs owned by its renderer processes. Register on the same HWNDs as Wry.
+    for child in children {
+        if RevokeDragDrop(child) != Err(DRAGDROP_E_INVALIDHWND.into())
+            && register(child, app.clone()).is_ok()
+        {
+            registrations.children.push(child);
+        }
+    }
+    if registrations.children.is_empty() {
+        register(parent, app)?;
+        registrations.children.push(parent);
+    }
+    let registrations = Box::into_raw(registrations);
+    if !SetWindowSubclass(parent, Some(cleanup_targets), 0, registrations as usize).as_bool() {
+        drop(Box::from_raw(registrations));
+        return Err(windows::core::Error::new(
+            E_FAIL,
+            "Could not track the WebView2 drop targets",
+        ));
+    }
+    Ok(())
+}
+
+unsafe extern "system" fn collect_child(hwnd: HWND, context: LPARAM) -> BOOL {
+    (&mut *(context.0 as *mut Vec<HWND>)).push(hwnd);
+    true.into()
+}
+
 unsafe fn register(hwnd: HWND, app: AppHandle) -> Result<()> {
     let target: IDropTarget = FileDropTarget {
         app,
         accepted: Cell::new(false),
     }
     .into();
-    RegisterDragDrop(hwnd, &target)?;
-    if !SetWindowSubclass(hwnd, Some(cleanup_target), 0, 0).as_bool() {
-        let _ = RevokeDragDrop(hwnd);
-        return Err(windows::core::Error::new(
-            E_FAIL,
-            "Could not track the drop target window",
-        ));
-    }
-    Ok(())
+    RegisterDragDrop(hwnd, &target)
 }
 
-unsafe extern "system" fn cleanup_target(
+struct DropRegistrations {
+    parent: HWND,
+    children: Vec<HWND>,
+}
+
+impl Drop for DropRegistrations {
+    fn drop(&mut self) {
+        for &hwnd in &self.children {
+            unsafe {
+                if hwnd == self.parent || IsChild(self.parent, hwnd).as_bool() {
+                    let _ = RevokeDragDrop(hwnd);
+                }
+            }
+        }
+    }
+}
+
+unsafe extern "system" fn cleanup_targets(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
     id: usize,
-    _: usize,
+    data: usize,
 ) -> LRESULT {
-    if message == WM_NCDESTROY {
-        let _ = RevokeDragDrop(hwnd);
-        let _ = RemoveWindowSubclass(hwnd, Some(cleanup_target), id);
+    if message == WM_DESTROY {
+        let _ = RemoveWindowSubclass(hwnd, Some(cleanup_targets), id);
+        drop(Box::from_raw(data as *mut DropRegistrations));
     }
     DefSubclassProc(hwnd, message, wparam, lparam)
 }
