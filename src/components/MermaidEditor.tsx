@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { useEffect, useState } from "react";
 import { renderMermaid } from "../lib/mermaid/renderer";
 import { sanitizeHtml } from "../lib/sanitize";
@@ -49,7 +50,7 @@ export function MermaidEditor({
   return (
     <div className="mermaid-editor">
       <div className="mermaid-source-pane">
-        <div className="diagram-pane-title">Mermaid {onAiEdit && <button type="button" onClick={onAiEdit}>AI Generate</button>}</div>
+        <div className="diagram-pane-title">Mermaid {onAiEdit && <button type="button" onClick={onAiEdit}>{uiText("AI Generate")}</button>}</div>
         <CodeEditor
           className="mermaid-source"
           value={source}
@@ -60,14 +61,14 @@ export function MermaidEditor({
         />
       </div>
       <div className="mermaid-preview-pane">
-        <div className="diagram-pane-title">Preview{rendering ? " — Rendering…" : ""}</div>
+        <div className="diagram-pane-title">{uiText("Preview")}{rendering ? " — Rendering…" : ""}</div>
         {error && <div className="diagram-render-error" role="alert">{error}</div>}
         {!error && svg && (
           <div
             className="mermaid-preview"
             role="button"
             tabIndex={0}
-            title="クリックで拡大表示"
+            title={uiText("Click to enlarge")}
             onClick={() => setPreviewOpen(true)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -82,7 +83,7 @@ export function MermaidEditor({
       {previewOpen && (
         <SvgPreviewOverlay
           svg={sanitizedSvg}
-          label="Mermaidダイアグラム"
+          label={uiText("Mermaid diagram")}
           whiteBackground
           onClose={() => setPreviewOpen(false)}
         />

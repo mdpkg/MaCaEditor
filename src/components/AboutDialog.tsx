@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
 import { useRef } from "react";
 
@@ -13,15 +14,15 @@ export function AboutDialog({ version, onClose }: Props) {
     <Dialog onClose={onClose} title="MaCa Editor" initialFocus={closeButtonRef}>
       <dl>
         <div>
-          <dt>Version</dt>
+          <dt>{uiText("Version")}</dt>
           <dd>{version}</dd>
         </div>
         <div>
-          <dt>Author</dt>
+          <dt>{uiText("Author")}</dt>
           <dd>mikoto2000 &lt;mikoto2000@gmail.com&gt;</dd>
         </div>
         <div>
-          <dt>License</dt>
+          <dt>{uiText("License")}</dt>
           <dd>MIT License</dd>
         </div>
       </dl>

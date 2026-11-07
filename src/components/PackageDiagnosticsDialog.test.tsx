@@ -13,7 +13,7 @@ describe("PackageDiagnosticsDialog", () => {
     }, {
       code: "unreferenced-file", severity: "warning", message: "Unused", path: "unused.txt",
     }]} onNavigate={onNavigate} onClose={vi.fn()} />));
-    expect(container.textContent).toContain("1 error, 1 warning");
+    expect(container.textContent).toContain("エラー 1 件、警告 1 件");
     const issue = [...container.querySelectorAll("button")]
       .find((button) => button.textContent?.includes("docs/guide.md:4")) as HTMLButtonElement;
     act(() => issue.click());
@@ -24,7 +24,7 @@ describe("PackageDiagnosticsDialog", () => {
   test("shows a clean result", () => {
     const container = document.createElement("div"); const root = createRoot(container);
     act(() => root.render(<PackageDiagnosticsDialog diagnostics={[]} onNavigate={vi.fn()} onClose={vi.fn()} />));
-    expect(container.textContent).toContain("No issues found");
+    expect(container.textContent).toContain("問題はありません");
     act(() => root.unmount());
   });
 });

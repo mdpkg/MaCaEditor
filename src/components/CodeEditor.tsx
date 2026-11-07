@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Menu, MenuSubmenu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -5,7 +6,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
-import { Annotation, Compartment, Prec } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
@@ -119,10 +120,19 @@ export function CodeEditor({
       })),
       vimCompartmentRef.current.of([]),
       basicSetup,
+      EditorState.phrases.of({
+        Find: "検索", Replace: "置換", next: "次へ", previous: "前へ", all: "すべて",
+        "match case": "大文字と小文字を区別", regexp: "正規表現", "by word": "単語単位",
+        replace: "置換", "replace all": "すべて置換", close: "閉じる",
+        "current match": "現在の一致", "replaced $ matches": "$ 件を置換しました",
+        "replaced match on line $": "$ 行目の一致を置換しました",
+        "on line": "行", "Go to line": "指定行へ移動", go: "移動",
+        "Selection deleted": "選択範囲を削除しました",
+      }),
       ...(language === "markdown" ? [markdown()] : []),
       EditorView.lineWrapping,
       diagnosticsCompartmentRef.current.of([]),
-      ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": ariaLabel })] : []),
+      ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": uiText(ariaLabel) })] : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && update.transactions.some((tr) => tr.docChanged && !tr.annotation(controlledChange))) {
           onChangeRef.current(update.state.doc.toString());
@@ -317,16 +327,16 @@ export function CodeEditor({
         className={`code-editor ${className}`.trim()}
       />
       {contextMenu && createPortal(
-        <Menu className="editor-context-menu" label="Editor actions" position={contextMenu} onClose={closeMenu}>
-          <button type="button" role="menuitem" onClick={copy}>コピー</button>
-          <button type="button" role="menuitem" onClick={cut}>切り取り</button>
-          <button type="button" role="menuitem" onClick={paste}>貼り付け</button>
-          <button type="button" role="menuitem" onClick={deleteSelection}>削除</button>
+        <Menu className="editor-context-menu" label={uiText("Editor actions")} position={contextMenu} onClose={closeMenu}>
+          <button type="button" role="menuitem" onClick={copy}>{uiText("Copy")}</button>
+          <button type="button" role="menuitem" onClick={cut}>{uiText("Cut")}</button>
+          <button type="button" role="menuitem" onClick={paste}>{uiText("Paste")}</button>
+          <button type="button" role="menuitem" onClick={deleteSelection}>{uiText("Delete")}</button>
           <div className="editor-context-menu-divider" role="separator" />
           <MenuSubmenu title="AI">
-            <button type="button" role="menuitem" onClick={() => run("Rewrite")}>Rewrite</button>
-            <button type="button" role="menuitem" onClick={() => run("Summarize")}>Summarize</button>
-            <button type="button" role="menuitem" onClick={() => run("Proofread")}>Proofread</button>
+            <button type="button" role="menuitem" onClick={() => run("Rewrite")}>{uiText("Rewrite")}</button>
+            <button type="button" role="menuitem" onClick={() => run("Summarize")}>{uiText("Summarize")}</button>
+            <button type="button" role="menuitem" onClick={() => run("Proofread")}>{uiText("Proofread")}</button>
           </MenuSubmenu>
         </Menu>,
         hostRef.current?.closest('[role="dialog"]') ?? document.body,

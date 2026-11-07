@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Menu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 
@@ -40,6 +41,8 @@ interface Props {
   onThirdPartyLicenses: () => void;
   aiSelectionEnabled: boolean;
   aiSelectionRunning: boolean;
+  aiDisabledReason?: string;
+  onShortcuts?: () => void;
   onAiSelection: (task: "Rewrite" | "Summarize" | "Proofread") => void;
   aiChatOpen?: boolean;
   aiChatEnabled?: boolean;
@@ -94,6 +97,8 @@ export function Toolbar({
   onThirdPartyLicenses,
   aiSelectionEnabled,
   aiSelectionRunning,
+  aiDisabledReason,
+  onShortcuts = () => {},
   onAiSelection,
   aiChatOpen = false,
   aiChatEnabled = false,
@@ -128,9 +133,9 @@ export function Toolbar({
       <button
         type="button"
         className="toolbar-file-list-toggle"
-        aria-label="ファイルリストを開閉"
+        aria-label={uiText("Toggle file list")}
         aria-pressed={fileListOpen}
-        title={fileListOpen ? "ファイルリストを閉じる" : "ファイルリストを開く"}
+        title={fileListOpen ? uiText("Close file list") : uiText("Open file list")}
         onClick={onToggleFileList}
       >☰</button>
       <div className="toolbar-menu">
@@ -148,29 +153,29 @@ export function Toolbar({
             event.preventDefault();
             setOpenMenu("file");
           }}
-        >File</button>
+        >{uiText("File")}</button>
         {openMenu === "file" && (
-          <Menu className="toolbar-menu-items" label="File" onClose={() => setOpenMenu(null)}>
-            <button type="button" role="menuitem" onClick={() => run(onNew)}>New</button>
-            <button type="button" role="menuitem" onClick={() => run(onOpen)}>Open</button>
-            <button type="button" role="menuitem" onClick={() => run(onOpenFolder ?? (() => {}))}>Open Folder...</button>
-            <button type="button" role="menuitem" onClick={() => run(onStartWithEmptyFolder ?? (() => {}))}>Start with New Empty Folder</button>
-            <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || folderConflict} onClick={() => run(onSave)}>Save</button>
-            <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
-            <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>
+          <Menu className="toolbar-menu-items" label={uiText("File")} onClose={() => setOpenMenu(null)}>
+            <button type="button" role="menuitem" onClick={() => run(onNew)}>{uiText("New")}</button>
+            <button type="button" role="menuitem" onClick={() => run(onOpen)}>{uiText("Open")}</button>
+            <button type="button" role="menuitem" onClick={() => run(onOpenFolder ?? (() => {}))}>{uiText("Open Folder...")}</button>
+            <button type="button" role="menuitem" onClick={() => run(onStartWithEmptyFolder ?? (() => {}))}>{uiText("Start with New Empty Folder")}</button>
+            <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || folderConflict} data-shortcut="Ctrl/Cmd+S" aria-keyshortcuts="Control+S Meta+S" onClick={() => run(onSave)}>{uiText("Save")}</button>
+            <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || documentKind === "folder"} onClick={() => run(onSaveAs)}>{uiText("Save As")}</button>
+            <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>{uiText("Print")}</button>
             <div className="toolbar-menu-separator" role="separator" />
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddMarkdown)}>Add Markdown...</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddFolder)}>Add Folder...</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddMarkdown)}>{uiText("Add Markdown...")}</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddFolder)}>{uiText("Add Folder...")}</button>
             <div className="toolbar-menu-separator" role="separator" />
-            <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
-            <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>Export Folder</button>
-            <button type="button" role="menuitem" disabled={fileTaskInProgress || documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
+            <button type="button" role="menuitem" onClick={() => run(onImport)}>{uiText("Import Folder")}</button>
+            <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>{uiText("Export Folder")}</button>
+            <button type="button" role="menuitem" disabled={fileTaskInProgress || documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>{uiText("Export Package...")}</button>
             <div className="toolbar-menu-separator" role="separator" />
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>Validate Package...</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>Edit Manifest...</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} aria-keyshortcuts="Control+Shift+F Meta+Shift+F" title="Ctrl/Cmd+Shift+F" onClick={() => run(onSearchPackage)}>Search Package...</button>
-            <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>Undo File Operation</button>
-            <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>Redo File Operation</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>{uiText("Validate Package...")}</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>{uiText("Edit Manifest...")}</button>
+            <button type="button" role="menuitem" disabled={!hasDocument} data-shortcut="Ctrl/Cmd+Shift+F" aria-keyshortcuts="Control+Shift+F Meta+Shift+F" title="Ctrl/Cmd+Shift+F" onClick={() => run(onSearchPackage)}>{uiText("Search Package...")}</button>
+            <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>{uiText("Undo File Operation")}</button>
+            <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>{uiText("Redo File Operation")}</button>
           </Menu>
         )}
       </div>
@@ -191,9 +196,9 @@ export function Toolbar({
             event.preventDefault();
             setOpenMenu("diagram");
           }}
-        >Insert Diagram</button>
+        >{uiText("Insert Diagram")}</button>
         {openMenu === "diagram" && (
-          <Menu className="toolbar-menu-items" label="Insert Diagram" onClose={() => setOpenMenu(null)}>
+          <Menu className="toolbar-menu-items" label={uiText("Insert Diagram")} onClose={() => setOpenMenu(null)}>
             <button type="button" role="menuitem" onClick={() => run(onInsertDrawing)}>SVG</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertPlantUml)}>PlantUML</button>
             <button type="button" role="menuitem" onClick={() => run(onInsertMermaid)}>Mermaid</button>
@@ -202,16 +207,16 @@ export function Toolbar({
         )}
       </div>
 
-      <button type="button" onClick={onInsertTable} disabled={!hasDocument}>Insert Table</button>
-      <button type="button" onClick={onAddImage} disabled={!hasDocument}>Add Image</button>
-      <button type="button" onClick={onAddAttachment} disabled={!hasDocument}>Add Attachment</button>
+      <button type="button" onClick={onInsertTable} disabled={!hasDocument}>{uiText("Insert Table")}</button>
+      <button type="button" onClick={onAddImage} disabled={!hasDocument}>{uiText("Add Image")}</button>
+      <button type="button" onClick={onAddAttachment} disabled={!hasDocument}>{uiText("Add Attachment")}</button>
       <div className="toolbar-menu">
         <button
           type="button"
           className="toolbar-menu-trigger"
           aria-haspopup="menu"
           aria-expanded={openMenu === "ai"}
-          disabled={!aiSelectionEnabled || aiSelectionRunning}
+          title={aiDisabledReason ?? uiText("AI actions and settings")}
           onClick={(event) => {
             event.currentTarget.focus();
             setOpenMenu((current) => current === "ai" ? null : "ai");
@@ -224,13 +229,16 @@ export function Toolbar({
         >AI</button>
         {openMenu === "ai" && (
           <Menu className="toolbar-menu-items" label="AI" onClose={() => setOpenMenu(null)}>
-            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Rewrite"))}>Rewrite</button>
-            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Summarize"))}>Summarize</button>
-            <button type="button" role="menuitem" onClick={() => run(() => onAiSelection("Proofread"))}>Proofread</button>
+            {aiDisabledReason && <p className="menu-hint">{aiDisabledReason}</p>}
+            <button type="button" role="menuitem" disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason} onClick={() => run(() => onAiSelection("Rewrite"))}>{uiText("Rewrite")}</button>
+            <button type="button" role="menuitem" disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason} onClick={() => run(() => onAiSelection("Summarize"))}>{uiText("Summarize")}</button>
+            <button type="button" role="menuitem" disabled={!aiSelectionEnabled || aiSelectionRunning} title={aiDisabledReason} onClick={() => run(() => onAiSelection("Proofread"))}>{uiText("Proofread")}</button>
+            <div className="toolbar-menu-separator" role="separator" />
+            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>{uiText("AI Settings")}</button>
           </Menu>
         )}
       </div>
-      <button type="button" aria-pressed={aiChatOpen} disabled={!aiChatEnabled} onClick={onToggleAiChat}>AI Chat</button>
+      <button type="button" aria-pressed={aiChatOpen} disabled={!aiChatEnabled} onClick={onToggleAiChat}>{uiText("AI Chat")}</button>
       <div className="toolbar-menu">
         <button
           type="button"
@@ -246,13 +254,14 @@ export function Toolbar({
             event.preventDefault();
             setOpenMenu("help");
           }}
-        >Help</button>
+        >{uiText("Help")}</button>
         {openMenu === "help" && (
-          <Menu className="toolbar-menu-items" label="Help" onClose={() => setOpenMenu(null)}>
-            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>AI Settings</button>
+          <Menu className="toolbar-menu-items" label={uiText("Help")} onClose={() => setOpenMenu(null)}>
+            <button type="button" role="menuitem" onClick={() => run(onShortcuts)}>{uiText("Keyboard shortcuts")}</button>
+            <button type="button" role="menuitem" onClick={() => run(onAiSettings)}>{uiText("AI Settings")}</button>
             <div className="toolbar-menu-separator" role="separator" />
-            <button type="button" role="menuitem" onClick={() => run(onAbout)}>About MaCa Editor</button>
-            <button type="button" role="menuitem" onClick={() => run(onThirdPartyLicenses)}>Third party licenses</button>
+            <button type="button" role="menuitem" onClick={() => run(onAbout)}>{uiText("About MaCa Editor")}</button>
+            <button type="button" role="menuitem" onClick={() => run(onThirdPartyLicenses)}>{uiText("Third party licenses")}</button>
           </Menu>
         )}
       </div>
@@ -262,8 +271,7 @@ export function Toolbar({
           checked={showToc}
           onChange={(event) => onShowTocChange(event.target.checked)}
         />
-        TOC
-      </label>
+        {uiText("TOC")}</label>
       <label className="toolbar-vim-mode">
         <input
           type="checkbox"
@@ -278,8 +286,7 @@ export function Toolbar({
           checked={vimMode}
           onChange={(event) => onVimModeChange(event.target.checked)}
         />
-        Vim mode
-      </label>
+        {uiText("Vim mode")}</label>
       {dirty && <span className="dirty-indicator">●</span>}
     </div>
   );

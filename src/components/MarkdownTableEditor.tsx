@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   parseMarkdownTable,
@@ -80,13 +81,13 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
         else next.rows[targetRow][column + columnOffset] = value;
       });
     });
-    commit(next, markdownTable ? "Markdown テーブルを貼り付けました" : "TSV を貼り付けました");
+    commit(next, markdownTable ? uiText("Pasted Markdown table.") : uiText("Pasted TSV."));
   };
 
   const insertRow = (row: number) => {
     const next = clone(table);
     next.rows.splice(row, 0, Array(next.headers.length).fill(""));
-    pendingFocus.current = `Row ${row + 1}, column 1`;
+    pendingFocus.current = `${row + 1} 行目、1 列目`;
     commit(next, `${row + 1} 行目に行を挿入しました`);
   };
 
@@ -95,7 +96,7 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
     next.headers.splice(column, 0, `列 ${next.headers.length + 1}`);
     next.aligns.splice(column, 0, "left");
     next.rows.forEach((row) => row.splice(column, 0, ""));
-    pendingFocus.current = `Header column ${column + 1}`;
+    pendingFocus.current = `${column + 1} 列目の見出し`;
     commit(next, `${column + 1} 列目に列を挿入しました`);
   };
 
@@ -114,24 +115,24 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
 
   const deleteColumn = (column: number) => {
     if (table.headers.length <= 1) {
-      setStatus("最後の1列は削除できません");
+      setStatus(uiText("The last column cannot be deleted."));
       return;
     }
     const next = clone(table);
     next.headers.splice(column, 1);
     next.aligns.splice(column, 1);
     next.rows.forEach((row) => row.splice(column, 1));
-    commit(next, "列を削除しました");
+    commit(next, uiText("Deleted column."));
   };
 
   const undo = () => {
     const previous = undoStack.current.pop();
     if (!previous) {
-      setStatus("戻せる操作がありません");
+      setStatus(uiText("Nothing to undo."));
       return;
     }
     setTable(previous);
-    setStatus("元に戻しました");
+    setStatus(uiText("Undid the last table edit."));
   };
 
   return (
@@ -146,19 +147,18 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
       }}
     >
       <div className="markdown-table-toolbar">
-        <button type="button" onClick={undo}>元に戻す</button>
-        <button type="button" onClick={onCancel}>キャンセル</button>
+        <button type="button" onClick={undo}>{uiText("Undo")}</button>
+        <button type="button" onClick={onCancel}>{uiText("Cancel")}</button>
         <button type="button" onClick={() => {
           const markdown = serializeMarkdownTable(table);
           onDone(markdown === serializeMarkdownTable(original) ? source : markdown);
-        }}>完了</button>
+        }}>{uiText("Done")}</button>
       </div>
       <section className="markdown-table-panel">
-        <h2>テーブル編集</h2>
+        <h2>{uiText("Edit table")}</h2>
         <p className="markdown-table-help">
-          表の上・左の境目にある + で、その位置に列・行を挿入できます。
-          TSV または Markdown テーブルを貼り付けると、そのセルを起点に展開します。
-          Markdown の区切り行は列の配置に反映します。Ctrl+Z / Cmd+Z で操作を戻せます。
+          表の境目の + で行や列を挿入できます。TSV または Markdown の表をセルに貼り付けると、その位置から展開します。
+          Markdown の区切り行は列の配置に反映します。Ctrl+Z / Cmd+Z で操作を元に戻せます。
         </p>
         <div className="markdown-table-wrap">
           <table>
@@ -168,8 +168,7 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
                 {table.headers.map((_, column) => (
                   <th className="table-column-actions" key={`delete-${column}`}>
                     <button type="button" className="danger" onClick={() => deleteColumn(column)}>
-                      削除
-                    </button>
+                      {uiText("Delete")}</button>
                     {insertButton("column", column)}
                     {column === table.headers.length - 1 && insertButton("column", table.headers.length, true)}
                   </th>
@@ -177,7 +176,7 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
                 <th rowSpan={table.rows.length + 3} className="table-add-column-cell">
                   <button
                     type="button"
-                    aria-label="列を追加"
+                    aria-label={uiText("Add column")}
                     onClick={() => insertColumn(table.headers.length)}
                   >+</button>
                 </th>
@@ -190,21 +189,21 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
                       <button
                         type="button"
                         className={alignment === value ? "active" : ""}
-                        aria-label={`列 ${column + 1} を${value === "left" ? "左" : value === "center" ? "中央" : "右"}寄せ`}
+                        aria-label={`${column + 1} 列目を${value === "left" ? "左" : value === "center" ? "中央" : "右"}寄せ`}
                         onClick={() => setAlignment(column, value)}
                         key={value}
-                      >{value === "left" ? "左" : value === "center" ? "中央" : "右"}</button>
+                      >{value === "left" ? uiText("Left") : value === "center" ? uiText("Center") : uiText("Right")}</button>
                     ))}
                   </th>
                 ))}
               </tr>
               <tr>
-                <th className="table-row-actions">見出し</th>
+                <th className="table-row-actions">{uiText("Header")}</th>
                 {table.headers.map((header, column) => (
                   <th key={`header-${column}`} style={{ textAlign: table.aligns[column] }}>
                     <textarea
                       value={header}
-                      aria-label={`Header column ${column + 1}`}
+                      aria-label={`${column + 1} 列目の見出し`}
                       onChange={(event) => updateCell(-1, column, event.target.value)}
                       onPaste={(event) => pasteTable(event, -1, column)}
                     />
@@ -220,15 +219,15 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
                       const next = clone(table);
                       next.rows.splice(rowIndex, 1);
                       if (next.rows.length === 0) next.rows.push(Array(next.headers.length).fill(""));
-                      commit(next, "行を削除しました");
-                    }}>削除</button>
+                      commit(next, uiText("Deleted row."));
+                    }}>{uiText("Delete")}</button>
                     {insertButton("row", rowIndex)}
                   </td>
                   {row.map((value, column) => (
                     <td key={`cell-${rowIndex}-${column}`} style={{ textAlign: table.aligns[column] }}>
                       <textarea
                         value={value}
-                        aria-label={`Row ${rowIndex + 1}, column ${column + 1}`}
+                        aria-label={`${rowIndex + 1} 行目、${column + 1} 列目`}
                         onChange={(event) => updateCell(rowIndex, column, event.target.value)}
                         onPaste={(event) => pasteTable(event, rowIndex, column)}
                       />
@@ -238,7 +237,7 @@ export function MarkdownTableEditor({ source, onDone, onCancel }: Props) {
               ))}
               <tr>
                 <td className="table-add-row-cell" colSpan={table.headers.length + 1}>
-                  <button type="button" aria-label="行を追加" onClick={() => insertRow(table.rows.length)}>+</button>
+                  <button type="button" aria-label={uiText("Add row")} onClick={() => insertRow(table.rows.length)}>+</button>
                   {insertButton("row", table.rows.length)}
                 </td>
               </tr>

@@ -61,7 +61,7 @@ describe("AiSelectionActionDialog", () => {
     await act(async () => {
       root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
-    expect(container.textContent).toContain("AI is not configured");
+    expect(container.textContent).toContain("AI が設定されていません");
     act(() => root.unmount());
   });
 
@@ -74,7 +74,7 @@ describe("AiSelectionActionDialog", () => {
       root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
-      const generate = [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate");
+      const generate = [...container.querySelectorAll("button")].find((b) => b.textContent === "生成");
       generate!.click();
     });
     expect(startMock).toHaveBeenCalledWith(
@@ -87,7 +87,7 @@ describe("AiSelectionActionDialog", () => {
       emit({ type: "completed", request_id: "r1" });
     });
     expect(container.textContent).toContain("hello");
-    expect(container.textContent).toContain("Replace Selection");
+    expect(container.textContent).toContain("選択範囲を置換");
     act(() => root.unmount());
   });
 
@@ -101,14 +101,14 @@ describe("AiSelectionActionDialog", () => {
       root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={onApply} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "生成")!.click();
     });
     await act(async () => {
       emit({ type: "delta", request_id: "r1", content: "XXX" });
       emit({ type: "completed", request_id: "r1" });
     });
     await act(async () => {
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Replace Selection")!.click();
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "選択範囲を置換")!.click();
     });
     expect(onApply).toHaveBeenCalledWith("replace", "XXX", snapshot);
     act(() => root.unmount());
@@ -123,14 +123,14 @@ describe("AiSelectionActionDialog", () => {
       root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "生成")!.click();
     });
     await act(async () => {
       emit({ type: "delta", request_id: "r1", content: "partial" });
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Cancel")!.click();
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "キャンセル")!.click();
     });
-    expect(container.textContent).toContain("Cancelled");
-    expect(container.textContent).not.toContain("Replace Selection");
+    expect(container.textContent).toContain("中止しました");
+    expect(container.textContent).not.toContain("選択範囲を置換");
     act(() => root.unmount());
   });
 
@@ -144,7 +144,7 @@ describe("AiSelectionActionDialog", () => {
       root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={onRunningChange} />);
     });
     await act(async () => {
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "生成")!.click();
     });
     expect(onRunningChange).toHaveBeenCalledWith(true);
     await act(async () => {
@@ -164,13 +164,13 @@ describe("AiSelectionActionDialog", () => {
       root.render(<AiSelectionActionDialog task="Rewrite" snapshot={snapshot} onApply={vi.fn()} onOpenAiSettings={vi.fn()} onClose={vi.fn()} onRunningChange={vi.fn()} />);
     });
     await act(async () => {
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Generate")!.click();
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "生成")!.click();
     });
     await act(async () => {
       emit({ type: "error", request_id: "r1", error: { kind: "Timeout", message: "slow" } });
     });
-    expect(container.textContent).toContain("timed out");
-    expect(container.textContent).toContain("Retry");
+    expect(container.textContent).toContain("タイムアウト");
+    expect(container.textContent).toContain("再試行");
     act(() => root.unmount());
   });
 });

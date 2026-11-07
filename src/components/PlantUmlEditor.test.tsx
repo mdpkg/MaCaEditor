@@ -50,7 +50,7 @@ describe("PlantUmlEditor", () => {
       />,
     ));
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-    act(() => (Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "AI Generate") as HTMLButtonElement).click());
+    act(() => (Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "AI で生成") as HTMLButtonElement).click());
     expect(onAiEdit).toHaveBeenCalledOnce();
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(

@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
 import ReactMarkdown from "react-markdown";
 import type { Components, UrlTransform } from "react-markdown";
@@ -277,7 +278,7 @@ export function MarkdownPreview({
           alt={alt}
           role="button"
           tabIndex={0}
-          title="クリックで拡大表示"
+          title={uiText("Click to enlarge")}
           onClick={(event) => {
             event.currentTarget.focus();
             showPreviewMedia({ kind: "image", src: imageSrc, alt });
@@ -317,10 +318,10 @@ export function MarkdownPreview({
           data-drawpath={sourcePath ?? ""}
           role="button"
           tabIndex={0}
-          aria-label={alt || "ダイアグラムを拡大表示"}
+          aria-label={alt || uiText("Enlarge diagram")}
           title={sourcePath && editDiagram
-            ? "クリックで拡大、ダブルクリックでダイアグラムを編集"
-            : "クリックで拡大表示"}
+            ? uiText("Click to enlarge, double-click to edit the diagram")
+            : uiText("Click to enlarge")}
           onClick={(event) => {
             event.currentTarget.focus();
             showDiagramAfterDoubleClickDelay(media);
@@ -350,7 +351,7 @@ export function MarkdownPreview({
                 editDiagram(sourcePath);
               }}
               onDoubleClick={(event) => event.stopPropagation()}
-            >Edit</button>
+            >{uiText("Edit")}</button>
           )}
         </span>;
       }
@@ -370,7 +371,7 @@ export function MarkdownPreview({
           {...props}
           href={attachmentDataUrl(attachment)}
           download={fileName}
-          title="クリックしてダウンロード"
+          title={uiText("Click to download")}
           onClick={(event) => {
             if (!onDownloadAttachment) return;
             event.preventDefault();
@@ -415,11 +416,11 @@ export function MarkdownPreview({
       </ReactMarkdown>
     </div>
     {previewMedia && createPortal(
-      <Dialog className="preview-media-overlay" title="拡大表示" onClose={() => setPreviewMedia(null)} backdrop={false}>
+      <Dialog className="preview-media-overlay" title={uiText("Enlarged preview")} onClose={() => setPreviewMedia(null)} backdrop={false}>
         <button
           type="button"
           className="preview-media-close"
-          aria-label="拡大表示を閉じる"
+          aria-label={uiText("Close enlarged preview")}
           onClick={() => setPreviewMedia(null)}
         >×</button>
         <div
@@ -445,8 +446,8 @@ export function MarkdownPreview({
                   ? " preview-media-white-background"
                   : ""}`}
                 role="img"
-                aria-label={previewMedia.alt || "ダイアグラム"}
-                title={previewMedia.onEdit ? "ダブルクリックでダイアグラムを編集" : undefined}
+                aria-label={previewMedia.alt || uiText("Diagram")}
+                title={previewMedia.onEdit ? uiText("Double-click to edit the diagram") : undefined}
                 dangerouslySetInnerHTML={{ __html: previewMedia.html }}
               />
             )}

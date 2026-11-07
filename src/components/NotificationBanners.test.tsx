@@ -18,15 +18,15 @@ describe("NotificationBanners", () => {
     const root = createRoot(container);
     act(() => root.render(
       <NotificationBanners notices={[
-        { id: 1, message: "ダウンロードを開始しました: report.pdf", tone: "info" },
-        { id: 2, message: "ダウンロードが完了しました: report.pdf", tone: "success" },
+        { id: 1, message: "Download started: report.pdf", tone: "info" },
+        { id: 2, message: "Download completed: report.pdf", tone: "success" },
       ]} onDismiss={() => {}} />,
     ));
 
     const banners = [...container.querySelectorAll(".notification-banner")];
     expect(banners.map((banner) => banner.querySelector("[role]")?.textContent)).toEqual([
-      "ダウンロードが完了しました: report.pdf",
-      "ダウンロードを開始しました: report.pdf",
+      "Download completed: report.pdf",
+      "Download started: report.pdf",
     ]);
     expect(banners[0].classList).toContain("notification-banner-success");
     expect(container.querySelector('[aria-label="通知"]')).not.toBeNull();
@@ -63,7 +63,7 @@ describe("NotificationBanners", () => {
     expect(container.contains(success)).toBe(false);
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Watch failed");
 
-    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Dismiss notification: Watch failed"]')!.click());
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Watch failed の通知を閉じる"]')!.click());
     expect(container.querySelector(".notification-banners")).toBeNull();
     act(() => root.unmount());
   });

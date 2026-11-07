@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { useEffect, useState } from "react";
 import { sanitizeHtml } from "../lib/sanitize";
 import { CodeEditor } from "./CodeEditor";
@@ -53,10 +54,10 @@ export function MathJaxEditor({
         vimMode={vimMode} onSave={onSave} ariaLabel="MathJax source" />
     </div>
     <div className="mathjax-preview-pane">
-      <div className="diagram-pane-title">Preview{rendering ? " — Rendering…" : ""}</div>
+      <div className="diagram-pane-title">{uiText("Preview")}{rendering ? " — Rendering…" : ""}</div>
       {error && <div className="diagram-render-error" role="alert">{error}</div>}
       {!error && svg && <div className="mathjax-preview" role="button" tabIndex={0}
-        title="クリックで拡大表示" onClick={() => setPreviewOpen(true)}
+        title={uiText("Click to enlarge")} onClick={() => setPreviewOpen(true)}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault(); setPreviewOpen(true);
@@ -65,7 +66,7 @@ export function MathJaxEditor({
     </div>
     {previewOpen && <SvgPreviewOverlay
       svg={sanitizedSvg}
-      label="数式"
+      label={uiText("Math expression")}
       whiteBackground
       onClose={() => setPreviewOpen(false)}
     />}

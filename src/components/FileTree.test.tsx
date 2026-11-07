@@ -44,9 +44,9 @@ describe("FileTree", () => {
       expect(onSelect).toHaveBeenCalledWith("docs/guide.md");
 
       press("F10", true);
-      expect(document.activeElement?.textContent).toBe("Rename");
+      expect(document.activeElement?.textContent).toBe("名前を変更");
       press("ArrowDown");
-      expect(document.activeElement?.textContent).toBe("Delete");
+      expect(document.activeElement?.textContent).toBe("削除");
       press("Escape");
       expect(document.activeElement).toBe(file());
 
@@ -109,7 +109,7 @@ describe("FileTree", () => {
       onDropPath={onDropPath} />));
     const values = new Map<string, string>();
     const dataTransfer = {
-      files: [], dropEffect: "none", effectAllowed: "all",
+      files: [], dropEffect: "none", effectAllowed: "すべて",
       setData: (type: string, value: string) => values.set(type, value),
       getData: (type: string) => values.get(type) ?? "",
     };
@@ -239,10 +239,10 @@ describe("FileTree", () => {
     expect(menu.style.left).toBe("40px");
     expect(menu.style.top).toBe("50px");
     expect([...menu.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-      "Rename", "Delete",
+      "名前を変更", "削除",
     ]);
     act(() => ([...menu.querySelectorAll("button")]
-      .find((button) => button.textContent === "Delete") as HTMLButtonElement).click());
+      .find((button) => button.textContent === "削除") as HTMLButtonElement).click());
     expect(onDelete).toHaveBeenCalledWith("images/photo.png");
     expect(document.querySelector(".file-tree-context-menu")).toBeNull();
     act(() => root.unmount());
@@ -295,7 +295,7 @@ describe("FileTree", () => {
       bubbles: true, cancelable: true,
     })));
     const rename = [...document.querySelectorAll(".file-tree-context-menu button")]
-      .find((button) => button.textContent === "Rename") as HTMLButtonElement;
+      .find((button) => button.textContent === "名前を変更") as HTMLButtonElement;
     act(() => rename.click());
     expect(onRename).toHaveBeenCalledWith("images/photo.png");
     expect(document.querySelector(".file-tree-context-menu")).toBeNull();
@@ -316,11 +316,11 @@ describe("FileTree", () => {
       .find((item) => item.textContent === "guide.md") as HTMLDivElement;
     act(() => file.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
-    act(() => buttons.find((button) => button.textContent === "Move")!.click());
+    act(() => buttons.find((button) => button.textContent === "移動")!.click());
     expect(onMove).toHaveBeenCalledWith("guide.md");
     act(() => file.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     act(() => ([...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[])
-      .find((button) => button.textContent === "Set as entrypoint")!.click());
+      .find((button) => button.textContent === "開始ファイルに設定")!.click());
     expect(onSetEntrypoint).toHaveBeenCalledWith("guide.md");
     act(() => root.unmount());
   });
@@ -337,7 +337,7 @@ describe("FileTree", () => {
     act(() => guide
       .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     const button = [...document.querySelectorAll(".file-tree-context-menu button")]
-      .find((item) => item.textContent === "Show References") as HTMLButtonElement;
+      .find((item) => item.textContent === "参照元を表示") as HTMLButtonElement;
     act(() => button.click());
     expect(onShowReferences).toHaveBeenCalledWith("guide.md");
     act(() => root.unmount());
@@ -360,10 +360,10 @@ describe("FileTree", () => {
     const menu = document.querySelector(".file-tree-context-menu") as HTMLDivElement;
     const buttons = [...document.querySelectorAll(".file-tree-context-menu button")] as HTMLButtonElement[];
     expect(buttons.map((button) => button.textContent)).toEqual([
-      "Rename", "Move", "Delete", "Add Markdown", "Add Folder",
+      "名前を変更", "移動", "削除", "Markdown を追加", "フォルダを追加",
     ]);
     expect([...menu.children].map((child) => child.textContent)).toEqual([
-      "Rename", "Move", "Delete", "", "Add Markdown", "Add Folder",
+      "名前を変更", "移動", "削除", "", "Markdown を追加", "フォルダを追加",
     ]);
     expect(menu.children[3].className).toBe("file-tree-context-menu-divider");
     act(() => buttons[3].click());

@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -67,25 +68,25 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
   const close = async () => { await cancel(); onClose(); };
   const error = state.error ?? invokeError;
 
-  return <aside className="ai-chat-panel" aria-label="AI Chat">
-    <header><strong>AI Chat</strong><div><button onClick={() => void clear()}>Clear</button><button aria-label="Close AI Chat" onClick={() => void close()}>×</button></div></header>
+  return <aside className="ai-chat-panel" aria-label={uiText("AI Chat")}>
+    <header><strong>{uiText("AI Chat")}</strong><div><button onClick={() => void clear()}>{uiText("Clear")}</button><button aria-label={uiText("Close AI Chat")} onClick={() => void close()}>×</button></div></header>
     <div className="ai-chat-document" title={filename}>{filename}</div>
     <div className="ai-chat-messages" ref={listRef}>
-      {state.messages.length === 0 && <p className="ai-chat-empty">Ask about the current Markdown document.</p>}
+      {state.messages.length === 0 && <p className="ai-chat-empty">{uiText("Ask about the current Markdown document.")}</p>}
       {state.messages.map((message) => <article key={message.id} className={`ai-chat-message ai-chat-${message.role}`}>
-        <b>{message.role === "user" ? "You" : "AI"}</b>
+        <b>{message.role === "user" ? uiText("You") : "AI"}</b>
         {message.role === "user" ? <p>{message.content}</p> : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}
-        {message.status === "streaming" && <small>Generating…</small>}
-        {message.status === "cancelled" && <small>Cancelled</small>}
+        {message.status === "streaming" && <small>{uiText("Generating…")}</small>}
+        {message.status === "cancelled" && <small>{uiText("Cancelled")}</small>}
       </article>)}
-      {error && <div className="ai-chat-error" role="alert">{aiErrorMessage(error.kind)} <button onClick={() => void send(lastQuestionRef.current)}>Retry</button></div>}
+      {error && <div className="ai-chat-error" role="alert">{aiErrorMessage(error.kind)} <button onClick={() => void send(lastQuestionRef.current)}>{uiText("Retry")}</button></div>}
     </div>
-    {!configured && <div className="ai-chat-error">{loadFailed ? "AI settings could not be loaded." : "AI is not configured."} <button onClick={onOpenAiSettings}>AI Settings</button></div>}
+    {!configured && <div className="ai-chat-error">{loadFailed ? uiText("AI settings could not be loaded.") : uiText("AI is not configured.")} <button onClick={onOpenAiSettings}>{uiText("AI Settings")}</button></div>}
     <footer>
-      <textarea aria-label="AI Chat message" value={input} disabled={!configured || state.status === "running"}
+      <textarea aria-label={uiText("AI Chat message")} value={input} disabled={!configured || state.status === "running"}
         onChange={(event) => setInput(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
         onKeyDown={(event) => { if (shouldSendChatKey(event.key, event.shiftKey, composing || event.nativeEvent.isComposing)) { event.preventDefault(); void send(); } }} />
-      {state.status === "running" ? <button onClick={() => void cancel()}>Cancel</button> : <button disabled={!configured || !input.trim()} onClick={() => void send()}>Send</button>}
+      {state.status === "running" ? <button onClick={() => void cancel()}>{uiText("Cancel")}</button> : <button disabled={!configured || !input.trim()} onClick={() => void send()}>{uiText("Send")}</button>}
     </footer>
   </aside>;
 }

@@ -1979,3 +1979,65 @@ body {
   cursor: pointer;
   font-size: 11px;
 }
+
+.action-field,
+.action-input,
+.tree-filter {
+  display: flex;
+  gap: 8px;
+}
+
+.action-field,
+.tree-filter {
+  flex-direction: column;
+}
+
+.action-field input,
+.action-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.empty-state-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.recent-documents {
+  max-width: 640px;
+  margin: 24px auto;
+}
+
+.recent-documents button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.tree-filter {
+  padding: 8px;
+}
+
+.tree-item-disclosure {
+  cursor: pointer;
+}
+
+.menu-hint {
+  max-width: 280px;
+  margin: 8px;
+  white-space: normal;
+}
+
+.toolbar-menu-items button[data-shortcut]::after {
+  content: attr(data-shortcut);
+  float: right;
+  margin-left: 20px;
+  opacity: 0.7;
+}
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}

@@ -67,27 +67,27 @@ export type AiErrorKind =
 export function aiErrorMessage(kind: AiErrorKind): string {
   switch (kind) {
     case "InvalidConfiguration":
-      return "AI configuration is invalid.";
+      return "AI 設定が正しくありません。";
     case "ConnectionFailed":
-      return "Could not connect to the AI server.";
+      return "AI サーバーへ接続できませんでした。";
     case "AuthenticationFailed":
-      return "AI authentication failed. Check your API key.";
+      return "AI の認証に失敗しました。API キーを確認してください。";
     case "PermissionDenied":
-      return "AI permission denied.";
+      return "AI のアクセス権限がありません。";
     case "ModelNotFound":
-      return "The AI model was not found.";
+      return "AI モデルが見つかりませんでした。";
     case "RateLimited":
-      return "AI request was rate limited. Try again later.";
+      return "AI のリクエスト回数制限に達しました。しばらくしてから再試行してください。";
     case "Timeout":
-      return "The AI request timed out.";
+      return "AI のリクエストがタイムアウトしました。";
     case "ServerError":
-      return "The AI server returned an error.";
+      return "AI サーバーでエラーが発生しました。";
     case "InvalidResponse":
-      return "The AI returned an invalid response.";
+      return "AI の応答が正しくありません。";
     case "Cancelled":
-      return "The AI request was cancelled.";
+      return "AI のリクエストを中止しました。";
     case "Unknown":
-      return "An unknown AI error occurred.";
+      return "AI の処理で不明なエラーが発生しました。";
   }
 }
 

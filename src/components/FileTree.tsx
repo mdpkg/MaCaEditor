@@ -1,3 +1,4 @@
+import { uiText } from "../lib/uiText";
 import { Menu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -13,6 +14,9 @@ interface Props {
   directories?: string[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  onSelectFolder?: (path: string) => void;
+  collapsedPaths?: Set<string>;
+  onCollapsedPathsChange?: (paths: Set<string>) => void;
   onEditMarkdown?: (path: string) => void;
   onDropImages: (files: File[]) => void;
   imageDropDirectory?: string;
@@ -39,8 +43,8 @@ const fileIcons: Record<FileTreeIconKind, LucideIcon> = {
 
 function TreeIcon({ kind, open }: { kind: FileTreeIconKind | "folder"; open?: boolean }) {
   const Icon = kind === "folder" ? (open ? FolderOpen : Folder) : fileIcons[kind];
-  const label = kind === "folder" ? "Folder" : kind === "markdown" ? "Markdown"
-    : kind === "image" ? "Image" : kind === "diagram" ? "Diagram" : "File";
+  const label = kind === "folder" ? uiText("Folder") : kind === "markdown" ? "Markdown"
+    : kind === "image" ? "画像" : kind === "diagram" ? uiText("Diagram") : uiText("File");
   return <span className="tree-item-icon" data-icon-kind={kind} role="img" aria-label={label}>
     <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
   </span>;
@@ -52,32 +56,47 @@ export function FileTree({
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
   onAddMarkdown, onAddFolder,
   onDropPath,
-  onShowReferences,
+  onShowReferences, onSelectFolder, collapsedPaths, onCollapsedPathsChange,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
-  const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [localCollapsed, setLocalCollapsed] = useState(new Set<string>());
+  const collapsed = collapsedPaths ?? localCollapsed;
+  const setCollapsed = onCollapsedPathsChange ?? setLocalCollapsed;
+  const [query, setQuery] = useState("");
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const paths = files.map((f) => f.path);
   const tree = buildFileTree(paths, [...new Set(["images", "attachments", ...directories])]);
 
+  const filter = query.trim().toLocaleLowerCase();
+  const matchingPaths = new Set<string>();
+  if (filter) {
+    for (const path of [...paths, ...directories, "images", "attachments"]) {
+      if (!path.toLocaleLowerCase().includes(filter)) continue;
+      const parts = path.split("/");
+      for (let end = 1; end <= parts.length; end++) matchingPaths.add(parts.slice(0, end).join("/"));
+    }
+  }
+
   const visible: Array<{ node: TreeNode; depth: number; parent: string | null; position: number; size: number }> = [];
   const visit = (nodes: TreeNode[], depth: number, parent: string | null) => {
-    nodes.forEach((node, index) => {
-      visible.push({ node, depth, parent, position: index + 1, size: nodes.length });
-      if (node.isDir && !collapsed.has(node.path)) visit(node.children, depth + 1, node.path);
+    const filtered = filter ? nodes.filter((node) => matchingPaths.has(node.path)) : nodes;
+    filtered.forEach((node, index) => {
+      visible.push({ node, depth, parent, position: index + 1, size: filtered.length });
+      if (node.isDir && (filter || !collapsed.has(node.path))) visit(node.children, depth + 1, node.path);
     });
   };
   visit(tree, 0, null);
   const tabPath = visible.some(({ node }) => node.path === focusedPath) ? focusedPath
     : visible.some(({ node }) => node.path === selectedPath) ? selectedPath : visible[0]?.node.path;
-  const toggle = (path: string) => setCollapsed((current) => {
-    const next = new Set(current);
+  const toggle = (path: string) => {
+    if (filter) return;
+    const next = new Set(collapsed);
     if (next.has(path)) next.delete(path);
     else next.add(path);
-    return next;
-  });
+    setCollapsed(next);
+  };
   const focusPath = (path: string) => {
     setFocusedPath(path);
     [...treeRef.current!.querySelectorAll<HTMLElement>('[role="treeitem"]')]
@@ -102,7 +121,7 @@ export function FileTree({
     canRename(path) || canDelete(path) || canMove(path) || canSetEntrypoint(path));
 
   return (
-    <div ref={treeRef} className="file-tree" role="tree" aria-label="Package files"
+    <div className="file-tree"
       onDragOver={(event) => { if (onDropPath) event.preventDefault(); }}
       onDrop={(event) => {
         const sourcePath = event.dataTransfer.getData(PACKAGE_PATH_DRAG_TYPE);
@@ -112,10 +131,16 @@ export function FileTree({
         onDropPath(sourcePath, name);
       }}
     >
+      <label className="tree-filter">
+        <span>{uiText("Filter files")}</span>
+        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      <div ref={treeRef} role="tree" aria-label={uiText("Package files")}>
+      {visible.length === 0 && <p>{uiText("No matching files.")}</p>}
       {visible.map(({ node, depth, parent, position, size }, index) => (
         <div key={node.path} role="treeitem" aria-label={node.name}
           aria-level={depth + 1} aria-posinset={position} aria-setsize={size}
-          aria-expanded={node.isDir ? !collapsed.has(node.path) : undefined}
+          aria-expanded={node.isDir ? Boolean(filter) || !collapsed.has(node.path) : undefined}
           aria-selected={node.path === selectedPath} data-path={node.path}
           tabIndex={node.path === tabPath ? 0 : -1}
           className={`tree-item ${node.isDir ? "tree-dir" : ""} ${node.path === selectedPath ? "selected" : ""} ${dragOverPath === node.path ? "drop-target" : ""}`}
@@ -123,10 +148,11 @@ export function FileTree({
           onFocus={() => setFocusedPath(node.path)}
           onClick={(event) => {
             event.currentTarget.focus();
-            if (node.isDir) toggle(node.path);
+            if (node.isDir) onSelectFolder?.(node.path);
             else onSelect(node.path);
           }}
           onDoubleClick={() => {
+            if (node.isDir) toggle(node.path);
             if (!node.isDir && /\.(md|markdown)$/i.test(node.path)) {
               onSelect(node.path);
               onEditMarkdown?.(node.path);
@@ -148,18 +174,19 @@ export function FileTree({
             else if (event.key === "Home") focusPath(visible[0].node.path);
             else if (event.key === "End") focusPath(visible[visible.length - 1].node.path);
             else if (event.key === "ArrowRight") {
-              if (node.isDir && collapsed.has(node.path)) toggle(node.path);
+              if (node.isDir && !filter && collapsed.has(node.path)) toggle(node.path);
               else if (visible[index + 1]?.parent === node.path) focusPath(visible[index + 1].node.path);
             } else if (event.key === "ArrowLeft") {
-              if (node.isDir && !collapsed.has(node.path)) toggle(node.path);
+              if (node.isDir && !filter && !collapsed.has(node.path)) toggle(node.path);
               else if (parent) focusPath(parent);
-            } else if (node.isDir) toggle(node.path);
+            } else if (node.isDir) onSelectFolder?.(node.path);
             else onSelect(node.path);
           }}
           onContextMenu={(event) => {
             if (!hasActions(node.path)) return;
             event.preventDefault();
             event.currentTarget.focus();
+            if (node.isDir) onSelectFolder?.(node.path);
             setContextMenu({ path: node.path, x: event.clientX, y: event.clientY });
           }}
           draggable
@@ -191,43 +218,47 @@ export function FileTree({
               onDropImages(Array.from(event.dataTransfer.files));
             }
           }}>
-          {node.isDir && <span className="tree-item-disclosure">{collapsed.has(node.path) ? "▸ " : "▾ "}</span>}
+          {node.isDir && <span className="tree-item-disclosure" aria-hidden="true"
+            onClick={(event) => { event.stopPropagation(); event.currentTarget.parentElement?.focus(); toggle(node.path); }}>
+            {!filter && collapsed.has(node.path) ? "▸ " : "▾ "}
+          </span>}
           <TreeIcon kind={node.isDir ? "folder" : fileTreeIconKind(node.path, manifest)} open={!collapsed.has(node.path)} />
           <span className="tree-item-name">{node.name}</span>
         </div>
       ))}
+      </div>
       {contextMenu && createPortal(
-        <Menu className="file-tree-context-menu" label="File actions" position={contextMenu}
+        <Menu className="file-tree-context-menu" label={uiText("File actions")} position={contextMenu}
           onClose={() => setContextMenu(null)}>
           {canRename(contextMenu.path) && (
             <button type="button" role="menuitem" onClick={() => {
               onRename(contextMenu.path);
               setContextMenu(null);
-            }}>Rename</button>
+            }}>{uiText("Rename")}</button>
           )}
           {canMove(contextMenu.path) && (
             <button type="button" role="menuitem" onClick={() => {
               onMove(contextMenu.path);
               setContextMenu(null);
-            }}>Move</button>
+            }}>{uiText("Move")}</button>
           )}
           {canSetEntrypoint(contextMenu.path) && (
             <button type="button" role="menuitem" onClick={() => {
               onSetEntrypoint(contextMenu.path);
               setContextMenu(null);
-            }}>Set as entrypoint</button>
+            }}>{uiText("Set as entrypoint")}</button>
           )}
           {onShowReferences && (
             <button type="button" role="menuitem" onClick={() => {
               onShowReferences(contextMenu.path);
               setContextMenu(null);
-            }}>Show References</button>
+            }}>{uiText("Show References")}</button>
           )}
           {canDelete(contextMenu.path) && (
             <button type="button" role="menuitem" onClick={() => {
               onDelete(contextMenu.path);
               setContextMenu(null);
-            }}>Delete</button>
+            }}>{uiText("Delete")}</button>
           )}
           {(onAddMarkdown || onAddFolder) && (
             canRename(contextMenu.path) || canMove(contextMenu.path) ||
@@ -237,13 +268,13 @@ export function FileTree({
             <button type="button" role="menuitem" onClick={() => {
               onAddMarkdown(contextMenu.path);
               setContextMenu(null);
-            }}>Add Markdown</button>
+            }}>{uiText("Add Markdown")}</button>
           )}
           {onAddFolder && (
             <button type="button" role="menuitem" onClick={() => {
               onAddFolder(contextMenu.path);
               setContextMenu(null);
-            }}>Add Folder</button>
+            }}>{uiText("Add Folder")}</button>
           )}
         </Menu>,
         document.body,

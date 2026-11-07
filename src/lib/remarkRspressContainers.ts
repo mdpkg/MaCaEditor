@@ -44,7 +44,7 @@ function openingOf(node: MarkdownNode): Opening | undefined {
   const kind = match[1] as ContainerKind;
   return {
     kind,
-    title: match[2] ?? match[3]?.trim() ?? `${kind[0].toUpperCase()}${kind.slice(1)}`,
+    title: match[2] ?? match[3]?.trim() ?? ({ note: "補足", tip: "ヒント", important: "重要", info: "情報", warning: "警告", danger: "危険", caution: "注意", details: "詳細" })[kind],
     markerLength: match[0].length,
   };
 }

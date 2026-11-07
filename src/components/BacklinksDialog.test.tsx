@@ -8,7 +8,7 @@ test("lists backlinks and opens their Markdown source", () => {
   act(() => root.render(<BacklinksDialog target="images/a.png"
     backlinks={[{ path: "docs/guide.md", line: 3, offset: 20 }]}
     onNavigate={onNavigate} onClose={vi.fn()} />));
-  expect(container.textContent).toContain("References to images/a.png");
+  expect(container.textContent).toContain("参照元images/a.png");
   act(() => (container.querySelector(".backlinks-list button") as HTMLButtonElement).click());
   expect(onNavigate).toHaveBeenCalledWith("docs/guide.md", 20);
   act(() => root.unmount());

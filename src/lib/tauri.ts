@@ -1,4 +1,6 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AiConfig,
@@ -178,5 +180,18 @@ export function startAiSelectionAction(
     selectedText: options.selectedText,
     connectTimeoutSeconds: options.connectTimeoutSeconds ?? null,
     requestTimeoutSeconds: options.requestTimeoutSeconds ?? null,
+  });
+}
+
+
+export async function updateWindowTitle(title: string): Promise<void> {
+  document.title = title;
+  if (isTauri()) await getCurrentWindow().setTitle(title);
+}
+
+export async function onNativeFileDrop(handler: (paths: string[]) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => {};
+  return getCurrentWebview().onDragDropEvent((event) => {
+    if (event.payload.type === "drop") handler(event.payload.paths);
   });
 }
