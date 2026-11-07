@@ -517,7 +517,10 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).toBeNull();
   });
 
-  test("closing a save error preserves dirty edits and keeps the short cause in the status bar", async () => {
+  test.each([
+    ["Disk full\nWriter detail", "ディスクの空き容量が不足しています。"],
+    ["failed to save file: アクセスが拒否されました。 (os error 5)", "詳しくは詳細欄を確認してください。"],
+  ])("closing a save error preserves dirty edits and keeps the Japanese summary (%s)", async (detail, summary) => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
     const confirm = vi.spyOn(window, "confirm");
@@ -526,20 +529,20 @@ describe("App persistence", () => {
     await click("編集");
     await edit("Unsaved edit");
 
-    vi.mocked(tauri.savePackage).mockRejectedValueOnce(new Error("Disk full\nWriter detail"));
+    vi.mocked(tauri.savePackage).mockRejectedValueOnce(new Error(detail));
     await act(async () => saveShortcut());
     const banner = container.querySelector(".operation-error")!;
-    expect(banner.querySelector('[role="alert"]')?.textContent).toBe("保存に失敗しました。ディスクの空き容量が不足しています。");
+    expect(banner.querySelector('[role="alert"]')?.textContent).toBe(`保存に失敗しました。${summary}`);
     expect([...banner.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["エラーを閉じる"]);
     const details = banner.querySelector("details")!;
     expect(details.open).toBe(false);
     act(() => details.querySelector("summary")!.click());
     expect(details.open).toBe(true);
-    expect(details.textContent).toContain("Writer detail");
+    expect(details.querySelector(".error-detail")?.textContent).toBe(detail);
 
     await click("エラーを閉じる", banner);
     expect(container.querySelector(".operation-error")).toBeNull();
-    expect(container.querySelector(".status-message")?.textContent).toBe("保存に失敗しました。ディスクの空き容量が不足しています。");
+    expect(container.querySelector(".status-message")?.textContent).toBe(`保存に失敗しました。${summary}`);
     expect(container.querySelector("textarea")?.value).toBe("Unsaved edit");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
     expect(confirm).not.toHaveBeenCalled();

@@ -3,6 +3,7 @@ import { useStoredLayoutNumber } from "./lib/layoutPreferences";
 import { uiText } from "./lib/uiText";
 import { useActionDialog } from "./components/ActionDialog";
 import { Dialog } from "./components/Dialog";
+import { ErrorDetails } from "./components/ErrorDetails";
 import { loadRecentDocuments, saveRecentDocuments, type RecentDocument } from "./lib/recentDocuments";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -418,7 +419,10 @@ export default function App() {
     const firstLine = detail.split(/\r?\n/, 1)[0];
     const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
     const translated = uiText(shortReason);
-    const reasonText = /[ぁ-んァ-ヶ一-龠]/.test(translated) ? translated : "詳しくは詳細欄を確認してください。";
+    // Native file errors can mix an English backend prefix with a localized Windows error.
+    const nativeFileError = operation === uiText("Save") || operation === uiText("Reload folder");
+    const localized = translated !== shortReason || (!nativeFileError && /[ぁ-んァ-ヶ一-龠]/.test(translated));
+    const reasonText = localized ? translated : "詳しくは詳細欄を確認してください。";
     const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
     setError({ operation, summary, detail });
     setStatus(summary);
@@ -428,9 +432,9 @@ export default function App() {
     setError((current) => current?.operation === operation ? null : current);
   };
 
-  const showNotification = (message: string, tone: NotificationTone, action?: BannerNotice["action"]) => {
+  const showNotification = (message: string, tone: NotificationTone, options?: Pick<BannerNotice, "action" | "detail">) => {
     notificationSequenceRef.current += 1;
-    const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone, action };
+    const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone, ...options };
     setNotifications((current) => [...current, notice]);
   };
 
@@ -491,7 +495,7 @@ export default function App() {
       } catch (e) {
         if (active && session === documentSessionRef.current && lastError !== String(e)) {
           lastError = String(e);
-          showNotification(`フォルダを再読込できませんでした。${String(e)}`, "error");
+          showNotification("フォルダを再読込できませんでした。", "error", { detail: lastError });
         }
       } finally {
         checking = false;
@@ -508,7 +512,7 @@ export default function App() {
       unlisten = dispose;
       return watchFolder(folderPath);
     }).catch((e) => {
-      if (active) showNotification(`フォルダの監視を開始できませんでした。${String(e)}`, "error");
+      if (active) showNotification("フォルダの監視を開始できませんでした。", "error", { detail: String(e) });
     });
 
     return () => {
@@ -1286,9 +1290,11 @@ export default function App() {
       setMathJaxPath((current) => mapPath(current));
       setStatus(`${destination} に移動し、Markdown のリンクを更新しました`); clearError(uiText("Move"));
       showNotification(`${path} を ${destination} に移動しました。Markdown のリンクも更新しました。`, "success", {
-        label: "元に戻す",
-        onClick: () => {
-          if (entry) applyFileOperationHistory("undo", entry);
+        action: {
+          label: "元に戻す",
+          onClick: () => {
+            if (entry) applyFileOperationHistory("undo", entry);
+          },
         },
       });
     } catch (reason) { reportError(uiText("Move"), reason); }
@@ -2045,10 +2051,7 @@ export default function App() {
         {error && (
           <div key={`${error.operation}:${error.detail}`} className="notification-banner notification-banner-error operation-error">
             <div role="alert">{error.summary}</div>
-            <details>
-              <summary>{uiText("Details")}</summary>
-              <div className="operation-error-detail">{error.detail}</div>
-            </details>
+            <ErrorDetails detail={error.detail} />
             <button type="button" onClick={() => setError(null)}>{uiText("Close error")}</button>
           </div>
         )}

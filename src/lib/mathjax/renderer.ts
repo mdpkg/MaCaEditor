@@ -17,7 +17,9 @@ function loadRenderer(): Promise<Renderer> {
       const adaptor = adaptorModule.liteAdaptor();
       handlerModule.RegisterHTMLHandler(adaptor);
       const mathDocument = mathjaxModule.mathjax.document("", {
-        InputJax: new texModule.TeX({ packages: packagesModule.AllPackages }),
+        InputJax: new texModule.TeX({
+          packages: packagesModule.AllPackages.filter((name) => name !== "noundefined"),
+        }),
         OutputJax: new svgModule.SVG({ fontCache: "local" }),
       });
       return {
@@ -30,11 +32,17 @@ function loadRenderer(): Promise<Renderer> {
   return rendererPromise;
 }
 
+export function mathJaxErrorDetail(svg: ParentNode): string | null {
+  return svg.querySelector("[data-mjx-error]")?.getAttribute("data-mjx-error") ?? null;
+}
+
 export async function renderMathJax(source: string): Promise<string> {
   const rendered = (await loadRenderer()).convert(source);
   const parsed = new DOMParser().parseFromString(rendered, "text/html");
   const svg = parsed.querySelector("svg");
   if (!svg) throw new Error("MathJax did not produce an SVG");
+  const detail = mathJaxErrorDetail(svg);
+  if (detail) throw new Error(detail);
   svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   return new XMLSerializer().serializeToString(svg);
 }
