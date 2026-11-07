@@ -34,6 +34,7 @@ import {
   addMarkdown,
   deletePath,
   imageMediaType,
+  markSaved,
   movePath,
   pathReferenceCount,
   resourceDirectoryForMarkdown,
@@ -116,7 +117,7 @@ import {
   saveVimMode,
 } from "./lib/editorPreferences";
 import type { DrawingPreferences } from "@maca/drawing-react";
-import { exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
+import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { diagnosePackage } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
@@ -160,7 +161,9 @@ interface PendingInferredFolder {
 }
 
 export default function App() {
-  const [doc, setDoc] = useState<DocumentState | null>(null);
+  const [doc, setDocumentState] = useState<DocumentState | null>(null);
+  const [fileTask, setFileTask] = useState<string | null>(null);
+  const [folderConflict, setFolderConflictState] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("preview");
   const [status, setStatus] = useState("Ready");
@@ -206,8 +209,28 @@ export default function App() {
   const notificationSequenceRef = useRef(0);
   const notificationTimersRef = useRef<number[]>([]);
   const documentRef = useRef<DocumentState | null>(null);
-  const externalConflictRef = useRef(false);
-  const externalNoticeRef = useRef<string | null>(null);
+  const documentSessionRef = useRef(0);
+  const fileTaskRef = useRef(false);
+  const folderConflictRef = useRef(false);
+
+  const setFolderConflict = (conflict: boolean) => {
+    folderConflictRef.current = conflict;
+    setFolderConflictState(conflict);
+  };
+
+  const setDoc = (update: DocumentState | ((current: DocumentState | null) => DocumentState | null)) => {
+    const next = typeof update === "function" ? update(documentRef.current) : update;
+    documentRef.current = next;
+    setDocumentState(next);
+  };
+
+  const replaceDocument = (next: DocumentState) => {
+    documentSessionRef.current += 1;
+    operationUndoRef.current = [];
+    operationRedoRef.current = [];
+    setFolderConflict(false);
+    setDoc(next);
+  };
 
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
@@ -299,13 +322,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    documentRef.current = doc;
-  }, [doc]);
-
-  useEffect(() => {
     if (doc?.origin.kind !== "folder") {
-      externalConflictRef.current = false;
-      externalNoticeRef.current = null;
       void stopWatchingFolder();
       return;
     }
@@ -314,26 +331,38 @@ export default function App() {
     let checking = false;
     let debounceTimer: number | null = null;
     let unlisten: (() => void) | null = null;
-    externalConflictRef.current = false;
-    externalNoticeRef.current = null;
+    let lastError: string | null = null;
+
+    const scheduleCheck = () => {
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => { void check(); }, 300);
+    };
 
     const check = async () => {
-      if (checking) return;
+      const origin = documentRef.current?.origin;
+      if (!active || origin?.kind !== "folder" || origin.path !== folderPath) return;
+      if (checking || fileTaskRef.current) {
+        scheduleCheck();
+        return;
+      }
       checking = true;
+      const session = documentSessionRef.current;
       try {
-        const current = documentRef.current;
-        if (!active || current?.origin.kind !== "folder" || current.origin.path !== folderPath) return;
+        const baseline = documentRef.current?.folderSnapshot;
         const info = await openFolder(folderPath);
-        if (!active) return;
+        const current = documentRef.current;
+        if (!active || session !== documentSessionRef.current ||
+            current?.origin.kind !== "folder" || current.origin.path !== folderPath) return;
+        if (fileTaskRef.current || current.folderSnapshot !== baseline) {
+          scheduleCheck();
+          return;
+        }
+        lastError = null;
         const action = externalFolderAction(current, info);
-        if (action === "unchanged") {
-          externalConflictRef.current = false;
-          externalNoticeRef.current = null;
-        } else if (action === "reload") {
-          externalConflictRef.current = false;
-          externalNoticeRef.current = null;
+        setFolderConflict(action === "conflict");
+        if (action === "reload") {
           const reloaded = createFolderDocumentState(info, folderPath);
-          setDoc(reloaded);
+          replaceDocument(reloaded);
           setSelectedPath((selected) =>
             selected && reloaded.files.some((file) => file.path === selected)
               ? selected
@@ -341,18 +370,10 @@ export default function App() {
           );
           setStatus(`Reloaded external changes from ${folderPath}`);
           showNotification("外部エディタによる変更を反映しました", "info");
-        } else {
-          externalConflictRef.current = true;
-          const fingerprint = folderInfoFingerprint(info);
-          if (externalNoticeRef.current !== fingerprint) {
-            externalNoticeRef.current = fingerprint;
-            setStatus("External changes conflict with unsaved edits");
-            showNotification("外部変更を検知しました。未保存の編集があるため自動反映していません", "error");
-          }
         }
       } catch (e) {
-        if (active && externalNoticeRef.current !== String(e)) {
-          externalNoticeRef.current = String(e);
+        if (active && session === documentSessionRef.current && lastError !== String(e)) {
+          lastError = String(e);
           showNotification(`フォルダの再読込に失敗しました: ${String(e)}`, "error");
         }
       } finally {
@@ -361,9 +382,7 @@ export default function App() {
     };
 
     void onFolderChanged((changedPath) => {
-      if (!active || changedPath !== folderPath) return;
-      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => { void check(); }, 300);
+      if (active && changedPath === folderPath) scheduleCheck();
     }).then((dispose) => {
       if (!active) {
         dispose();
@@ -383,7 +402,6 @@ export default function App() {
   }, [
     doc?.origin.kind,
     doc?.origin.kind === "folder" ? doc.origin.path : null,
-    doc?.folderSnapshot,
   ]);
 
   useEffect(() => {
@@ -416,7 +434,7 @@ export default function App() {
     if (typeof result === "string") {
       try {
         const info = await openPackage(result);
-        setDoc(createDocumentState(info, result));
+        replaceDocument(createDocumentState(info, result));
         setSelectedPath(info.entrypoint);
         setMode("preview");
         setDrawingDoc(null);
@@ -444,7 +462,7 @@ export default function App() {
         setStatus("Review generated manifest");
         return;
       }
-      setDoc(createFolderDocumentState(info, result));
+      replaceDocument(createFolderDocumentState(info, result));
       setSelectedPath(info.entrypoint);
       setMode("preview");
       setDrawingDoc(null);
@@ -471,7 +489,7 @@ export default function App() {
     const path = `${parent.replace(/[\\/]+$/, "")}/${name}`;
     try {
       const info = await createEmptyFolder(path);
-      setDoc(createFolderDocumentState(info, path));
+      replaceDocument(createFolderDocumentState(info, path));
       setSelectedPath(info.entrypoint);
       setMode("split");
       setDrawingDoc(null);
@@ -487,46 +505,69 @@ export default function App() {
     }
   };
 
-  const performSave = async () => {
-    if (!doc) return;
-    if (doc.origin.kind === "folder" && externalConflictRef.current) {
-      setError("External changes conflict with unsaved edits. Reopen the folder before saving.");
-      setStatus("Save blocked by external changes");
-      return;
-    }
-    if (doc.origin.kind === "untitled") {
-      await performSaveAs();
-      return;
-    }
+  const runFileTask = async (
+    label: string,
+    task: (snapshot: DocumentState, isCurrentSession: () => boolean) => Promise<void>,
+  ) => {
+    const snapshot = documentRef.current;
+    if (!snapshot || fileTaskRef.current) return;
+    const session = documentSessionRef.current;
+    const isCurrentSession = () => session === documentSessionRef.current;
+    fileTaskRef.current = true;
+    setFileTask(label);
     try {
-      setDoc(await saveDocument(doc));
-      setStatus(`Saved ${doc.origin.path}`);
+      await task(snapshot, isCurrentSession);
     } catch (e) {
-      setError(String(e));
-      setStatus("Error");
+      if (isCurrentSession()) {
+        setError(String(e));
+        setStatus("Error");
+      }
+    } finally {
+      fileTaskRef.current = false;
+      setFileTask(null);
     }
   };
 
-  const performSaveAs = async () => {
-    if (!doc) return;
+  const finishSave = (snapshot: DocumentState, saved: DocumentState) => {
+    const current = documentRef.current;
+    if (!current) return;
+    setDoc(current === snapshot ? saved : applySavedBaseline(current, saved));
+    for (const entry of [...operationUndoRef.current, ...operationRedoRef.current]) {
+      entry.state = applySavedBaseline(entry.state, saved);
+    }
+    setError(null);
+    setStatus(`Saved ${saved.path}`);
+  };
+
+  const performSaveAs = () => runFileTask("Saving…", async (snapshot, isCurrentSession) => {
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
     });
-    if (typeof result === "string") {
-      try {
-        await savePackage({ ...toSaveRequest(doc), path: result });
-        setDoc({ ...doc, path: result, origin: { kind: "package", path: result }, dirty: false, originalPaths: doc.files.map((file) => file.path) });
-        setStatus(`Saved ${result}`);
-      } catch (e) {
-        setError(String(e));
-        setStatus("Error");
-      }
+    if (typeof result !== "string" || !isCurrentSession()) return;
+    await savePackage({ ...toSaveRequest(snapshot), path: result });
+    if (isCurrentSession()) {
+      finishSave(snapshot, markSaved({
+        ...snapshot, path: result, origin: { kind: "package", path: result }, folderSnapshot: undefined,
+      }));
     }
+  });
+
+  const performSave = async () => {
+    const current = documentRef.current;
+    if (!current || folderConflictRef.current || fileTaskRef.current) return;
+    if (current.origin.kind === "untitled") {
+      await performSaveAs();
+      return;
+    }
+    await runFileTask("Saving…", async (snapshot, isCurrentSession) => {
+      const saved = await saveDocument(snapshot);
+      if (isCurrentSession()) finishSave(snapshot, saved);
+    });
   };
 
   const handleSave = async () => {
-    if (!doc) return;
+    if (!doc || folderConflictRef.current || fileTaskRef.current) return;
     if (String(doc.manifest.version ?? "").startsWith("1.")) {
       setV1MigrationOpen(true);
       return;
@@ -534,9 +575,28 @@ export default function App() {
     await performSave();
   };
 
-  const handleSaveAs = async () => {
-    await performSaveAs();
-  };
+  const handleReloadFolder = () => runFileTask("Reloading folder…", async (snapshot, isCurrentSession) => {
+    if (snapshot.origin.kind !== "folder" ||
+        !window.confirm("Discard unsaved changes and reload this folder?")) return;
+    const path = snapshot.origin.path;
+    const info = await openFolder(path);
+    if (!isCurrentSession()) return;
+    if (documentRef.current !== snapshot) {
+      setStatus("Reload canceled because the document was edited. Retry to discard the latest edits.");
+      return;
+    }
+    replaceDocument(createFolderDocumentState(info, path));
+    setSelectedPath(info.entrypoint);
+    setMode("preview");
+    setDrawingDoc(null);
+    setDrawingPath(null);
+    setPlantUmlPath(null);
+    setMermaidPath(null);
+    setMathJaxPath(null);
+    setTableEdit(null);
+    setError(null);
+    setStatus(`Reloaded folder ${path}`);
+  });
 
   const handlePrint = () => {
     window.print();
@@ -552,7 +612,7 @@ export default function App() {
       try {
         await createNewPackage(result);
         const info = await openPackage(result);
-        setDoc(createDocumentState(info, result));
+        replaceDocument(createDocumentState(info, result));
         setSelectedPath(info.entrypoint);
         setMode("preview");
         setDrawingDoc(null);
@@ -592,7 +652,7 @@ export default function App() {
           }
           await importFolder(folder, dest);
           const info = await openPackage(dest);
-          setDoc(createDocumentState(info, dest));
+          replaceDocument(createDocumentState(info, dest));
           setSelectedPath(info.entrypoint);
           setMode("preview");
           setDrawingDoc(null);
@@ -623,23 +683,20 @@ export default function App() {
     }
   };
 
-  const handleExportPackage = async () => {
-    if (!doc || doc.origin.kind !== "folder") return;
+  const handleExportPackage = () => runFileTask("Exporting package…", async (snapshot, isCurrentSession) => {
+    if (snapshot.origin.kind !== "folder") return;
     const result = await saveDialog({
       filters: [{ name: "Markdown Package", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
     });
-    if (typeof result !== "string") return;
-    try {
-      const path = result.toLowerCase().endsWith(".mdpkg") ? result : `${result}.mdpkg`;
-      await exportFolderDocumentPackage(doc, path);
+    if (typeof result !== "string" || !isCurrentSession()) return;
+    const path = result.toLowerCase().endsWith(".mdpkg") ? result : `${result}.mdpkg`;
+    await exportFolderDocumentPackage(snapshot, path);
+    if (isCurrentSession()) {
       setStatus(`Exported package ${path}`);
       setError(null);
-    } catch (e) {
-      setError(String(e));
-      setStatus("Error");
     }
-  };
+  });
 
   const handleEdit = () => {
     setMode("split");
@@ -709,7 +766,7 @@ export default function App() {
 
   const handleContentChange = (content: string) => {
     if (!doc || !selectedPath) return;
-    setDoc(updateFileContent(doc, selectedPath, content));
+    setDoc((current) => current && updateFileContent(current, selectedPath, content));
   };
 
   const handleSelectionChange = (selection: { from: number; to: number; text: string } | null) => {
@@ -1325,7 +1382,9 @@ export default function App() {
         onOpenFolder={handleOpenFolder}
         onStartWithEmptyFolder={handleStartWithEmptyFolder}
         onSave={handleSave}
-        onSaveAs={handleSaveAs}
+        onSaveAs={performSaveAs}
+        fileTaskInProgress={fileTask !== null}
+        folderConflict={folderConflict}
         onPrint={handlePrint}
         onNew={handleNew}
         onImport={handleImport}
@@ -1365,6 +1424,13 @@ export default function App() {
         onVimModeChange={setVimMode}
         canPrint={displayFile?.is_text === true && (mode === "preview" || mode === "split")}
       />
+      {folderConflict && (
+        <div className="folder-conflict">
+          <span role="alert">External changes conflict with unsaved edits. Saving to this folder is blocked.</span>
+          <button type="button" disabled={fileTask !== null} onClick={handleExportPackage}>Export Package...</button>
+          <button type="button" disabled={fileTask !== null} onClick={handleReloadFolder}>Reload Folder...</button>
+        </div>
+      )}
       <div className="main-layout">
         {(fileListOpen || mode === "drawing") && (
           <aside className={`sidebar ${mode === "drawing" ? "sidebar-with-properties" : ""}`}>
@@ -1683,12 +1749,12 @@ export default function App() {
                 if (pending.destination) {
                   await savePackage({ path: pending.destination, manifest, files: pending.info.files });
                   const imported = await openPackage(pending.destination);
-                  setDoc(createDocumentState(imported, pending.destination));
+                  replaceDocument(createDocumentState(imported, pending.destination));
                   setStatus(`Imported ${pending.path}`);
                 } else {
                   const generatedInfo = { ...pending.info, manifest, entrypoint: manifest.entrypoint };
                   const next = createFolderDocumentState(generatedInfo, pending.path);
-                  setDoc({ ...next, dirty: true, folderSnapshot: folderInfoFingerprint(pending.info) });
+                  replaceDocument({ ...next, dirty: true, folderSnapshot: folderInfoFingerprint(pending.info) });
                   setStatus(`Opened folder ${pending.path}; manifest.json will be created on save`);
                 }
                 setSelectedPath(manifest.entrypoint);
@@ -1728,7 +1794,7 @@ export default function App() {
           onClose={() => setPackageSearchOpen(false)} />
       )}
       <StatusBar
-        message={status}
+        message={fileTask ?? status}
         mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
         location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
       />

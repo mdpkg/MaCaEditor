@@ -1,15 +1,6 @@
+import type { Blockquote, Paragraph, Root } from "mdast";
+import { toc } from "mdast-util-toc";
 import { parse, stringify } from "yaml";
-
-type MarkdownNode = {
-  type: string;
-  value?: string;
-  depth?: number;
-  children?: MarkdownNode[];
-  data?: {
-    hName?: string;
-    hProperties?: Record<string, unknown>;
-  };
-};
 
 function displayValue(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -20,7 +11,7 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
-function tableRow(key: string, value: unknown): MarkdownNode {
+function tableRow(key: string, value: unknown): Paragraph {
   return {
     type: "paragraph",
     data: { hName: "tr" },
@@ -39,7 +30,7 @@ function tableRow(key: string, value: unknown): MarkdownNode {
   };
 }
 
-function frontmatterTable(value: string): MarkdownNode {
+function frontmatterTable(value: string): Blockquote {
   let parsed: unknown;
   try {
     parsed = parse(value);
@@ -61,18 +52,20 @@ function frontmatterTable(value: string): MarkdownNode {
 }
 
 export function remarkFrontmatterTable({ showToc = false }: { showToc?: boolean } = {}) {
-  return (tree: MarkdownNode) => {
-    const children = tree.children ?? [];
+  return (tree: Root) => {
+    const { children } = tree;
     const frontmatterIndex = children.findIndex((child) => child.type === "yaml");
-    if (frontmatterIndex >= 0) {
-      children.splice(frontmatterIndex, 1, frontmatterTable(children[frontmatterIndex].value ?? ""));
+    const frontmatter = children[frontmatterIndex];
+    if (frontmatter?.type === "yaml") {
+      children.splice(frontmatterIndex, 1, frontmatterTable(frontmatter.value));
     }
-    if (showToc) {
-      children.splice(frontmatterIndex >= 0 ? frontmatterIndex + 1 : 0, 0, {
-        type: "heading",
-        depth: 2,
-        children: [{ type: "text", value: "目次" }],
-      });
-    }
+    if (!showToc) return;
+
+    const { map } = toc(tree);
+    children.splice(frontmatterIndex + 1, 0, {
+      type: "heading",
+      depth: 2,
+      children: [{ type: "text", value: "目次" }],
+    }, ...(map ? [map] : []));
   };
 }

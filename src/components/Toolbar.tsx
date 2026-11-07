@@ -5,6 +5,8 @@ interface Props {
   fileListOpen: boolean;
   onToggleFileList: () => void;
   hasDocument: boolean;
+  fileTaskInProgress?: boolean;
+  folderConflict?: boolean;
   onOpen: () => void;
   onOpenFolder?: () => void;
   onStartWithEmptyFolder?: () => void;
@@ -57,6 +59,8 @@ export function Toolbar({
   fileListOpen,
   onToggleFileList,
   hasDocument,
+  fileTaskInProgress = false,
+  folderConflict = false,
   onOpen,
   onOpenFolder,
   onStartWithEmptyFolder,
@@ -142,8 +146,8 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(onOpen)}>Open</button>
             <button type="button" role="menuitem" onClick={() => run(onOpenFolder ?? (() => {}))}>Open Folder...</button>
             <button type="button" role="menuitem" onClick={() => run(onStartWithEmptyFolder ?? (() => {}))}>Start with New Empty Folder</button>
-            <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onSave)}>Save</button>
-            <button type="button" role="menuitem" disabled={!hasDocument || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
+            <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || folderConflict} onClick={() => run(onSave)}>Save</button>
+            <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || documentKind === "folder"} onClick={() => run(onSaveAs)}>Save As</button>
             <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>Print</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddMarkdown)}>Add Markdown...</button>
@@ -151,7 +155,7 @@ export function Toolbar({
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" onClick={() => run(onImport)}>Import Folder</button>
             <button type="button" role="menuitem" disabled={documentKind !== "package"} onClick={() => run(onExport)}>Export Folder</button>
-            <button type="button" role="menuitem" disabled={documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
+            <button type="button" role="menuitem" disabled={fileTaskInProgress || documentKind !== "folder"} onClick={() => run(onExportPackage ?? (() => {}))}>Export Package...</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>Validate Package...</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>Edit Manifest...</button>

@@ -62,7 +62,7 @@ Copyright (c) 2017 Titus Wormer <tituswormer@gmail.com>
 remark-gfm 4.0.1
 Copyright (c) Titus Wormer <tituswormer@gmail.com>
 
-remark-toc 9.0.0
+mdast-util-toc 7.1.0
 Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
 
 The software listed in this section is provided under the MIT License:
