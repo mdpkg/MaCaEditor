@@ -341,7 +341,8 @@ impl Queue {
                 false
             } else {
                 let now = Instant::now();
-                let entries = slice::from_raw_parts((*info).aData.as_ptr(), (*info).Count as usize);
+                let data = (&raw const (*info).aData).cast::<PRINTER_NOTIFY_INFO_DATA>();
+                let entries = slice::from_raw_parts(data, (*info).Count as usize);
                 for entry in entries
                     .iter()
                     .filter(|entry| u32::from(entry.Type) == JOB_NOTIFY_TYPE)
