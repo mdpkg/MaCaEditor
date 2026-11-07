@@ -1,6 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { Menu } from "./Menu";
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { File as FileIcon, FileText, Folder, FolderOpen, Image as ImageIcon, Workflow, type LucideIcon } from "lucide-react";
@@ -29,10 +29,55 @@ interface Props {
   onMove?: (path: string) => void;
   canSetEntrypoint?: (path: string) => boolean;
   onSetEntrypoint?: (path: string) => void;
-  onAddMarkdown?: (contextPath: string) => void;
-  onAddFolder?: (contextPath: string) => void;
+  onAdd?: (kind: TreeAddKind, directory: string, name: string) => string | null;
   onDropPath?: (sourcePath: string, destinationPath: string) => void;
   onShowReferences?: (path: string) => void;
+}
+
+export type TreeAddKind = "markdown" | "folder";
+
+interface TreeAddDraft {
+  kind: TreeAddKind;
+  directory: string;
+  from: string;
+}
+
+function InlineTreeAdd({ draft, depth, onSubmit, onCancel }: {
+  draft: TreeAddDraft;
+  depth: number;
+  onSubmit: (name: string) => string | null;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(draft.kind === "markdown" ? "untitled.md" : "folder");
+  const [error, setError] = useState<string | null>(null);
+  const label = uiText(draft.kind === "markdown" ? "Add Markdown" : "Add folder");
+  return (
+    <div role="treeitem" aria-level={depth + 1} aria-label={label} className="tree-inline-add"
+      style={{ marginInlineStart: depth * 12 }}>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        const failure = onSubmit(name);
+        if (failure) setError(failure);
+      }} onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          event.stopPropagation();
+          onCancel();
+        }
+      }}>
+        <label>
+          <span>{label} · {draft.directory || uiText("Package root")}</span>
+          <input autoFocus value={name} onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => { setName(event.target.value); setError(null); }} />
+        </label>
+        {draft.kind === "folder" && <p>{uiText("Empty folders are not saved. Add a file inside the folder to keep it when reopening the document.")}</p>}
+        {error && <p role="alert">{error}</p>}
+        <div className="tree-inline-actions">
+          <button type="button" onClick={onCancel}>{uiText("Cancel")}</button>
+          <button type="submit">{uiText("Add")}</button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 const fileIcons: Record<FileTreeIconKind, LucideIcon> = {
@@ -64,13 +109,15 @@ export function FileTree({
   files, manifest = {}, directories = [], selectedPath, onSelect, onEditMarkdown, onDropImages, imageDropDirectory = "images",
   canRename, onRename, canDelete, onDelete, canMove = () => false, onMove = () => {},
   canSetEntrypoint = () => false, onSetEntrypoint = () => {},
-  onAddMarkdown, onAddFolder,
+  onAdd,
   onDropPath,
   onShowReferences, onSelectFolder, collapsedPaths, onCollapsedPathsChange,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [addDraft, setAddDraft] = useState<TreeAddDraft | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const selectedRowRef = useRef<HTMLDivElement>(null);
+  const focusAddedRow = useRef(false);
   const [localCollapsed, setLocalCollapsed] = useState(new Set<string>());
   const collapsed = collapsedPaths ?? localCollapsed;
   const setCollapsed = onCollapsedPathsChange ?? setLocalCollapsed;
@@ -111,6 +158,12 @@ export function FileTree({
     selectedRowRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [selectedPath, selectedVisible]);
 
+  useLayoutEffect(() => {
+    if (addDraft || !focusAddedRow.current) return;
+    focusAddedRow.current = false;
+    selectedRowRef.current?.focus({ preventScroll: true });
+  }, [addDraft, selectedPath]);
+
   const toggle = (path: string) => {
     if (filter) return;
     const next = new Set(collapsed);
@@ -138,8 +191,34 @@ export function FileTree({
     };
   }, [contextMenu]);
 
-  const hasActions = (path: string) => Boolean(onAddMarkdown || onAddFolder || onShowReferences ||
+  const hasActions = (path: string) => Boolean(onAdd || onShowReferences ||
     canRename(path) || canDelete(path) || canMove(path) || canSetEntrypoint(path));
+
+  const startAdd = (kind: TreeAddKind, from: string) => {
+    const entry = visible.find(({ node }) => node.path === from);
+    if (!entry) return;
+    setAddDraft({ kind, from, directory: entry.node.isDir ? from : entry.parent ?? "" });
+    setContextMenu(null);
+  };
+  const renderAdd = (depth: number) => addDraft && onAdd && (
+    <InlineTreeAdd key={`${addDraft.kind}:${addDraft.from}`} draft={addDraft} depth={depth}
+      onCancel={() => {
+        setAddDraft(null);
+        focusPath(addDraft.from);
+      }}
+      onSubmit={(name) => {
+        const error = onAdd(addDraft.kind, addDraft.directory, name);
+        if (error) return error;
+        const next = new Set(collapsed);
+        const parts = addDraft.directory.split("/");
+        for (let end = 1; end <= parts.length; end++) next.delete(parts.slice(0, end).join("/"));
+        if (next.size !== collapsed.size) setCollapsed(next);
+        focusAddedRow.current = true;
+        setQuery("");
+        setAddDraft(null);
+        return null;
+      }} />
+  );
 
   const startPointerDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse" || event.button !== 0) return;
@@ -222,8 +301,10 @@ export function FileTree({
       </label>
       <div ref={treeRef} role="tree" aria-label={uiText("Package files")}>
       {visible.length === 0 && <p>{uiText("No matching files.")}</p>}
+      {addDraft && !visible.some(({ node }) => node.path === addDraft.directory) && renderAdd(0)}
       {visible.map(({ node, depth, parent, position, size }, index) => (
-        <div key={node.path} role="treeitem" aria-label={node.name}
+        <Fragment key={node.path}>
+        <div role="treeitem" aria-label={node.name}
           ref={node.path === selectedPath ? selectedRowRef : undefined}
           aria-level={depth + 1} aria-posinset={position} aria-setsize={size}
           aria-expanded={node.isDir ? Boolean(filter) || !collapsed.has(node.path) : undefined}
@@ -315,6 +396,8 @@ export function FileTree({
           <TreeIcon kind={node.isDir ? "folder" : fileTreeIconKind(node.path, manifest)} open={!collapsed.has(node.path)} />
           <span className="tree-item-name">{node.name}</span>
         </div>
+        {addDraft?.directory === node.path && renderAdd(depth + 1)}
+        </Fragment>
       ))}
       </div>
       {contextMenu && createPortal(
@@ -350,22 +433,14 @@ export function FileTree({
               setContextMenu(null);
             }}>{uiText("Delete")}</button>
           )}
-          {(onAddMarkdown || onAddFolder) && (
+          {onAdd && (
             canRename(contextMenu.path) || canMove(contextMenu.path) ||
             canSetEntrypoint(contextMenu.path) || canDelete(contextMenu.path) || onShowReferences
           ) && <div className="file-tree-context-menu-divider" role="separator" />}
-          {onAddMarkdown && (
-            <button type="button" role="menuitem" onClick={() => {
-              onAddMarkdown(contextMenu.path);
-              setContextMenu(null);
-            }}>{uiText("Add Markdown")}</button>
-          )}
-          {onAddFolder && (
-            <button type="button" role="menuitem" onClick={() => {
-              onAddFolder(contextMenu.path);
-              setContextMenu(null);
-            }}>{uiText("Add Folder")}</button>
-          )}
+          {onAdd && <>
+            <button type="button" role="menuitem" onClick={() => startAdd("markdown", contextMenu.path)}>{uiText("Add Markdown")}</button>
+            <button type="button" role="menuitem" onClick={() => startAdd("folder", contextMenu.path)}>{uiText("Add Folder")}</button>
+          </>}
         </Menu>,
         document.body,
       )}

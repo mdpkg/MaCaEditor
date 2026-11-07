@@ -2090,10 +2090,54 @@ body {
   flex-direction: column;
 }
 
-.action-field input,
-.action-field select {
+.action-field input {
   width: 100%;
   min-width: 0;
+}
+
+.destination-picker {
+  min-width: 0;
+  border: 1px solid var(--border);
+}
+
+.destination-tree {
+  max-block-size: min(45vh, 24rem);
+  overflow: auto;
+}
+
+.destination-tree ul {
+  list-style: none;
+  margin: 0;
+  padding-inline-start: 16px;
+}
+
+.destination-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px;
+  overflow-wrap: anywhere;
+}
+
+.tree-inline-add {
+  padding: 6px 8px;
+}
+
+.tree-inline-add input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+}
+
+.tree-inline-add p {
+  margin: 4px 0;
+}
+
+.tree-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block-start: 4px;
 }
 
 .empty-state-actions {

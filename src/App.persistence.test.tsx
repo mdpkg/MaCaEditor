@@ -186,7 +186,7 @@ describe("App persistence", () => {
 
     await context("docs/renamed.md", "移動");
     dialog = container.querySelector(".about-dialog")!;
-    await inputValue(dialog.querySelector("select")!, "");
+    await act(async () => dialog.querySelector<HTMLInputElement>('input[type="radio"][value=""]')!.click());
     await click("移動", dialog);
     expect(container.querySelector('[data-path="renamed.md"]')).not.toBeNull();
 
@@ -200,6 +200,37 @@ describe("App persistence", () => {
     expect(container.querySelector('[data-path="renamed.md"]')).toBeNull();
     expect(nativePrompt).not.toHaveBeenCalled();
     expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  test("adds items in the tree without closing the open Markdown or discarding another empty folder", async () => {
+    const info = documentInfo("Original");
+    info.files.push({ path: "docs/guide.md", content: "Guide", is_text: true, base64: null });
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    const row = (path: string) => container.querySelector<HTMLElement>(`[data-path="${path}"]`);
+    const openAdd = async (path: string, command: string) => {
+      await act(async () => row(path)!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+      await click(command, document.querySelector(".file-tree-context-menu")!);
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+      return container.querySelector<HTMLElement>(".tree-inline-add")!;
+    };
+
+    let form = await openAdd("docs", "フォルダを追加");
+    expect(form.textContent).toContain("空のフォルダは保存されません");
+    await inputValue(form.querySelector("input")!, "empty");
+    await click("追加", form);
+    expect(row("docs/empty")).not.toBeNull();
+    expect(container.querySelector(".document-area")?.textContent).toContain("Original");
+
+    form = await openAdd("docs/guide.md", "Markdown を追加");
+    await inputValue(form.querySelector("input")!, "guide.md");
+    await click("追加", form);
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe("このパスは既に存在します。");
+    await inputValue(form.querySelector("input")!, "new.md");
+    await click("追加", form);
+    expect(row("docs/empty")).not.toBeNull();
+    expect(row("docs/new.md")?.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector("textarea")?.value).toBe("# new\n");
   });
 
   test("explains why PDF and ZIP attachments have no preview while showing PNG images", async () => {
@@ -282,7 +313,7 @@ describe("App persistence", () => {
     await act(async () => source.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     await click("移動", document.querySelector(".file-tree-context-menu")!);
     const dialog = container.querySelector('[role="dialog"]')!;
-    await inputValue(dialog.querySelector("select")!, "target");
+    await act(async () => dialog.querySelector<HTMLInputElement>('input[type="radio"][value="target"]')!.click());
     await click("移動", dialog);
 
     const summary = "移動に失敗しました。詳しくは詳細欄を確認してください。";
