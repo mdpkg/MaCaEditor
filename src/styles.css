@@ -1711,9 +1711,27 @@ body {
   min-width: 0;
 }
 
-.status-error-details {
+.status-error-details,
+.status-notification-history {
   flex: 0 0 auto;
   font: inherit;
+}
+
+.notification-history {
+  max-block-size: min(50vh, 24rem);
+  overflow: auto;
+  padding-inline-start: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.notification-history li + li {
+  border-top: 1px solid var(--border);
+  margin-block-start: 8px;
+  padding-block-start: 8px;
+}
+
+.notification-history-meta {
+  font-size: 0.85em;
 }
 
 .operation-error-detail {
