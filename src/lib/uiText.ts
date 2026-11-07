@@ -55,6 +55,7 @@ const labels: Record<string, string> = {
   "AI is not configured.": "AI が設定されていません。",
   "AI is not configured. Open AI Settings to configure an OpenAI Compatible API.": "AI が設定されていません。AI 設定で OpenAI 互換 API を設定してください。",
   "AI settings could not be loaded.": "AI 設定を読み込めませんでした。",
+  "AI returned no text.": "AI から本文が返されませんでした。",
   "Open AI Settings": "AI 設定を開く",
   "API Key": "API キー",
   "Provider": "プロバイダー",
