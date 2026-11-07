@@ -31,6 +31,7 @@ import {
   type BannerNotice,
   type NotificationTone,
 } from "./components/NotificationBanners";
+import { NotificationHistoryDialog, type NotificationHistoryEntry } from "./components/NotificationHistoryDialog";
 import type { DocumentState, PathMove } from "./lib/document";
 import {
   createDocumentState,
@@ -226,6 +227,8 @@ export default function App() {
     gridVisible: true, snap: false, smartGuidesEnabled: true,
   });
   const [notifications, setNotifications] = useState<BannerNotice[]>([]);
+  const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryEntry[]>([]);
+  const [notificationHistoryOpen, setNotificationHistoryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
@@ -430,6 +433,13 @@ export default function App() {
     try { validateNewPackagePath(value); return null; } catch { return "ファイル名に使用できない文字が含まれています。"; }
   };
 
+  const recordNotification = useCallback((message: string, tone: NotificationTone, detail?: string) => {
+    const id = ++notificationSequenceRef.current;
+    const entry: NotificationHistoryEntry = { id, message, tone, detail, time: Date.now() };
+    setNotificationHistory((current) => [entry, ...current].slice(0, 50));
+    return id;
+  }, []);
+
   const reportError = useCallback((operation: string, reason: unknown) => {
     const detail = errorDetail(reason);
     const firstLine = detail.trim().split(/\r?\n/, 1)[0];
@@ -442,9 +452,10 @@ export default function App() {
     );
     const reasonText = localized ? translated : "詳しくは詳細欄を確認してください。";
     const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
+    recordNotification(summary, "error", detail);
     setError({ operation, summary, detail, presentation: "banner" });
     setStatus(summary);
-  }, []);
+  }, [recordNotification]);
 
   const clearError = useCallback((operation: string) => {
     setError((current) => current?.operation === operation ? null : current);
@@ -455,8 +466,8 @@ export default function App() {
   };
 
   const showNotification = (message: string, tone: NotificationTone, options?: Pick<BannerNotice, "action" | "detail">) => {
-    notificationSequenceRef.current += 1;
-    const notice: BannerNotice = { id: notificationSequenceRef.current, message, tone, ...options };
+    const id = recordNotification(message, tone, options?.detail);
+    const notice: BannerNotice = { id, message, tone, ...options };
     setNotifications((current) => [...current, notice]);
   };
 
@@ -2085,10 +2096,14 @@ export default function App() {
         message={fileTask ?? status}
         mode={doc?.origin.kind === "package" ? "Package" : doc?.origin.kind === "folder" ? "Folder" : undefined}
         location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
+        onShowNotificationHistory={() => setNotificationHistoryOpen(true)}
         onShowErrorDetails={error && error.presentation !== "banner" ? () => {
           setError((current) => current?.presentation === "dismissed" ? { ...current, presentation: "details" } : current);
         } : undefined}
       />
+      {notificationHistoryOpen && (
+        <NotificationHistoryDialog entries={notificationHistory} onClose={() => setNotificationHistoryOpen(false)} />
+      )}
       {error?.presentation === "details" && (
         <Dialog title={uiText("Error details")} onClose={dismissError}>
           <p>{error.summary}</p>

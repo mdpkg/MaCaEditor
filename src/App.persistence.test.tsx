@@ -405,6 +405,21 @@ describe("App persistence", () => {
     expect(details.querySelector(".error-detail")?.textContent)
       .toBe("bad.png\nunreadable\n\nmissing.png\n  File not found (os error 2)\n");
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    await click("閉じる", warning);
+    expect(container.querySelector(".notification-banner-warning")).toBeNull();
+    await click("通知履歴", container.querySelector(".status-bar")!);
+    const history = container.querySelector('[role="dialog"]')!;
+    const entry = history.querySelector(".notification-history li")!;
+    expect(entry.textContent).toContain(summary!);
+    const historyDetails = entry.querySelector("details")!;
+    expect(historyDetails.open).toBe(false);
+    act(() => historyDetails.querySelector("summary")!.click());
+    expect(historyDetails.open).toBe(true);
+    expect(historyDetails.querySelector(".error-detail")?.textContent)
+      .toBe("bad.png\nunreadable\n\nmissing.png\n  File not found (os error 2)\n");
+    await click("閉じる", history);
+    expect(container.querySelector(".notification-banner-warning")).toBeNull();
   });
 
   test("keeps the native image read error out of the summary and status bar", async () => {

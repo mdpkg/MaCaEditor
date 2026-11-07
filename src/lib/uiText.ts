@@ -190,6 +190,8 @@ const labels: Record<string, string> = {
   "Inserted MathJax": "MathJax を挿入しました",
   "Inserted 2 × 2 table": "2 × 2 の表を挿入しました",
   "Notifications": "通知",
+  "Notification history": "通知履歴",
+  "No notifications yet.": "通知はまだありません。",
   "Table of contents": "目次",
   "Edit table": "表を編集",
   "Undo": "元に戻す",
