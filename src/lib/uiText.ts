@@ -82,6 +82,7 @@ const labels: Record<string, string> = {
   "Continue": "続行",
   "Close": "閉じる",
   "Close error": "エラーを閉じる",
+  "Error details": "エラーの詳細",
   "Dismiss": "閉じる",
   "Details": "詳細",
   "Retry": "再試行",
