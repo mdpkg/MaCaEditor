@@ -95,6 +95,9 @@ describe("AiSettingsDialog", () => {
     [new Error("connection refused"), "接続できませんでした。", "connection refused"],
     [{ kind: "AuthenticationFailed", message: "upstream rejected credentials" },
       "接続できませんでした。AI の認証に失敗しました。API キーを確認してください。", "upstream rejected credentials"],
+    [{ kind: "InvalidProject", message: "No such project: 'fixture'\n\ncode: invalid_project" },
+      "接続できませんでした。AI のプロジェクト指定が無効です。接続先のプロジェクト設定を確認してください。",
+      "No such project: 'fixture'\n\ncode: invalid_project"],
   ])("shows error detail when test connection fails (%s)", async (error, summary, message) => {
     vi.spyOn(tauri, "loadAiConfig").mockResolvedValue({
       provider: "OpenAiCompatible",

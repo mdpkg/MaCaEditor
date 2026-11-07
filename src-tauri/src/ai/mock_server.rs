@@ -62,7 +62,7 @@ pub enum Scenario {
     /// 接続は確立するが応答を返さない（Timeout 相当）。
     Hang,
     /// 指定ステータスの HTTP エラー。
-    HttpError(u16),
+    HttpError(u16, &'static str),
 }
 
 async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
@@ -83,10 +83,11 @@ async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
     }
 
     match scenario {
-        Scenario::HttpError(status) => {
-            let body = format!(
-                r#"{{"error":{{"message":"mock error","type":"mock","code":"mock"}}}}"#
-            );
+        Scenario::HttpError(status, code) => {
+            let body = serde_json::json!({
+                "error": { "message": "mock error", "type": "mock", "code": code }
+            })
+            .to_string();
             let response = format!(
                 "HTTP/1.1 {} Mock Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 status,
@@ -135,6 +136,7 @@ fn chunk_json(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::error::AiError;
     use crate::ai::openai::OpenAiCompatibleProvider;
     use crate::ai::provider::AiProvider;
     use crate::ai::types::{AiMessage, AiRequest, AiRole};
@@ -177,19 +179,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn maps_http_error_to_ai_error() {
-        let server = MockOpenAiServer::start(Scenario::HttpError(401)).await;
-        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
-        let result = provider.stream(sample_request()).await;
-        assert!(matches!(
-            result,
-            Err(crate::ai::error::AiError::AuthenticationFailed(_))
-        ));
+    async fn distinguishes_401_error_codes_for_both_request_paths() {
+        for (code, expected) in [
+            (
+                "invalid_api_key",
+                AiError::AuthenticationFailed("mock error\n\ncode: invalid_api_key".to_string()),
+            ),
+            (
+                "invalid_project",
+                AiError::InvalidProject("mock error\n\ncode: invalid_project".to_string()),
+            ),
+        ] {
+            let server = MockOpenAiServer::start(Scenario::HttpError(401, code)).await;
+            let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+            assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+            assert!(matches!(
+                provider.stream(sample_request()).await,
+                Err(error) if error == expected
+            ));
+        }
     }
 
     #[tokio::test]
     async fn maps_429_to_rate_limited() {
-        let server = MockOpenAiServer::start(Scenario::HttpError(429)).await;
+        let server = MockOpenAiServer::start(Scenario::HttpError(429, "mock")).await;
         let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
         let result = provider.stream(sample_request()).await;
         assert!(matches!(
@@ -200,7 +213,7 @@ mod tests {
 
     #[tokio::test]
     async fn maps_500_to_server_error() {
-        let server = MockOpenAiServer::start(Scenario::HttpError(500)).await;
+        let server = MockOpenAiServer::start(Scenario::HttpError(500, "mock")).await;
         let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
         let result = provider.stream(sample_request()).await;
         assert!(matches!(
