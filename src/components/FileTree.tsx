@@ -1,11 +1,12 @@
 import { uiText } from "../lib/uiText";
 import { Menu } from "./Menu";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
+import { isTauri } from "@tauri-apps/api/core";
 import { File as FileIcon, FileText, Folder, FolderOpen, Image as ImageIcon, Workflow, type LucideIcon } from "lucide-react";
 import type { FileInfo } from "../types";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
-import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
+import { PACKAGE_PATH_DRAG_TYPE, PACKAGE_PATH_POINTER_DROP, type PackagePathPointerDrop } from "../lib/packageDrag";
 import { fileTreeIconKind, type FileTreeIconKind } from "../lib/fileTreeIcons";
 
 interface Props {
@@ -41,6 +42,15 @@ const fileIcons: Record<FileTreeIconKind, LucideIcon> = {
   other: FileIcon,
 };
 
+interface TreePointerDrag {
+  id: number;
+  row: HTMLElement;
+  path: string;
+  x: number;
+  y: number;
+  moved: boolean;
+}
+
 function TreeIcon({ kind, open }: { kind: FileTreeIconKind | "folder"; open?: boolean }) {
   const Icon = kind === "folder" ? (open ? FolderOpen : Folder) : fileIcons[kind];
   const label = kind === "folder" ? uiText("Folder") : kind === "markdown" ? "Markdown"
@@ -66,6 +76,10 @@ export function FileTree({
   const [query, setQuery] = useState("");
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const pointerDrag = useRef<TreePointerDrag | null>(null);
+  const suppressClick = useRef(false);
+  // Tauri's Windows drop handler accepts Explorer files but replaces WebView2's HTML drop handler.
+  const usePointerDrag = isTauri() && /Windows/.test(navigator.userAgent);
   const paths = files.map((f) => f.path);
   const tree = buildFileTree(paths, [...new Set(["images", "attachments", ...directories])]);
 
@@ -120,8 +134,72 @@ export function FileTree({
   const hasActions = (path: string) => Boolean(onAddMarkdown || onAddFolder || onShowReferences ||
     canRename(path) || canDelete(path) || canMove(path) || canSetEntrypoint(path));
 
+  const startPointerDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    suppressClick.current = false;
+    const target = event.target instanceof Element ? event.target : null;
+    const row = target?.closest<HTMLElement>('.tree-item[data-path]');
+    if (!target || !row || !event.currentTarget.contains(row)) return;
+    const path = row.dataset.path;
+    if (!path) return;
+    target.setPointerCapture(event.pointerId);
+    pointerDrag.current = { id: event.pointerId, row, path, x: event.clientX, y: event.clientY, moved: false };
+  };
+
+  const updatePointerDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = pointerDrag.current;
+    if (!drag || drag.id !== event.pointerId) return null;
+    if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return null;
+    drag.moved = true;
+    return drag;
+  };
+
+  const treeDropFolder = (tree: HTMLElement, hit: Element | null, source: HTMLElement) => {
+    if (!onDropPath || !hit || !tree.contains(hit) || source.contains(hit)) return null;
+    return hit.closest<HTMLElement>('.tree-dir[data-path]')?.dataset.path ?? "";
+  };
+
+  const clearPointerDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (pointerDrag.current?.id !== event.pointerId) return;
+    pointerDrag.current = null;
+    setDragOverPath(null);
+  };
+
+  const finishPointerDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = updatePointerDrag(event);
+    clearPointerDrag(event);
+    if (!drag) return;
+    suppressClick.current = true;
+    const hit = document.elementFromPoint(event.clientX, event.clientY);
+    const folder = treeDropFolder(event.currentTarget, hit, drag.row);
+    if (folder !== null) {
+      const name = drag.path.slice(drag.path.lastIndexOf("/") + 1);
+      onDropPath?.(drag.path, folder ? `${folder}/${name}` : name);
+    } else if (hit && !event.currentTarget.contains(hit)) {
+      hit.dispatchEvent(new CustomEvent<PackagePathPointerDrop>(PACKAGE_PATH_POINTER_DROP, {
+        bubbles: true,
+        detail: { path: drag.path, x: event.clientX, y: event.clientY },
+      }));
+    }
+  };
+
   return (
-    <div className="file-tree"
+    <div className={`file-tree${usePointerDrag ? " file-tree-pointer-drag" : ""}${dragOverPath === "" ? " file-tree-drop-root" : ""}`}
+      onPointerDown={usePointerDrag ? startPointerDrag : undefined}
+      onPointerMove={usePointerDrag ? (event) => {
+        const drag = updatePointerDrag(event);
+        if (!drag) return;
+        setDragOverPath(treeDropFolder(event.currentTarget, document.elementFromPoint(event.clientX, event.clientY), drag.row));
+      } : undefined}
+      onPointerUp={usePointerDrag ? finishPointerDrag : undefined}
+      onPointerCancel={usePointerDrag ? clearPointerDrag : undefined}
+      onLostPointerCapture={usePointerDrag ? clearPointerDrag : undefined}
+      onClickCapture={usePointerDrag ? (event) => {
+        if (!suppressClick.current || event.detail === 0) return;
+        suppressClick.current = false;
+        event.stopPropagation();
+        event.preventDefault();
+      } : undefined}
       onDragOver={(event) => { if (onDropPath) event.preventDefault(); }}
       onDrop={(event) => {
         const sourcePath = event.dataTransfer.getData(PACKAGE_PATH_DRAG_TYPE);
@@ -189,7 +267,7 @@ export function FileTree({
             if (node.isDir) onSelectFolder?.(node.path);
             setContextMenu({ path: node.path, x: event.clientX, y: event.clientY });
           }}
-          draggable
+          draggable={!usePointerDrag}
           onDragStart={(event) => {
             event.stopPropagation();
             event.dataTransfer.effectAllowed = "copyMove";

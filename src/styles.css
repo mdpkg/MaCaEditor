@@ -234,6 +234,8 @@ body {
 }
 
 .sidebar-tree {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -251,7 +253,17 @@ body {
 }
 
 .file-tree {
+  flex: 1 0 auto;
   font-size: 13px;
+}
+
+.file-tree-pointer-drag .tree-item {
+  user-select: none;
+}
+
+.file-tree-drop-root {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
 .tree-item {
