@@ -158,9 +158,9 @@ const MarkdownTableEditor = lazy(() => import("./components/MarkdownTableEditor"
   default: module.MarkdownTableEditor,
 })));
 
-const nativeFileErrorOperations = new Set([
+const fileOperationsRequiringErrorTranslation = new Set([
   "Save", "Reload folder", "Export folder", "Export package",
-  "Add images", "Add attachments", "Download attachment", "Add image to drawing",
+  "Add images", "Add attachments", "Download attachment", "Add image to drawing", "Move",
 ].map(uiText));
 
 function errorDetail(reason: unknown): string {
@@ -429,10 +429,10 @@ export default function App() {
     const firstLine = detail.trim().split(/\r?\n/, 1)[0];
     const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
     const translated = uiText(shortReason);
-    // Native file errors can mix an English backend prefix with a localized Windows error.
+    // File errors can contain Japanese paths or Windows messages alongside English text.
     const localized = typeof translated === "string" && (
       translated !== shortReason ||
-      (!nativeFileErrorOperations.has(operation) && /[ぁ-んァ-ヶ一-龠]/.test(translated))
+      (!fileOperationsRequiringErrorTranslation.has(operation) && /[ぁ-んァ-ヶ一-龠]/.test(translated))
     );
     const reasonText = localized ? translated : "詳しくは詳細欄を確認してください。";
     const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
