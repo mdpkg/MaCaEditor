@@ -3,6 +3,7 @@ pub mod atomic_save;
 pub mod commands;
 pub mod folder_document;
 pub mod folder_watcher;
+mod history_transfer;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 #[cfg(target_os = "macos")]
@@ -74,6 +75,7 @@ pub fn run() {
 
     builder
         .manage(folder_watcher::FolderWatcherState::default())
+        .manage(history_transfer::HistoryUpload::default())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -104,6 +106,10 @@ pub fn run() {
             commands::save_package,
             commands::save_folder,
             commands::clear_saved_edit_history,
+            history_transfer::begin_edit_history_upload,
+            history_transfer::upload_edit_history_chunk,
+            history_transfer::discard_edit_history_upload,
+            history_transfer::read_edit_history_chunk,
             commands::export_package,
             commands::create_new_package,
             commands::import_folder,

@@ -2,6 +2,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { readEditHistory, saveWithEditHistory } from "./editHistoryTransfer";
 import type {
   AiConfig,
   AiRequest,
@@ -15,11 +16,13 @@ import type {
 } from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
-  return invoke("open_package", { path });
+  return readEditHistory(invoke("open_package", { path }));
 }
 
 export function openFolder(path: string, withEditHistory = false): Promise<PackageInfo> {
-  return invoke("open_folder", withEditHistory ? { path, withEditHistory } : { path });
+  return withEditHistory
+    ? readEditHistory(invoke("open_folder", { path, withEditHistory }))
+    : invoke("open_folder", { path });
 }
 
 export function createEmptyFolder(path: string): Promise<PackageInfo> {
@@ -27,11 +30,11 @@ export function createEmptyFolder(path: string): Promise<PackageInfo> {
 }
 
 export function savePackage(request: SaveRequest): Promise<SaveOutcome> {
-  return invoke("save_package", { request });
+  return saveWithEditHistory("save_package", request);
 }
 
 export function saveFolder(request: FolderSaveRequest): Promise<SaveOutcome> {
-  return invoke("save_folder", { request });
+  return saveWithEditHistory("save_folder", request);
 }
 
 export function clearSavedEditHistory(path: string, kind: "package" | "folder"): Promise<void> {

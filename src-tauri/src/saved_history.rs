@@ -13,6 +13,17 @@ pub struct EditCheckpoint {
     pub attachments: Vec<String>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct AttachmentDownload {
+    pub id: i64,
+    pub sizes: Vec<usize>,
+}
+
+pub struct LoadedCheckpoint {
+    pub checkpoint: EditCheckpoint,
+    pub download: Option<AttachmentDownload>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryError {
     #[error("edit history I/O: {0}")]
@@ -113,20 +124,29 @@ impl PendingCheckpoint {
         document: String,
         revision: &str,
         recoverable: bool,
-        checkpoint: EditCheckpoint,
+        data: String,
+        attachments: impl IntoIterator<Item = Result<Vec<u8>>>,
     ) -> Result<Self> {
         let mut db = connect(&database)?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute("INSERT INTO checkpoint(document, revision, data, committed, recoverable) VALUES(?1, ?2, ?3, 0, ?4)",
-            params![document, revision, checkpoint.data, recoverable])?;
+            params![document, revision, data, recoverable])?;
         let id = tx.last_insert_rowid();
-        for (position, base64) in (0i64..).zip(checkpoint.attachments) {
-            let bytes = STANDARD.decode(base64)?;
+        for (position, bytes) in (0i64..).zip(attachments) {
+            let bytes = bytes?;
             let digest = self::revision(&bytes);
-            tx.execute(
-                "INSERT OR IGNORE INTO payload(digest, data) VALUES(?1, ?2)",
-                params![digest, bytes],
+            // Avoid binding and copying an entire BLOB when a prior checkpoint already owns it.
+            let exists = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM payload WHERE digest = ?1)",
+                [&digest],
+                |row| row.get::<_, bool>(0),
             )?;
+            if !exists {
+                tx.execute(
+                    "INSERT INTO payload(digest, data) VALUES(?1, ?2)",
+                    params![digest, bytes],
+                )?;
+            }
             tx.execute(
                 "INSERT INTO checkpoint_payload(checkpoint, position, digest) VALUES(?1, ?2, ?3)",
                 params![id, position, digest],
@@ -166,7 +186,7 @@ impl PendingCheckpoint {
     }
 }
 
-pub fn load(database: &Path, document: &str, revision: &str) -> Result<Option<EditCheckpoint>> {
+pub fn load(database: &Path, document: &str, revision: &str) -> Result<Option<LoadedCheckpoint>> {
     if !database.try_exists()? {
         return Ok(None);
     }
@@ -180,14 +200,59 @@ pub fn load(database: &Path, document: &str, revision: &str) -> Result<Option<Ed
     let Some((id, data)) = row else {
         return Ok(None);
     };
+    let sizes = {
+        let mut query = tx.prepare("SELECT length(payload.data) FROM checkpoint_payload JOIN payload USING(digest) WHERE checkpoint = ?1 ORDER BY position")?;
+        let rows = query.query_map([id], |row| row.get::<_, u32>(0).map(|size| size as usize))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if sizes.iter().sum::<usize>() > 12 * 1024 * 1024 {
+        return Ok(Some(LoadedCheckpoint {
+            checkpoint: EditCheckpoint {
+                data,
+                attachments: Vec::new(),
+            },
+            download: Some(AttachmentDownload { id, sizes }),
+        }));
+    }
     let attachments = {
         let mut query = tx.prepare("SELECT payload.data FROM checkpoint_payload JOIN payload USING(digest) WHERE checkpoint = ?1 ORDER BY position")?;
         let values = query.query_map([id], |row| {
-            row.get::<_, Vec<u8>>(0).map(|value| STANDARD.encode(value))
+            let value = row.get_ref(0)?;
+            Ok(STANDARD.encode(value.as_blob().map_err(|_| rusqlite::Error::InvalidQuery)?))
         })?;
         values.collect::<rusqlite::Result<Vec<_>>>()?
     };
-    Ok(Some(EditCheckpoint { data, attachments }))
+    Ok(Some(LoadedCheckpoint {
+        checkpoint: EditCheckpoint { data, attachments },
+        download: None,
+    }))
+}
+
+pub fn read_chunk(
+    database: &Path,
+    id: i64,
+    index: i64,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<u8>> {
+    let mut db = connect(database)?;
+    let tx = db.transaction()?;
+    let rowid: i64 = tx.query_row(
+        "SELECT payload.rowid FROM checkpoint_payload JOIN payload USING(digest) WHERE checkpoint = ?1 AND position = ?2",
+        params![id, index],
+        |row| row.get(0),
+    )?;
+    let blob = tx.blob_open("main", "payload", "data", rowid, true)?;
+    if offset >= blob.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid edit history chunk offset",
+        )
+        .into());
+    }
+    let mut bytes = vec![0; limit.min(blob.len() - offset)];
+    blob.read_at_exact(&mut bytes, offset)?;
+    Ok(bytes)
 }
 
 pub fn clear(database: &Path, document: &str) -> Result<()> {
@@ -206,16 +271,56 @@ pub fn clear(database: &Path, document: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn pending_checkpoints_need_a_changed_disk_revision_or_a_success_marker() {
-        let database = std::env::temp_dir().join(format!(
+    fn test_database() -> PathBuf {
+        std::env::temp_dir().join(format!(
             "maca-edit-history-{}-{}.sqlite3",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        ))
+    }
+
+    #[test]
+    fn large_attachment_download_reads_ranges_in_checkpoint_order() {
+        let database = test_database();
+        let document = "package:/large.mdpkg";
+        let mut payload = vec![0xab; 12 * 1024 * 1024 + 1];
+        payload[12 * 1024 * 1024] = 0xfe;
+        PendingCheckpoint::prepare(
+            database.clone(),
+            document.into(),
+            "saved",
+            true,
+            "large checkpoint".into(),
+            [Ok(vec![1, 2, 3]), Ok(payload)],
+        )
+        .unwrap()
+        .complete("saved")
+        .unwrap();
+        let loaded = load(&database, document, "saved").unwrap().unwrap();
+        assert_eq!(loaded.checkpoint.data, "large checkpoint");
+        assert!(loaded.checkpoint.attachments.is_empty());
+        let download = loaded.download.unwrap();
+        assert_eq!(download.sizes, [3, 12 * 1024 * 1024 + 1]);
+        assert_eq!(
+            read_chunk(&database, download.id, 0, 0, 10).unwrap(),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            read_chunk(&database, download.id, 1, 12 * 1024 * 1024 - 1, 10).unwrap(),
+            [0xab, 0xfe]
+        );
+        assert!(read_chunk(&database, download.id, 1, download.sizes[1], 10).is_err());
+        clear(&database, document).unwrap();
+        assert!(read_chunk(&database, download.id, 1, 0, 10).is_err());
+        std::fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn pending_checkpoints_need_a_changed_disk_revision_or_a_success_marker() {
+        let database = test_database();
         let document = "package:/document.mdpkg";
         let prepare = |rev, recoverable, label: &str| {
             PendingCheckpoint::prepare(
@@ -223,17 +328,15 @@ mod tests {
                 document.into(),
                 rev,
                 recoverable,
-                EditCheckpoint {
-                    data: label.into(),
-                    attachments: vec!["AQID".into()],
-                },
+                label.into(),
+                [Ok(vec![1, 2, 3])],
             )
             .unwrap()
         };
         let read = |rev| {
             load(&database, document, rev)
                 .unwrap()
-                .map(|history| history.data)
+                .map(|history| history.checkpoint.data)
         };
 
         prepare("old", true, "confirmed").complete("old").unwrap();

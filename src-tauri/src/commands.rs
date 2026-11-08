@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
+use crate::history_transfer::HistoryUpload;
 use crate::package_loader::{load_package, LoadedPackage};
 use crate::package_writer::write_package;
 use crate::saved_history::{self, EditCheckpoint, PendingCheckpoint};
@@ -26,6 +27,8 @@ pub struct PackageInfo {
     pub folder_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_history: Option<EditCheckpoint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_history_download: Option<saved_history::AttachmentDownload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_history_warning: Option<String>,
 }
@@ -165,6 +168,7 @@ fn open_package_at(path: &Path, database: Result<PathBuf, String>) -> Result<Pac
         manifest_generated: false,
         folder_revision: None,
         edit_history: None,
+        edit_history_download: None,
         edit_history_warning: None,
     };
     attach_saved_history(
@@ -223,15 +227,24 @@ fn folder_package_info(
         manifest_generated: loaded.manifest_was_generated,
         folder_revision: Some(loaded.revision),
         edit_history: None,
+        edit_history_download: None,
         edit_history_warning: None,
     })
 }
 
 /// Document Model を `.mdpkg` として保存する Tauri コマンド。
 #[tauri::command]
-pub async fn save_package(app: AppHandle, request: SaveRequest) -> Result<SaveOutcome, String> {
+pub async fn save_package(
+    app: AppHandle,
+    request: SaveRequest,
+    uploads: State<'_, HistoryUpload>,
+    edit_history_upload: Option<String>,
+) -> Result<SaveOutcome, String> {
     let database = history_database(&app);
-    tokio::task::spawn_blocking(move || save_package_at(request, database))
+    let uploaded = edit_history_upload
+        .map(|token| uploads.take(&token))
+        .transpose();
+    tokio::task::spawn_blocking(move || save_package_at(request, database, uploaded))
         .await
         .map_err(|error| format!("package save task failed: {error}"))?
 }
@@ -239,12 +252,13 @@ pub async fn save_package(app: AppHandle, request: SaveRequest) -> Result<SaveOu
 fn save_package_at(
     request: SaveRequest,
     database: Result<PathBuf, String>,
+    uploaded: Result<Option<Vec<Vec<u8>>>, String>,
 ) -> Result<SaveOutcome, String> {
     let manifest = parse_manifest(&request.manifest)?;
     let files = parse_files(request.files)?;
     let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
     let path = Path::new(&request.path);
-    let mut history = HistoryWrite::new(database, request.edit_history);
+    let mut history = HistoryWrite::new(database, request.edit_history, uploaded);
     let revision = history.checkpoint.is_some().then(|| {
         let revision = saved_history::revision(&zip);
         let recoverable = saved_history::existing_revision(path)
@@ -266,9 +280,14 @@ fn save_package_at(
 pub async fn save_folder(
     app: AppHandle,
     request: FolderSaveRequest,
+    uploads: State<'_, HistoryUpload>,
+    edit_history_upload: Option<String>,
 ) -> Result<SaveOutcome, String> {
     let database = history_database(&app);
-    tokio::task::spawn_blocking(move || save_folder_at(request, database))
+    let uploaded = edit_history_upload
+        .map(|token| uploads.take(&token))
+        .transpose();
+    tokio::task::spawn_blocking(move || save_folder_at(request, database, uploaded))
         .await
         .map_err(|error| format!("folder save task failed: {error}"))?
 }
@@ -276,11 +295,12 @@ pub async fn save_folder(
 fn save_folder_at(
     request: FolderSaveRequest,
     database: Result<PathBuf, String>,
+    uploaded: Result<Option<Vec<Vec<u8>>>, String>,
 ) -> Result<SaveOutcome, String> {
     let manifest = parse_manifest(&request.manifest)?;
     let files = parse_files(request.files)?;
     let path = Path::new(&request.path);
-    let mut history = HistoryWrite::new(database, request.edit_history);
+    let mut history = HistoryWrite::new(database, request.edit_history, uploaded);
     let result = crate::folder_document::save_folder_with_checkpoint(
         path,
         &manifest,
@@ -324,7 +344,7 @@ pub async fn clear_saved_edit_history(
     .map_err(|error| format!("edit history clear task failed: {error}"))?
 }
 
-fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_local_data_dir()
         .map(|path| path.join("edit-history.sqlite3"))
@@ -343,25 +363,60 @@ fn attach_saved_history(
         saved_history::load(&database, &document, revision).map_err(|error| error.to_string())
     });
     match result {
-        Ok(checkpoint) => info.edit_history = checkpoint,
+        Ok(Some(loaded)) => {
+            info.edit_history = Some(loaded.checkpoint);
+            info.edit_history_download = loaded.download;
+        }
+        Ok(None) => {}
         Err(error) => info.edit_history_warning = Some(error),
+    }
+}
+
+enum EitherAttachments {
+    Inline(std::vec::IntoIter<String>),
+    Uploaded(std::vec::IntoIter<Vec<u8>>),
+}
+
+impl Iterator for EitherAttachments {
+    type Item = Result<Vec<u8>, saved_history::HistoryError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use base64::Engine as _;
+        match self {
+            Self::Inline(values) => values.next().map(|value| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(value)
+                    .map_err(Into::into)
+            }),
+            Self::Uploaded(values) => values.next().map(Ok),
+        }
     }
 }
 
 struct HistoryWrite {
     database: Result<PathBuf, String>,
     checkpoint: Option<EditCheckpoint>,
+    uploaded: Option<Vec<Vec<u8>>>,
     pending: Option<PendingCheckpoint>,
     warning: Option<String>,
 }
 
 impl HistoryWrite {
-    fn new(database: Result<PathBuf, String>, checkpoint: Option<EditCheckpoint>) -> Self {
+    fn new(
+        database: Result<PathBuf, String>,
+        checkpoint: Option<EditCheckpoint>,
+        uploaded: Result<Option<Vec<Vec<u8>>>, String>,
+    ) -> Self {
+        let (uploaded, warning) = match uploaded {
+            Ok(uploaded) => (uploaded, None),
+            Err(error) => (None, Some(error)),
+        };
         Self {
             database,
-            checkpoint,
+            checkpoint: checkpoint.filter(|_| warning.is_none()),
+            uploaded,
             pending: None,
-            warning: None,
+            warning,
         }
     }
 
@@ -372,8 +427,19 @@ impl HistoryWrite {
         let result = self.database.clone().and_then(|database| {
             let document =
                 saved_history::identity(kind, path).map_err(|error| error.to_string())?;
-            PendingCheckpoint::prepare(database, document, revision, recoverable, checkpoint)
-                .map_err(|error| error.to_string())
+            let attachments = match self.uploaded.take() {
+                Some(bytes) => EitherAttachments::Uploaded(bytes.into_iter()),
+                None => EitherAttachments::Inline(checkpoint.attachments.into_iter()),
+            };
+            PendingCheckpoint::prepare(
+                database,
+                document,
+                revision,
+                recoverable,
+                checkpoint.data,
+                attachments,
+            )
+            .map_err(|error| error.to_string())
         });
         match result {
             Ok(pending) => self.pending = Some(pending),
@@ -790,8 +856,12 @@ mod tests {
             edit_history,
         };
         let saved = checkpoint("saved cursor");
-        let outcome =
-            save_package_at(request("saved", Some(saved.clone())), Ok(database.clone())).unwrap();
+        let outcome = save_package_at(
+            request("saved", Some(saved.clone())),
+            Ok(database.clone()),
+            Ok(None),
+        )
+        .unwrap();
         assert!(outcome.edit_history_warning.is_none());
         let opened = open_package_at(&path, Ok(database.clone())).unwrap();
         assert_eq!(opened.edit_history, Some(saved));
@@ -805,6 +875,7 @@ mod tests {
         let outcome = save_package_at(
             request("changed externally", Some(invalid)),
             Ok(database.clone()),
+            Ok(None),
         )
         .unwrap();
         assert!(outcome.edit_history_warning.is_some());
@@ -839,12 +910,14 @@ mod tests {
         let outcome = save_folder_at(
             request(initial_revision.clone(), "# Saved", saved.clone()),
             Ok(database.clone()),
+            Ok(None),
         )
         .unwrap();
         assert!(outcome.edit_history_warning.is_none());
         let failed = save_folder_at(
             request(initial_revision, "# Not saved", checkpoint("failed cursor")),
             Ok(database.clone()),
+            Ok(None),
         );
         assert!(failed.is_err());
         let opened = open_folder_at(&path, Some(Ok(database.clone()))).unwrap();
