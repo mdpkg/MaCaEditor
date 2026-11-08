@@ -645,6 +645,24 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
   });
 
+  test("clears local history and reports when SQLite could not release disk space", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    vi.mocked(tauri.clearSavedEditHistory).mockResolvedValue({ reclaim_warning: "database is busy" });
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    await click("編集");
+    await edit("Current edit");
+    await click("ファイル");
+    await click("編集履歴を消去…");
+    await click("削除", container.querySelector('[role="dialog"]')!);
+
+    expect(tauri.clearSavedEditHistory).toHaveBeenCalledWith("original.mdpkg", "package");
+    expect(container.querySelector(".notification-banner")?.textContent)
+      .toContain("編集履歴は消去しましたが、ディスク容量を解放できませんでした。");
+    await historyShortcut("z");
+    expect(container.querySelector("textarea")?.value).toBe("Current edit");
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+  });
+
   test.each(["package", "folder"] as const)("restores the saved undo and redo position on restart in %s mode", async (kind) => {
     const reader = kind === "folder" ? tauri.openFolder : tauri.openPackage;
     const writer = kind === "folder" ? tauri.saveFolder : tauri.savePackage;

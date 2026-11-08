@@ -25,6 +25,10 @@ export interface SaveOutcome {
   edit_history_warning?: string;
 }
 
+export interface ClearEditHistoryOutcome {
+  reclaim_warning?: string;
+}
+
 export interface FileContent {
   path: string;
   is_text: boolean;

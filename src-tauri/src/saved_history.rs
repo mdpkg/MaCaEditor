@@ -24,6 +24,12 @@ pub struct LoadedCheckpoint {
     pub download: Option<AttachmentDownload>,
 }
 
+#[derive(Default, serde::Serialize)]
+pub struct ClearOutcome {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reclaim_warning: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryError {
     #[error("edit history I/O: {0}")]
@@ -255,15 +261,26 @@ pub fn read_chunk(
     Ok(bytes)
 }
 
-pub fn clear(database: &Path, document: &str) -> Result<()> {
+pub fn clear(database: &Path, document: &str) -> Result<ClearOutcome> {
     if !database.try_exists()? {
-        return Ok(());
+        return Ok(ClearOutcome::default());
     }
     let mut db = connect(database)?;
     let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute("DELETE FROM checkpoint WHERE document = ?1", [document])?;
     prune(&tx)?;
     tx.commit()?;
+
+    // VACUUM needs its own transaction. Keep the deletion committed if reclaiming space fails.
+    let reclaim_warning = reclaim_free_pages(&db).err().map(|error| error.to_string());
+    Ok(ClearOutcome { reclaim_warning })
+}
+
+fn reclaim_free_pages(db: &Connection) -> rusqlite::Result<()> {
+    let free_pages: u32 = db.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+    if free_pages > 0 {
+        db.execute_batch("VACUUM")?;
+    }
     Ok(())
 }
 
@@ -280,6 +297,101 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn clearing_one_document_releases_disk_space_and_preserves_other_checkpoints() {
+        let database = test_database();
+        let target = "package:/clear.mdpkg";
+        let other = "folder:/keep";
+        let shared = vec![0xab; 16 * 1024 * 1024];
+        let unique_bytes = 48 * 1024 * 1024;
+        PendingCheckpoint::prepare(
+            database.clone(),
+            target.into(),
+            "package revision",
+            true,
+            "clear this".into(),
+            [Ok(vec![0xcd; unique_bytes]), Ok(shared.clone())],
+        )
+        .unwrap()
+        .complete("package revision")
+        .unwrap();
+        PendingCheckpoint::prepare(
+            database.clone(),
+            other.into(),
+            "folder revision",
+            true,
+            "keep undo and redo".into(),
+            [Ok(vec![1, 2, 3]), Ok(shared)],
+        )
+        .unwrap()
+        .complete("folder revision")
+        .unwrap();
+        let other_id = load(&database, other, "folder revision")
+            .unwrap()
+            .unwrap()
+            .download
+            .unwrap()
+            .id;
+        let original_size = fs::metadata(&database).unwrap().len();
+
+        assert!(clear(&database, target).unwrap().reclaim_warning.is_none());
+
+        assert!(load(&database, target, "package revision")
+            .unwrap()
+            .is_none());
+        let reopened = load(&database, other, "folder revision").unwrap().unwrap();
+        assert_eq!(reopened.checkpoint.data, "keep undo and redo");
+        let download = reopened.download.unwrap();
+        assert_eq!(download.id, other_id);
+        assert_eq!(download.sizes, [3, 16 * 1024 * 1024]);
+        assert_eq!(read_chunk(&database, other_id, 0, 0, 3).unwrap(), [1, 2, 3]);
+        assert_eq!(
+            read_chunk(&database, other_id, 1, 16 * 1024 * 1024 - 1, 1).unwrap(),
+            [0xab]
+        );
+        let compacted_size = fs::metadata(&database).unwrap().len();
+        fs::remove_file(&database).unwrap();
+        assert!(original_size.saturating_sub(compacted_size) >= unique_bytes as u64,
+            "expected at least {unique_bytes} bytes back, file went from {original_size} to {compacted_size} bytes");
+    }
+
+    #[test]
+    fn clearing_again_reclaims_space_left_by_an_earlier_deletion() {
+        let database = test_database();
+        let document = "package:/cleared.mdpkg";
+        PendingCheckpoint::prepare(
+            database.clone(),
+            document.into(),
+            "rev",
+            true,
+            "old history".into(),
+            [Ok(vec![0xcd; 2 * 1024 * 1024])],
+        )
+        .unwrap()
+        .complete("rev")
+        .unwrap();
+        // Model an older version (or a previous clear that committed before compaction).
+        let mut db = connect(&database).unwrap();
+        let tx = db.transaction().unwrap();
+        tx.execute("DELETE FROM checkpoint WHERE document = ?1", [document])
+            .unwrap();
+        prune(&tx).unwrap();
+        tx.commit().unwrap();
+        drop(db);
+
+        assert!(clear(&database, document)
+            .unwrap()
+            .reclaim_warning
+            .is_none());
+
+        let size = fs::metadata(&database).unwrap().len();
+        fs::remove_file(&database).unwrap();
+        assert!(
+            size < 128 * 1024,
+            "empty database still occupies {size} bytes"
+        );
     }
 
     #[test]

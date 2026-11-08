@@ -813,12 +813,17 @@ export default function App() {
       confirmLabel: uiText("Delete"),
     });
     if (confirmed === null || !isCurrentSession()) return;
-    await clearSavedEditHistory(snapshot.origin.path, snapshot.origin.kind);
+    const outcome = await clearSavedEditHistory(snapshot.origin.path, snapshot.origin.kind);
     if (!isCurrentSession() || !documentRef.current) return;
     editHistoryRef.current = createEditHistory();
     typingRef.current = null;
     applyDocumentState({ ...documentRef.current });
     setStatus(uiText("Edit history cleared."));
+    if (outcome.reclaim_warning) {
+      showNotification(uiText("Edit history was cleared, but disk space could not be reclaimed."), "warning", {
+        detail: outcome.reclaim_warning,
+      });
+    }
   });
 
   const handleSave = async () => {

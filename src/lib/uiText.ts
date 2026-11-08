@@ -203,6 +203,7 @@ const labels: Record<string, string> = {
   "Clearing edit history…": "編集履歴を消去しています…",
   "Delete this document’s saved and current edit history?": "この文書の保存済みの履歴と現在の編集履歴を消去しますか？",
   "Edit history cleared.": "編集履歴を消去しました。",
+  "Edit history was cleared, but disk space could not be reclaimed.": "編集履歴は消去しましたが、ディスク容量を解放できませんでした。",
   "Could not restore saved edit history.": "保存した編集履歴を復元できませんでした。",
   "The document was saved, but its edit history could not be saved.": "文書は保存しましたが、編集履歴は保存できませんでした。",
   "Redo": "やり直し",
