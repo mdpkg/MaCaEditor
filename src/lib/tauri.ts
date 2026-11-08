@@ -9,6 +9,7 @@ import type {
   AiStreamEvent,
   ClearEditHistoryOutcome,
   FolderSaveRequest,
+  HistoryReclaimStatus,
   ImportedFile,
   ImportedImage,
   PackageInfo,
@@ -55,8 +56,12 @@ export function deleteSavedEditHistory(documentId: string): Promise<void> {
   return invoke("delete_saved_edit_history", { documentId });
 }
 
-export function deleteMissingSavedEditHistories(documentIds: string[]): Promise<string[]> {
-  return invoke("delete_missing_saved_edit_histories", { documentIds });
+export function deleteMissingSavedEditHistories(documentIds: string[], estimatedBytes: number | null): Promise<string[]> {
+  return invoke("delete_missing_saved_edit_histories", { documentIds, estimatedBytes });
+}
+
+export function getHistoryReclaimStatus(): Promise<HistoryReclaimStatus | null> {
+  return invoke("get_history_reclaim_status");
 }
 
 export function exportPackage(request: SaveRequest): Promise<void> {

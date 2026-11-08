@@ -22,6 +22,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   estimateReclaimableHistoryBytes: vi.fn(),
   deleteSavedEditHistory: vi.fn(),
   deleteMissingSavedEditHistories: vi.fn(),
+  getHistoryReclaimStatus: vi.fn(),
   exportPackage: vi.fn(),
   watchFolder: vi.fn(),
   watchPrint: vi.fn(),
@@ -718,6 +719,14 @@ describe("App persistence", () => {
     ]);
     const clearBatch = vi.mocked(tauri.deleteMissingSavedEditHistories).mockResolvedValue([rows[0].id]);
     const estimate = vi.mocked(tauri.estimateReclaimableHistoryBytes).mockResolvedValueOnce(8 * 1024 ** 2).mockResolvedValueOnce(12 * 1024 ** 2);
+    const snapshot = { request_id: 7, estimated_bytes: 12 * 1024 ** 2 };
+    vi.mocked(tauri.getHistoryReclaimStatus)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...snapshot, phase: "queued" })
+      .mockResolvedValueOnce({ ...snapshot, phase: "reclaiming" })
+      .mockResolvedValueOnce({ ...snapshot, phase: "paused_for_save" })
+      .mockResolvedValueOnce({ ...snapshot, phase: "reclaiming" })
+      .mockResolvedValue({ ...snapshot, phase: "completed", released_bytes: 8 * 1024 ** 2, request_count: 2 });
 
     await click("ファイル");
     await click("保存済み編集履歴…");
@@ -771,7 +780,7 @@ describe("App persistence", () => {
     await click("消去", confirm);
 
     expect(clearBatch).toHaveBeenCalledTimes(1);
-    expect(clearBatch).toHaveBeenCalledWith([rows[0].id, rows[1].id]);
+    expect(clearBatch).toHaveBeenCalledWith([rows[0].id, rows[1].id], 12 * 1024 ** 2);
     expect(tauri.deleteSavedEditHistory).not.toHaveBeenCalled();
     expect(dialog.textContent).toContain("1 件の履歴を残しました");
     expect(dialog.querySelector("table")).toBe(table);
@@ -780,6 +789,21 @@ describe("App persistence", () => {
     expect(dialog.textContent).toContain(rows[1].path);
     expect(dialog.textContent).toContain(rows[2].path);
     expect(dialog.textContent).toContain(rows[3].path);
+
+    const reclaim = () => dialog.querySelector(".saved-history-reclaim")?.textContent;
+    const nextStatus = async () => act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(reclaim()).toContain("容量回収を待っています");
+    await nextStatus();
+    expect(reclaim()).toContain("容量を回収しています");
+    await nextStatus();
+    expect(reclaim()).toContain("保存を優先して容量回収を延期しています");
+    await nextStatus();
+    expect(reclaim()).toContain("容量を回収しています");
+    await nextStatus();
+    expect(reclaim()).toContain("容量回収が完了しました");
+    expect(reclaim()).toContain("消去前の見込み 12 MiB");
+    expect(reclaim()).toContain("実際に回収した容量 8 MiB");
+    expect(reclaim()).toContain("複数の回収要求をまとめた実測です");
   });
 
   test("clears local history and reports when SQLite could not release disk space", async () => {

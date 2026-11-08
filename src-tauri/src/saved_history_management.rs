@@ -185,7 +185,16 @@ pub fn delete_saved_edit_history(database: &Path, document_id: &str) -> Result<(
     Ok(())
 }
 
-pub fn delete_missing_saved_edit_histories(database: &Path, ids: &[String]) -> Result<Vec<String>> {
+#[derive(Default)]
+pub struct BulkDeletion {
+    pub deleted_ids: Vec<String>,
+    pub request_id: Option<i64>,
+}
+
+pub fn delete_missing_saved_edit_histories(
+    database: &Path,
+    ids: &[String],
+) -> Result<BulkDeletion> {
     delete_missing_with_metadata(database, ids, probe_access)
 }
 
@@ -193,9 +202,9 @@ fn delete_missing_with_metadata(
     database: &Path,
     ids: &[String],
     metadata: impl Fn(&Path) -> io::Result<Metadata>,
-) -> Result<Vec<String>> {
+) -> Result<BulkDeletion> {
     if ids.is_empty() || !database.try_exists()? {
-        return Ok(Vec::new());
+        return Ok(BulkDeletion::default());
     }
     let snapshot_sql = "SELECT max(id), max(id) FILTER (WHERE committed = 1)
                         FROM checkpoint WHERE document = ?1";
@@ -226,7 +235,7 @@ fn delete_missing_with_metadata(
         })
         .collect::<Vec<_>>();
     if missing.is_empty() {
-        return Ok(Vec::new());
+        return Ok(BulkDeletion::default());
     }
     let mut db = connect(database)?;
     let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -242,11 +251,14 @@ fn delete_missing_with_metadata(
             }
         }
     }
-    if !deleted.is_empty() {
-        enqueue_reclaim(&tx)?;
-    }
+    let request_id = (!deleted.is_empty())
+        .then(|| enqueue_reclaim(&tx))
+        .transpose()?;
     tx.commit()?;
-    Ok(deleted)
+    Ok(BulkDeletion {
+        deleted_ids: deleted,
+        request_id,
+    })
 }
 
 #[cfg(test)]
@@ -336,7 +348,9 @@ mod tests {
 
         let before = fs::metadata(&database).unwrap().len();
         assert_eq!(
-            delete_missing_saved_edit_histories(&database, &selected).unwrap(),
+            delete_missing_saved_edit_histories(&database, &selected)
+                .unwrap()
+                .deleted_ids,
             [folder, package]
         );
         reclaim_pending(&database, || false).unwrap();
@@ -439,7 +453,9 @@ mod tests {
             .chain(protected)
             .cloned()
             .collect::<Vec<_>>();
-        let deleted = delete_missing_with_metadata(&database, &selected, probe).unwrap();
+        let deleted = delete_missing_with_metadata(&database, &selected, probe)
+            .unwrap()
+            .deleted_ids;
         assert_eq!(deleted, [gone_folder.clone(), gone_package.clone()]);
         assert!(load(&database, &gone_folder, "saved").unwrap().is_none());
         assert!(load(&database, &gone_package, "saved").unwrap().is_none());

@@ -37,6 +37,14 @@ export interface SavedEditHistory {
   size_bytes: number;
 }
 
+export type HistoryReclaimStatus = {
+  request_id: number;
+  estimated_bytes: number | null;
+} & (
+  | { phase: "queued" | "paused_for_save" | "reclaiming" | "failed" }
+  | { phase: "completed"; released_bytes: number | null; request_count: number | null }
+);
+
 export interface FileContent {
   path: string;
   is_text: boolean;

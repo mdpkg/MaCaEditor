@@ -114,6 +114,7 @@ pub fn run() {
             commands::estimate_reclaimable_history_bytes,
             commands::delete_saved_edit_history,
             commands::delete_missing_saved_edit_histories,
+            commands::get_history_reclaim_status,
             history_transfer::begin_edit_history_upload,
             history_transfer::upload_edit_history_chunk,
             history_transfer::discard_edit_history_upload,
