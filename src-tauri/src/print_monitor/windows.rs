@@ -14,8 +14,8 @@ use windows_sys::{
     core::w,
     Win32::{
         Foundation::{
-            CloseHandle, ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT, HANDLE, INVALID_HANDLE_VALUE,
-            WAIT_OBJECT_0, WAIT_TIMEOUT,
+            CloseHandle, ERROR_INVALID_OPERATION, ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT, HANDLE,
+            INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         Graphics::Printing::*,
         System::{
@@ -486,7 +486,7 @@ impl FailureEvents {
             let mut event = 0;
             let mut count = 0;
             if unsafe { EvtNext(self.subscription, 1, &mut event, 0, 0, &mut count) } == 0 {
-                return finish_event_read(io::Error::last_os_error());
+                return finish_event_read(io::Error::last_os_error(), count);
             }
             let failure = self.render(event);
             unsafe { EvtClose(event) };
@@ -558,9 +558,11 @@ impl FailureEvents {
     }
 }
 
-fn finish_event_read(error: io::Error) -> io::Result<()> {
+fn finish_event_read(error: io::Error, count: u32) -> io::Result<()> {
     match error.raw_os_error().map(|code| code as u32) {
         Some(ERROR_NO_MORE_ITEMS | ERROR_TIMEOUT) => Ok(()),
+        // Windows also returns this combination for an idle pull subscription.
+        Some(ERROR_INVALID_OPERATION) if count == 0 => Ok(()),
         _ => Err(error),
     }
 }
@@ -651,12 +653,14 @@ mod tests {
     fn distinguishes_an_empty_event_poll_from_a_failed_subscription() {
         use windows_sys::Win32::Foundation::ERROR_INVALID_HANDLE;
 
-        for code in [ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT] {
-            assert!(finish_event_read(io::Error::from_raw_os_error(code as i32)).is_ok());
+        for code in [ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT, ERROR_INVALID_OPERATION] {
+            assert!(finish_event_read(io::Error::from_raw_os_error(code as i32), 0).is_ok());
         }
-        let error = finish_event_read(io::Error::from_raw_os_error(ERROR_INVALID_HANDLE as i32))
-            .unwrap_err();
-        assert_eq!(error.raw_os_error(), Some(ERROR_INVALID_HANDLE as i32));
+        for (code, count) in [(ERROR_INVALID_HANDLE, 0), (ERROR_INVALID_OPERATION, 1)] {
+            let error = finish_event_read(io::Error::from_raw_os_error(code as i32), count)
+                .unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(code as i32));
+        }
     }
 
     #[test]
