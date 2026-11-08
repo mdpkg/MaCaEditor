@@ -240,15 +240,17 @@ pub async fn save_package(
     uploads: State<'_, HistoryUpload>,
     edit_history_upload: Option<String>,
 ) -> Result<SaveOutcome, String> {
+    let save = prioritize_history_save(&app);
     let database = history_database(&app);
     let uploaded = edit_history_upload
         .map(|token| uploads.take(&token))
         .transpose();
-    let outcome = tokio::task::spawn_blocking(move || save_package_at(request, database, uploaded))
-        .await
-        .map_err(|error| format!("package save task failed: {error}"))??;
-    request_history_maintenance(&app);
-    Ok(outcome)
+    tokio::task::spawn_blocking(move || {
+        let _save = save;
+        save_package_at(request, database, uploaded)
+    })
+    .await
+    .map_err(|error| format!("package save task failed: {error}"))?
 }
 
 fn save_package_at(
@@ -285,15 +287,17 @@ pub async fn save_folder(
     uploads: State<'_, HistoryUpload>,
     edit_history_upload: Option<String>,
 ) -> Result<SaveOutcome, String> {
+    let save = prioritize_history_save(&app);
     let database = history_database(&app);
     let uploaded = edit_history_upload
         .map(|token| uploads.take(&token))
         .transpose();
-    let outcome = tokio::task::spawn_blocking(move || save_folder_at(request, database, uploaded))
-        .await
-        .map_err(|error| format!("folder save task failed: {error}"))??;
-    request_history_maintenance(&app);
-    Ok(outcome)
+    tokio::task::spawn_blocking(move || {
+        let _save = save;
+        save_folder_at(request, database, uploaded)
+    })
+    .await
+    .map_err(|error| format!("folder save task failed: {error}"))?
 }
 
 fn save_folder_at(
@@ -355,10 +359,9 @@ pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
-fn request_history_maintenance(app: &AppHandle) {
-    if let Some(maintenance) = app.try_state::<crate::history_maintenance::HistoryMaintenance>() {
-        maintenance.request();
-    }
+fn prioritize_history_save(app: &AppHandle) -> Option<crate::history_maintenance::SaveGuard> {
+    app.try_state::<crate::history_maintenance::HistoryMaintenance>()
+        .map(|maintenance| maintenance.begin_save())
 }
 
 fn attach_saved_history(
