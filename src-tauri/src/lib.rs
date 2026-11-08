@@ -110,6 +110,8 @@ pub fn run() {
             commands::save_package,
             commands::save_folder,
             commands::clear_saved_edit_history,
+            commands::list_saved_edit_histories,
+            commands::delete_saved_edit_history,
             history_transfer::begin_edit_history_upload,
             history_transfer::upload_edit_history_chunk,
             history_transfer::discard_edit_history_upload,

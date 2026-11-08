@@ -18,6 +18,8 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   savePackage: vi.fn(),
   saveFolder: vi.fn(),
   clearSavedEditHistory: vi.fn(),
+  listSavedEditHistories: vi.fn(),
+  deleteSavedEditHistory: vi.fn(),
   exportPackage: vi.fn(),
   watchFolder: vi.fn(),
   watchPrint: vi.fn(),
@@ -643,6 +645,55 @@ describe("App persistence", () => {
     await historyShortcut("y");
     expect(container.querySelector("textarea")?.value).toBe("Disk abc!");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+  });
+
+  test("manages saved histories without opening a document", async () => {
+    const rows = [
+      { id: "package:Z:/Removed/Draft.mdpkg", path: "Z:/Removed/Draft.mdpkg", saved_at: 1000, access: "missing" },
+      { id: "folder:A:/Projects/Alpha", path: "A:/Projects/Alpha", saved_at: 3000, access: "unavailable" },
+      { id: "package:C:/Private/Beta.mdpkg", path: "C:/Private/Beta.mdpkg", saved_at: null, access: "denied" },
+    ] as const;
+    vi.mocked(tauri.listSavedEditHistories).mockResolvedValueOnce([...rows]).mockResolvedValueOnce([...rows.slice(1)]);
+    vi.mocked(tauri.deleteSavedEditHistory).mockResolvedValue(undefined);
+
+    await click("ファイル");
+    await click("保存済み編集履歴…");
+    const dialog = container.querySelector('[role="dialog"]')!;
+    const paths = () => [...dialog.querySelectorAll<HTMLTableRowElement>("tbody tr")].map((row) => row.cells[0].textContent);
+    expect(paths()).toEqual([rows[1].path, rows[0].path, rows[2].path]);
+    expect(dialog.textContent).toContain("アクセスできません");
+    expect(dialog.textContent).toContain("アクセス権限なし");
+    expect(dialog.textContent).toContain("不明");
+    expect(tauri.deleteSavedEditHistory).not.toHaveBeenCalled();
+
+    await click("保存先", dialog);
+    expect(paths()).toEqual([rows[1].path, rows[2].path, rows[0].path]);
+    await click("保存先", dialog);
+    expect(paths()).toEqual([rows[0].path, rows[2].path, rows[1].path]);
+    await click("最終保存日時", dialog);
+    expect(paths()).toEqual([rows[0].path, rows[1].path, rows[2].path]);
+    await click("アクセス状況", dialog);
+    const accessSorted = paths();
+    await click("アクセス状況", dialog);
+    expect(paths()).toEqual([...accessSorted].reverse());
+
+    const filter = dialog.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await inputValue(filter, "projects\\al");
+    expect(paths()).toEqual([rows[1].path]);
+    await inputValue(filter, "DRAFT.MD");
+    expect(paths()).toEqual([rows[0].path]);
+    await click("消去…", dialog);
+    expect(dialog.textContent).toContain(rows[0].path);
+    await click("キャンセル", dialog);
+    expect(tauri.deleteSavedEditHistory).not.toHaveBeenCalled();
+    await click("消去…", dialog);
+    await click("消去", dialog);
+    expect(tauri.deleteSavedEditHistory).toHaveBeenCalledTimes(1);
+    expect(tauri.deleteSavedEditHistory).toHaveBeenCalledWith(rows[0].id);
+    await inputValue(dialog.querySelector<HTMLInputElement>('input[type="search"]')!, "");
+    expect(paths().sort()).toEqual([rows[1].path, rows[2].path]);
+    expect(tauri.openPackage).not.toHaveBeenCalled();
+    expect(tauri.openFolder).not.toHaveBeenCalled();
   });
 
   test("clears local history and reports when SQLite could not release disk space", async () => {

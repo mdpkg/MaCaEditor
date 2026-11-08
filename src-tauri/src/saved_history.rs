@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{
@@ -12,6 +12,9 @@ use sha2::{Digest, Sha256};
 
 #[path = "saved_history_compaction.rs"]
 mod compaction;
+#[path = "saved_history_management.rs"]
+mod management;
+pub use management::{delete_saved_edit_history, list_saved_edit_histories, SavedEditHistory};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EditCheckpoint {
@@ -140,8 +143,17 @@ fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
         "PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL;",
     )?;
     let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if matches!(version, 0..=2) {
+    if matches!(version, 0..=3) {
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Another connection may have finished the migration while this one waited.
+        let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version == 4 {
+            tx.commit()?;
+            return Ok(db);
+        }
+        if !(0..=3).contains(&version) {
+            return Err(HistoryError::Schema(version));
+        }
         tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS checkpoint (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, document TEXT NOT NULL, revision TEXT NOT NULL,
@@ -163,10 +175,11 @@ fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
                 BEFORE INSERT ON checkpoint_payload
                 WHEN EXISTS (SELECT 1 FROM payload_reclaim WHERE digest = NEW.digest)
                 BEGIN SELECT RAISE(ABORT, 'attachment is being reclaimed'); END;
-             PRAGMA user_version = 3;",
+             ALTER TABLE checkpoint ADD COLUMN saved_at INTEGER;
+             PRAGMA user_version = 4;",
         )?;
         tx.commit()?;
-    } else if version != 3 {
+    } else if version != 4 {
         return Err(HistoryError::Schema(version));
     }
     Ok(db)
@@ -184,11 +197,16 @@ fn request_reclaim(tx: &Transaction<'_>) -> Result<()> {
         |row| row.get::<_, bool>(0),
     )?;
     if has_unreferenced_payload {
-        tx.execute_batch(
-            "CREATE TABLE IF NOT EXISTS reclaim_request (id INTEGER PRIMARY KEY AUTOINCREMENT);
-             INSERT INTO reclaim_request DEFAULT VALUES;",
-        )?;
+        enqueue_reclaim(tx)?;
     }
+    Ok(())
+}
+
+fn enqueue_reclaim(tx: &Transaction<'_>) -> Result<()> {
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS reclaim_request (id INTEGER PRIMARY KEY AUTOINCREMENT);
+         INSERT INTO reclaim_request DEFAULT VALUES;",
+    )?;
     Ok(())
 }
 
@@ -353,9 +371,13 @@ impl PendingCheckpoint {
     pub fn complete(self, revision: &str) -> Result<()> {
         let mut db = connect(&self.database)?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let saved_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok());
         tx.execute(
-            "UPDATE checkpoint SET revision = ?1, committed = 1 WHERE id = ?2",
-            params![revision, self.id],
+            "UPDATE checkpoint SET revision = ?1, committed = 1, saved_at = ?2 WHERE id = ?3",
+            params![revision, saved_at, self.id],
         )?;
         let removed = tx.execute(
             "DELETE FROM checkpoint WHERE document = ?1 AND id < ?2",
@@ -483,6 +505,29 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn records_the_time_when_a_checkpoint_is_committed() {
+        let database = test_database();
+        PendingCheckpoint::prepare(
+            database.clone(),
+            "package:/saved.mdpkg".into(),
+            "saved",
+            true,
+            "history".into(),
+            [],
+        )
+        .unwrap()
+        .complete("saved")
+        .unwrap();
+        let db = connect(&database).unwrap();
+        let saved_at: i64 = db
+            .query_row("SELECT saved_at FROM checkpoint", [], |row| row.get(0))
+            .unwrap();
+        assert!(saved_at > 0);
+        drop(db);
+        remove_test_database(&database);
     }
 
     fn remove_test_database(database: &Path) {
@@ -756,7 +801,15 @@ mod tests {
         let version: i64 = db
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
+        let legacy_saved_at: Option<i64> = db
+            .query_row(
+                "SELECT saved_at FROM checkpoint WHERE document = 'package:/legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy_saved_at, None);
         let count: u32 = db
             .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
             .unwrap();

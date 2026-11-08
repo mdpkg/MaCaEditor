@@ -26,6 +26,7 @@ interface Props {
   canUndoFileOperation?: boolean;
   canRedoFileOperation?: boolean;
   onClearEditHistory?: () => void;
+  onShowSavedEditHistories?: () => void;
   onEditManifest?: () => void;
   onSearchPackage?: () => void;
   onAddMarkdown?: () => void;
@@ -83,6 +84,7 @@ export function Toolbar({
   canUndoFileOperation = false,
   canRedoFileOperation = false,
   onClearEditHistory,
+  onShowSavedEditHistories,
   onEditManifest = () => {},
   onSearchPackage = () => {},
   onAddMarkdown = () => {},
@@ -202,6 +204,8 @@ export function Toolbar({
             <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>{uiText("Redo")}</button>
             {onClearEditHistory && <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress}
               onClick={() => run(onClearEditHistory)}>{uiText("Clear edit history…")}</button>}
+            {onShowSavedEditHistories && <button type="button" role="menuitem"
+              onClick={() => run(onShowSavedEditHistories)}>{uiText("Saved edit histories…")}</button>}
           </Menu>
         )}
       </div>

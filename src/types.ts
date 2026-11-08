@@ -29,6 +29,13 @@ export interface ClearEditHistoryOutcome {
   reclaim_warning?: string;
 }
 
+export interface SavedEditHistory {
+  id: string;
+  path: string;
+  saved_at: number | null;
+  access: "available" | "missing" | "unavailable" | "denied" | "wrong_kind";
+}
+
 export interface FileContent {
   path: string;
   is_text: boolean;
