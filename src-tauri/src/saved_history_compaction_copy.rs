@@ -8,7 +8,7 @@ use rusqlite::{
 
 use super::{connect_sqlite, HistoryError, Result, Scratch};
 
-const BLOB_CHUNK: usize = 4 * 1024 * 1024;
+const BLOB_CHUNK: usize = 1024 * 1024;
 const ROW_BATCH: usize = 256;
 
 struct Table {
@@ -277,24 +277,44 @@ pub(super) fn step(
     cursor: Cursor,
     last_request: i64,
     generation: [u8; 16],
-) -> Result<Cursor> {
+    should_yield: &impl Fn() -> bool,
+) -> Result<Option<Cursor>> {
     let table = &TABLES[cursor.stage % TABLES.len()];
     let tx = target.transaction()?;
     let next = if !table_exists(&tx, table.name)? {
-        cursor.advance()
+        Some(cursor.advance())
     } else if cursor.stage >= TABLES.len() {
-        prune_rows(source, &tx, table, cursor, last_request, generation)?
+        prune_rows(
+            source,
+            &tx,
+            table,
+            cursor,
+            last_request,
+            generation,
+            should_yield,
+        )?
     } else if let Some(offset) = cursor.offset {
-        copy_blob_chunk(source, &tx, table, cursor, offset, generation)?
+        copy_blob_chunk(source, &tx, table, cursor, offset, generation, should_yield)?
     } else {
-        copy_rows(source, &tx, table, cursor, last_request, generation)?
+        copy_rows(
+            source,
+            &tx,
+            table,
+            cursor,
+            last_request,
+            generation,
+            should_yield,
+        )?
+    };
+    let Some(next) = next else {
+        return Ok(None);
     };
     tx.execute(
         "UPDATE reclaim_copy SET stage = ?1, row_cursor = ?2, blob_offset = ?3",
         params![next.stage as i64, next.row, next.offset],
     )?;
     tx.commit()?;
-    Ok(next)
+    Ok(Some(next))
 }
 
 fn copy_blob_chunk(
@@ -304,7 +324,8 @@ fn copy_blob_chunk(
     cursor: Cursor,
     offset: u32,
     generation: [u8; 16],
-) -> Result<Cursor> {
+    should_yield: &impl Fn() -> bool,
+) -> Result<Option<Cursor>> {
     let read = source_snapshot(source, generation)?;
     let key: Value = read.query_row(
         &format!(
@@ -329,6 +350,9 @@ fn copy_blob_chunk(
     let next = (end < blob.len()).then_some(end as u32);
     blob.close()?;
     read.commit()?;
+    if should_yield() {
+        return Ok(None);
+    }
 
     let row: i64 = target.query_row(
         &format!(
@@ -353,10 +377,10 @@ fn copy_blob_chunk(
             params![cursor.stage as i64, row],
         )?;
     }
-    Ok(Cursor {
+    Ok(Some(Cursor {
         offset: next,
         ..cursor
-    })
+    }))
 }
 
 fn copy_rows(
@@ -366,7 +390,8 @@ fn copy_rows(
     cursor: Cursor,
     last_request: i64,
     generation: [u8; 16],
-) -> Result<Cursor> {
+    should_yield: &impl Fn() -> bool,
+) -> Result<Option<Cursor>> {
     let read = source_snapshot(source, generation)?;
     let rows = {
         let mut query = read.prepare(&format!(
@@ -378,22 +403,25 @@ fn copy_rows(
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
     read.commit()?;
+    if should_yield() {
+        return Ok(None);
+    }
     let Some((last, _)) = rows.last() else {
-        return Ok(cursor.advance());
+        return Ok(Some(cursor.advance()));
     };
     for (row, values) in &rows {
         if let Some(offset) = merge_row(target, table, cursor.stage, values)? {
-            return Ok(Cursor {
+            return Ok(Some(Cursor {
                 row: *row,
                 offset: Some(offset),
                 ..cursor
-            });
+            }));
         }
     }
-    Ok(Cursor {
+    Ok(Some(Cursor {
         row: *last,
         ..cursor
-    })
+    }))
 }
 
 fn merge_row(
@@ -497,7 +525,8 @@ fn prune_rows(
     cursor: Cursor,
     last_request: i64,
     generation: [u8; 16],
-) -> Result<Cursor> {
+    should_yield: &impl Fn() -> bool,
+) -> Result<Option<Cursor>> {
     let rows = {
         let mut query = target.prepare(&format!(
             "{} WHERE rowid > ?1 ORDER BY rowid LIMIT {ROW_BATCH}",
@@ -507,7 +536,7 @@ fn prune_rows(
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
     let Some((last, _)) = rows.last() else {
-        return Ok(cursor.advance());
+        return Ok(Some(cursor.advance()));
     };
     let read = source_snapshot(source, generation)?;
     let absent = {
@@ -528,11 +557,108 @@ fn prune_rows(
         absent
     };
     read.commit()?;
+    if should_yield() {
+        return Ok(None);
+    }
     for row in absent {
         remove_row(target, table, cursor.stage % TABLES.len(), row)?;
     }
-    Ok(Cursor {
+    Ok(Some(Cursor {
         row: *last,
         ..cursor
-    })
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    use super::*;
+    use crate::saved_history::PendingCheckpoint;
+
+    #[test]
+    fn a_save_requested_during_a_live_read_leaves_the_scratch_offset_unchanged() {
+        let root = std::env::temp_dir().join(format!("maca-copy-yield-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let database = root.join("history.sqlite3");
+        PendingCheckpoint::prepare(
+            database.clone(),
+            "package:/kept".into(),
+            "rev",
+            true,
+            "saved text".into(),
+            [],
+        )
+        .unwrap()
+        .complete("rev")
+        .unwrap();
+        let source = connect_sqlite(&database, Duration::ZERO).unwrap();
+        let revision = revision(&source).unwrap();
+        let scratch = Scratch(root.join("scratch.sqlite3"));
+        let (mut target, cursor) = open(&source, &scratch, revision, 0).unwrap();
+        let cursor = step(
+            &source,
+            &mut target,
+            cursor,
+            0,
+            revision.generation,
+            &|| false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(cursor.offset, Some(0));
+
+        let saving = Arc::new(AtomicBool::new(false));
+        let observed = saving.clone();
+        source
+            .progress_handler(
+                1,
+                Some(move || {
+                    observed.store(true, Ordering::Relaxed);
+                    false
+                }),
+            )
+            .unwrap();
+        let paused = step(
+            &source,
+            &mut target,
+            cursor,
+            0,
+            revision.generation,
+            &|| {
+                assert!(
+                    source.is_autocommit(),
+                    "release the live read lock before yielding"
+                );
+                saving.load(Ordering::Relaxed)
+            },
+        )
+        .unwrap();
+        assert!(paused.is_none());
+        let offset: u32 = target
+            .query_row("SELECT offset FROM reclaim_partial", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(offset, 0);
+
+        source.progress_handler(0, None::<fn() -> bool>).unwrap();
+        step(
+            &source,
+            &mut target,
+            cursor,
+            0,
+            revision.generation,
+            &|| false,
+        )
+        .unwrap()
+        .unwrap();
+        let text: String = target
+            .query_row("SELECT data FROM checkpoint", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(text, "saved text");
+        drop((source, target));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

@@ -224,8 +224,14 @@ fn prune(tx: &Transaction<'_>) -> Result<()> {
 }
 
 fn request_reclaim(tx: &Transaction<'_>) -> Result<()> {
+    // A retired payload already belongs to a durable request. Requeuing it would
+    // write new request rows on every save while compaction is paused.
     let has_unreferenced_payload = tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM payload WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest))",
+        "SELECT EXISTS(
+            SELECT 1 FROM payload
+            WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest)
+              AND NOT EXISTS (SELECT 1 FROM payload_reclaim WHERE digest = payload.digest)
+         )",
         [],
         |row| row.get::<_, bool>(0),
     )?;
@@ -361,7 +367,7 @@ pub(crate) fn reclaim_pending(
 }
 
 pub struct PendingCheckpoint {
-    database: PathBuf,
+    db: HistoryConnection,
     id: i64,
     document: String,
 }
@@ -411,16 +417,11 @@ impl PendingCheckpoint {
             )?;
         }
         tx.commit()?;
-        Ok(Self {
-            database,
-            id,
-            document,
-        })
+        Ok(Self { db, id, document })
     }
 
-    pub fn complete(self, revision: &str) -> Result<()> {
-        let mut db = connect(&self.database)?;
-        let tx = begin_history_write(&mut db)?;
+    pub fn complete(mut self, revision: &str) -> Result<()> {
+        let tx = begin_history_write(&mut self.db)?;
         let saved_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .ok()
@@ -440,9 +441,8 @@ impl PendingCheckpoint {
         Ok(())
     }
 
-    pub fn discard(self) -> Result<()> {
-        let mut db = connect(&self.database)?;
-        let tx = begin_history_write(&mut db)?;
+    pub fn discard(mut self) -> Result<()> {
+        let tx = begin_history_write(&mut self.db)?;
         tx.execute("DELETE FROM checkpoint WHERE id = ?1", [self.id])?;
         request_reclaim(&tx)?;
         tx.commit()?;
@@ -563,6 +563,44 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn keeps_the_same_history_connection_until_the_save_is_finalized() {
+        let database = test_database();
+        let document = "package:/saved";
+        let pending = PendingCheckpoint::prepare(
+            database.clone(),
+            document.into(),
+            "rev",
+            true,
+            "history".into(),
+            [],
+        )
+        .unwrap();
+        let guard_path = compaction::sidecar(&database, ".publish-lock");
+        let publisher = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(guard_path)
+            .unwrap();
+        // The pending save owns the same publication guard across both transactions.
+        assert!(matches!(
+            publisher.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
+        pending.complete("rev").unwrap();
+        publisher.try_lock().unwrap();
+        drop(publisher);
+        assert_eq!(
+            load(&database, document, "rev")
+                .unwrap()
+                .unwrap()
+                .checkpoint
+                .data,
+            "history"
+        );
+        remove_test_database(&database);
     }
 
     #[test]
@@ -1277,6 +1315,53 @@ mod tests {
                 .data,
             "saved branch"
         );
+        remove_test_database(&database);
+    }
+
+    #[test]
+    fn saving_does_not_requeue_retired_payloads_but_queues_a_new_orphan() {
+        let database = test_database();
+        let retired = "package:/retired";
+        let kept = "folder:/kept";
+        let save = |document: &str, rev: &str, payload: Option<Vec<u8>>| {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                document.into(),
+                rev,
+                true,
+                rev.into(),
+                payload.into_iter().map(Ok),
+            )
+            .unwrap()
+            .complete(rev)
+            .unwrap();
+        };
+        save(retired, "old", Some(vec![0; 8192]));
+        save(kept, "first", Some(vec![1, 2, 3]));
+        save(retired, "new", None);
+        let db = connect(&database).unwrap();
+        db.execute(
+            "INSERT INTO payload_reclaim
+             SELECT digest, octet_length(data) FROM payload
+             WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest)",
+            [],
+        )
+        .unwrap();
+        drop(db);
+        let count = || {
+            let db = connect(&database).unwrap();
+            db.query_row("SELECT count(*) FROM reclaim_request", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(count(), 1);
+        save(kept, "second", Some(vec![1, 2, 3]));
+        assert_eq!(count(), 1);
+        save(kept, "third", None);
+        assert_eq!(count(), 2);
+        reclaim_pending(&database, || false).unwrap();
+        assert_eq!(count(), 0);
         remove_test_database(&database);
     }
 

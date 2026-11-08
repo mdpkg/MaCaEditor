@@ -142,7 +142,18 @@ pub(super) fn rebuild(
         if data_version(&source)? != version {
             return Err(HistoryError::Busy);
         }
-        cursor = copy::step(&source, &mut copy, cursor, last_request, generation)?;
+        let Some(next) = copy::step(
+            &source,
+            &mut copy,
+            cursor,
+            last_request,
+            generation,
+            &should_yield,
+        )?
+        else {
+            return Ok(ReclaimAttempt::Yielded);
+        };
+        cursor = next;
     }
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
