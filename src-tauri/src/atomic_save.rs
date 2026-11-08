@@ -11,38 +11,22 @@ pub enum SaveError {
 /// 保存途中に異常終了しても既存ファイルが破損しないようにする。
 pub fn atomic_save(path: &Path, data: &[u8]) -> Result<(), SaveError> {
     let parent = path.parent().unwrap_or(Path::new("."));
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "package".to_string());
-    let temp_path = parent.join(format!(".{file_name}.tmp"));
+    let temp_path = parent.join(format!(".maca-save-{}.tmp", uuid::Uuid::new_v4()));
 
-    // 一時ファイルに書き込む
-    let mut file = fs::File::create(&temp_path)?;
-    std::io::Write::write_all(&mut file, data)?;
-    file.sync_all()?;
+    let mut file = fs::File::create_new(&temp_path)?;
+    let result = (|| {
+        std::io::Write::write_all(&mut file, data)?;
+        file.sync_all()?;
+        Ok(())
+    })();
     drop(file);
 
-    // atomic replace
-    // Windows では fs::rename が既存ファイルを上書きできないため、
-    // 既存ファイルを退避してから置き換える
-    if path.exists() {
-        let backup_path = parent.join(format!(".{file_name}.bak"));
-        fs::rename(path, &backup_path)?;
-        match fs::rename(&temp_path, path) {
-            Ok(()) => {
-                let _ = fs::remove_file(&backup_path);
-                Ok(())
-            }
-            Err(e) => {
-                let _ = fs::rename(&backup_path, path);
-                Err(e.into())
-            }
-        }
-    } else {
-        fs::rename(&temp_path, path)?;
-        Ok(())
+    // Keep the old destination visible until the synchronized file replaces it.
+    let result = result.and_then(|()| fs::rename(&temp_path, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
     }
+    result.map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -80,6 +64,31 @@ mod tests {
         atomic_save(&path, b"new").unwrap();
         let content = fs::read(&path).unwrap();
         assert_eq!(content, b"new");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn preserves_an_existing_backup_when_replacing_a_file() {
+        let dir = temp_dir("preserve_backup");
+        let path = dir.join("test.mdpkg");
+        let backup = dir.join(".test.mdpkg.bak");
+        fs::write(&path, b"old").unwrap();
+        fs::write(&backup, b"existing backup").unwrap();
+        atomic_save(&path, b"new").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(fs::read(&backup).unwrap(), b"existing backup");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_replacement_preserves_the_destination_and_cleans_up() {
+        let dir = temp_dir("preserve_directory");
+        let path = dir.join("test.mdpkg");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep"), b"existing contents").unwrap();
+        assert!(atomic_save(&path, b"new").is_err());
+        assert_eq!(fs::read(path.join("keep")).unwrap(), b"existing contents");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(&dir).unwrap();
     }
 
