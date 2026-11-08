@@ -778,7 +778,9 @@ export default function App() {
     }
     let jobTitle: string | null = null;
     try {
-      jobTitle = await watchPrint((detail) => reportError(uiText("Print"), detail));
+      jobTitle = await watchPrint(({ kind, detail }) => {
+        reportError(uiText(kind === "monitoringFailed" ? "Print monitoring" : "Print"), detail);
+      });
     } catch (reason) {
       reportError(uiText("Print monitoring"), reason);
     }

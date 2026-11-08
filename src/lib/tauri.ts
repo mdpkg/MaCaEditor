@@ -69,9 +69,14 @@ export function stopWatchingFolder(): Promise<void> {
   return invoke("stop_watching_folder");
 }
 
-export function watchPrint(onError: (detail: string) => void): Promise<string | null> {
+type PrintMonitorEvent = {
+  kind: "jobFailed" | "monitoringFailed";
+  detail: string;
+};
+
+export function watchPrint(onError: (event: PrintMonitorEvent) => void): Promise<string | null> {
   if (!isTauri() || !navigator.userAgent.includes("Windows")) return Promise.resolve(null);
-  const channel = new Channel<string>(onError);
+  const channel = new Channel<PrintMonitorEvent>(onError);
   return invoke("watch_print", { channel });
 }
 
