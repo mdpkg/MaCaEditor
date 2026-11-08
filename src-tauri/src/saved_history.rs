@@ -14,7 +14,10 @@ use sha2::{Digest, Sha256};
 mod compaction;
 #[path = "saved_history_management.rs"]
 mod management;
-pub use management::{delete_saved_edit_history, list_saved_edit_histories, SavedEditHistory};
+pub use management::{
+    delete_missing_saved_edit_histories, delete_saved_edit_history, list_saved_edit_histories,
+    SavedEditHistory,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EditCheckpoint {
