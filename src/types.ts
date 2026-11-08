@@ -77,6 +77,7 @@ export type AiError =
   | { kind: "PermissionDenied"; message: string }
   | { kind: "ModelNotFound"; message: string }
   | { kind: "RateLimited"; message: string }
+  | { kind: "QuotaExceeded"; message: string }
   | { kind: "Timeout"; message: string }
   | { kind: "ServerError"; message: string }
   | { kind: "InvalidResponse"; message: string }

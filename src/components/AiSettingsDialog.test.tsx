@@ -98,6 +98,9 @@ describe("AiSettingsDialog", () => {
     [{ kind: "InvalidProject", message: "No such project: 'fixture'\n\ncode: invalid_project" },
       "接続できませんでした。AI のプロジェクト指定が無効です。接続先のプロジェクト設定を確認してください。",
       "No such project: 'fixture'\n\ncode: invalid_project"],
+    [{ kind: "QuotaExceeded", message: "Credit balance exhausted\n\ncode: credit_balance_exhausted" },
+      "接続できませんでした。AI の利用枠に達しました。接続先の残高や利用上限を確認してください。",
+      "Credit balance exhausted\n\ncode: credit_balance_exhausted"],
   ])("shows error detail when test connection fails (%s)", async (error, summary, message) => {
     vi.spyOn(tauri, "loadAiConfig").mockResolvedValue({
       provider: "OpenAiCompatible",

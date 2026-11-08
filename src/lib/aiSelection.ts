@@ -61,6 +61,7 @@ const aiErrorMessages: Record<AiErrorKind, string> = {
   PermissionDenied: "AI のアクセス権限がありません。",
   ModelNotFound: "AI モデルが見つかりませんでした。",
   RateLimited: "AI のリクエスト回数制限に達しました。しばらくしてから再試行してください。",
+  QuotaExceeded: "AI の利用枠に達しました。接続先の残高や利用上限を確認してください。",
   Timeout: "AI のリクエストがタイムアウトしました。",
   ServerError: "AI サーバーでエラーが発生しました。",
   InvalidResponse: "AI の応答が正しくありません。",

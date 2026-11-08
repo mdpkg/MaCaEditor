@@ -295,7 +295,18 @@ fn parse_stream_chunk(
     })
 }
 
-fn stream_error_kind(code: &str) -> Option<fn(String) -> AiError> {
+fn is_quota_code(code: &str) -> bool {
+    matches!(
+        code,
+        "insufficient_quota"
+            | "credit_balance_exhausted"
+            | "organization_spend_limit_exceeded"
+            | "project_spend_limit_exceeded"
+            | "organization_usage_limit_exceeded"
+    )
+}
+
+fn api_error_kind(code: &str) -> Option<fn(String) -> AiError> {
     Some(match code {
         "invalid_project" => AiError::InvalidProject,
         "invalid_api_key" | "authentication_error" => AiError::AuthenticationFailed,
@@ -303,6 +314,7 @@ fn stream_error_kind(code: &str) -> Option<fn(String) -> AiError> {
         "model_not_found" => AiError::ModelNotFound,
         "invalid_request_error" => AiError::InvalidConfiguration,
         "rate_limit_exceeded" | "rate_limit_error" | "slow_down" => AiError::RateLimited,
+        code if is_quota_code(code) => AiError::QuotaExceeded,
         "request_timeout" | "timeout" => AiError::Timeout,
         "server_error" | "internal_error" | "internal_server_error" | "server_is_overloaded"
         | "server_overloaded" | "service_unavailable_error" => AiError::ServerError,
@@ -314,8 +326,8 @@ fn map_stream_api_error(error: ApiError, data: &str) -> AiError {
     let kind = error
         .code
         .as_deref()
-        .and_then(stream_error_kind)
-        .or_else(|| error.r#type.as_deref().and_then(stream_error_kind))
+        .and_then(api_error_kind)
+        .or_else(|| error.r#type.as_deref().and_then(api_error_kind))
         .unwrap_or(AiError::Unknown);
     kind(data.to_owned())
 }
@@ -332,6 +344,14 @@ fn map_api_error(status: reqwest::StatusCode, error: ApiError) -> AiError {
     };
     if code == Some("invalid_project") {
         return AiError::InvalidProject(detail);
+    }
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let quota_exceeded = code.is_some_and(is_quota_code)
+            || (code.and_then(api_error_kind).is_none()
+                && error.r#type.as_deref().is_some_and(is_quota_code));
+        if quota_exceeded {
+            return AiError::QuotaExceeded(detail);
+        }
     }
     classify_http_status(status.as_u16(), &detail)
 }
@@ -575,6 +595,42 @@ mod tests {
         };
         let mapped = map_openai_error(async_openai::error::OpenAIError::ApiError(api_error));
         assert!(matches!(mapped, AiError::RateLimited(_)));
+    }
+
+    #[test]
+    fn distinguishes_quota_errors_from_temporary_rate_limits() {
+        let cases = [
+            (Some("credit_balance_exhausted"), None, true),
+            (Some("organization_spend_limit_exceeded"), None, true),
+            (Some("project_spend_limit_exceeded"), None, true),
+            (Some("organization_usage_limit_exceeded"), None, true),
+            (Some("insufficient_quota"), None, true),
+            (None, Some("insufficient_quota"), true),
+            (Some("slow_down"), Some("insufficient_quota"), false),
+            (Some("rate_limit_exceeded"), None, false),
+            (None, None, false),
+        ];
+        for (code, error_type, quota_exceeded) in cases {
+            let error = ApiError {
+                message: "upstream message".to_owned(),
+                r#type: error_type.map(str::to_owned),
+                param: None,
+                code: code.map(str::to_owned),
+            };
+            let detail = code.map_or_else(
+                || "upstream message".to_owned(),
+                |code| format!("upstream message\n\ncode: {code}"),
+            );
+            let expected = if quota_exceeded {
+                AiError::QuotaExceeded(detail)
+            } else {
+                AiError::RateLimited(detail)
+            };
+            assert_eq!(
+                map_api_error(reqwest::StatusCode::TOO_MANY_REQUESTS, error),
+                expected
+            );
+        }
     }
 
     #[test]
