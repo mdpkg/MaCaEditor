@@ -65,6 +65,8 @@ pub enum Scenario {
     Hang,
     /// 指定ステータスの HTTP エラー。
     HttpError(u16, &'static str),
+    /// JSON の error オブジェクトを返さない HTTP エラー。
+    HttpBody(u16, &'static str, &'static str),
 }
 
 async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
@@ -90,14 +92,10 @@ async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
                 "error": { "message": "mock error", "type": "mock", "code": code }
             })
             .to_string();
-            let response = format!(
-                "HTTP/1.1 {} Mock Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                status,
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes()).await;
-            let _ = stream.flush().await;
+            write_http_error(&mut stream, status, "application/json", &body).await;
+        }
+        Scenario::HttpBody(status, content_type, body) => {
+            write_http_error(&mut stream, status, content_type, body).await;
         }
         Scenario::Hang => {
             // 応答を返さず、接続を保持する。
@@ -129,6 +127,15 @@ async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
             let _ = stream.flush().await;
         }
     }
+}
+
+async fn write_http_error(stream: &mut TcpStream, status: u16, content_type: &str, body: &str) {
+    let response = format!(
+        "HTTP/1.1 {status} Mock Error\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len(),
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.flush().await;
 }
 
 fn chunk_json(content: &str) -> String {
@@ -268,6 +275,39 @@ mod tests {
                 Err(error) if error == expected
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn preserves_status_and_original_body_when_the_http_error_is_not_structured() {
+        let cases: &[(u16, &str, &str, fn(String) -> AiError)] = &[
+            (401, "text/plain", "authentication required", AiError::AuthenticationFailed),
+            (403, "text/html", "<h1>Access denied</h1>", AiError::PermissionDenied),
+            (408, "application/json", "", AiError::Timeout),
+            (429, "application/json", "{", AiError::RateLimited),
+        ];
+        for (status, content_type, body, error_kind) in cases {
+            let server = MockOpenAiServer::start(Scenario::HttpBody(*status, content_type, body)).await;
+            let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+            let detail = if body.is_empty() {
+                format!("HTTP {status}")
+            } else {
+                format!("HTTP {status}\n\n{body}")
+            };
+            let expected = error_kind(detail);
+            assert_eq!(provider.list_models().await, Err(expected.clone()));
+            assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+            assert!(matches!(provider.stream(sample_request()).await, Err(error) if error == expected));
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_http_400_still_preserves_parse_diagnostics() {
+        let body = "<h1>Malformed request</h1>";
+        let server = MockOpenAiServer::start(Scenario::HttpBody(400, "text/html", body)).await;
+        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+
+        assert!(matches!(provider.list_models().await, Err(AiError::InvalidResponse(detail)) if detail.ends_with(body)));
+        assert!(matches!(provider.stream(sample_request()).await, Err(AiError::InvalidResponse(detail)) if detail.ends_with(body)));
     }
 
     #[tokio::test]
