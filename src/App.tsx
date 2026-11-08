@@ -69,6 +69,8 @@ import {
   saveAttachment,
   watchFolder,
   watchPrint,
+  usesMacPreparedPrint,
+  printPreparedPages,
   stopWatchingFolder,
   onFolderChanged,
   onNativeFileDrop,
@@ -791,14 +793,17 @@ export default function App() {
     if (jobTitle) {
       document.title = taggedTitle;
     }
-    if (jobTitle || dispose) window.addEventListener("afterprint", restoreTitle);
+    const macPreparedPrint = dispose && usesMacPreparedPrint();
+    const waitForPrintEvent = !macPreparedPrint && (jobTitle || dispose);
+    if (waitForPrintEvent) window.addEventListener("afterprint", restoreTitle);
     try {
-      await window.print();
+      if (macPreparedPrint) await printPreparedPages(title);
+      else await window.print();
     } catch (reason) {
       restoreTitle();
       reportError(uiText("Print"), reason);
     } finally {
-      if (!jobTitle && !dispose) restoreTitle();
+      if (!waitForPrintEvent) restoreTitle();
     }
   };
 

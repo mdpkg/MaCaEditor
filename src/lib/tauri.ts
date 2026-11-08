@@ -75,6 +75,14 @@ export function watchPrint(onError: (detail: string) => void): Promise<string | 
   return invoke("watch_print", { channel });
 }
 
+export function usesMacPreparedPrint(): boolean {
+  return isTauri() && navigator.userAgent.includes("Macintosh");
+}
+
+export function printPreparedPages(title: string): Promise<void> {
+  return invoke("print_prepared_pages", { title });
+}
+
 export function onFolderChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<{ path: string }>("folder-changed", (event) => handler(event.payload.path));
 }
