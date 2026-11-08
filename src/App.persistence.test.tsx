@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import App from "./App";
 import * as diagnostics from "./lib/packageDiagnostics";
+import { renderMermaid } from "./lib/mermaid/renderer";
 import { saveEditorPreferences } from "./lib/editorPreferences";
 import * as tauri from "./lib/tauri";
 import type { PackageInfo } from "./types";
@@ -24,7 +25,15 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   onFolderChanged: vi.fn(),
   onNativeFileDrop: vi.fn(),
   readImage: vi.fn(),
+  readAttachment: vi.fn(),
+  loadAiConfig: vi.fn(),
+  startAiSelectionAction: vi.fn(),
+  startAiDiagramEdit: vi.fn(),
   hasAiConfiguration: vi.fn(),
+}));
+vi.mock("./lib/mermaid/renderer", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./lib/mermaid/renderer")>(),
+  renderMermaid: vi.fn(),
 }));
 vi.mock("./lib/editorPreferences", () => ({
   loadVimMode: async () => false,
@@ -45,7 +54,7 @@ vi.mock("./components/MarkdownPreview", () => ({
   </>,
 }));
 vi.mock("./components/MarkdownEditor", () => ({
-  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange, navigation }: {
+  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange, onSelectionChange, navigation }: {
     value: string;
     onChange: (value: string, group?: TextEditGroup) => void;
     initialCursorPosition?: number;
@@ -53,8 +62,13 @@ vi.mock("./components/MarkdownEditor", () => ({
     navigation?: { offset: number; length?: number };
     onCursorChange: (position: number) => void;
     onScrollTopChange: (position: number) => void;
+    onSelectionChange: (selection: { from: number; to: number; text: string } | null) => void;
   }) => <textarea value={value} data-cursor={initialCursorPosition} data-scroll={initialScrollTop} data-navigation={JSON.stringify(navigation)}
-    onClick={(event) => onCursorChange(event.currentTarget.selectionStart)}
+    onClick={(event) => {
+      const { selectionStart: from, selectionEnd: to, value } = event.currentTarget;
+      onCursorChange(from);
+      onSelectionChange(from === to ? null : { from, to, text: value.slice(from, to) });
+    }}
     onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}
     onChange={(event) => onChange(event.currentTarget.value, (event.nativeEvent as CustomEvent<TextEditGroup>).detail)} />,
 }));
@@ -84,6 +98,7 @@ describe("App persistence", () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    vi.mocked(tauri.loadAiConfig).mockRejectedValue(new Error("AI not configured"));
     localStorage.clear();
     vi.mocked(tauri.onNativeFileDrop).mockImplementation(async (callback) => { nativeDrop = callback; return () => {}; });
     vi.mocked(tauri.onFolderChanged).mockImplementation(async (callback) => {
@@ -838,6 +853,223 @@ describe("App persistence", () => {
     await click("完了");
     expect(container.querySelector("textarea")?.value).toBe("Before\n\n| Draft | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+  });
+
+  test.each(["package", "folder"] as const)("replays mixed Markdown, table, Drawing, attachment, AI, and move edits in %s mode", async (kind) => {
+    const original = "Before\n\n[Guide](docs/guide.md)\n\n| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const info = documentInfo(original);
+    info.files.push({ path: "docs/guide.md", content: "[Home](../index.md)", is_text: true, base64: null });
+    vi.mocked(kind === "folder" ? tauri.openFolder : tauri.openPackage).mockResolvedValue(info);
+    vi.mocked(tauri.hasAiConfiguration).mockResolvedValue(true);
+    vi.mocked(tauri.loadAiConfig).mockResolvedValue({
+      provider: "OpenAiCompatible", base_url: "http://localhost:11434/v1", api_key: null, model: "test",
+      temperature: 0.7, max_output_tokens: 128, connect_timeout_seconds: 10, request_timeout_seconds: 30,
+    });
+    vi.mocked(tauri.startAiSelectionAction).mockResolvedValue("rewrite");
+    await act(async () => nativeDrop([kind === "folder" ? folderPath : "mixed.mdpkg"], kind));
+    const writer = kind === "folder" ? tauri.saveFolder : tauri.savePackage;
+    const snapshot = async () => {
+      await act(async () => saveShortcut());
+      const request = vi.mocked(writer).mock.lastCall![0];
+      return { files: request.files, manifest: request.manifest };
+    };
+    const revisions = [await snapshot()];
+    await click("編集");
+    await edit(original.replace("Before", "Body edited"));
+    revisions.push(await snapshot());
+
+    await click("Edit test table");
+    await act(async () => { await import("./components/MarkdownTableEditor"); });
+    const header = container.querySelector<HTMLTextAreaElement>('[aria-label="1 列目の見出し"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(header, "Table edit");
+      header.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("完了");
+    revisions.push(await snapshot());
+
+    await act(async () => { await import("@maca/drawing-react"); });
+    await click("図を挿入");
+    await click("SVG");
+    revisions.push(await snapshot());
+    const canvas = container.querySelector<SVGSVGElement>("svg.drawing-canvas")!;
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = vi.fn(() => true);
+    canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800, width: 1200, height: 800, toJSON: () => ({}),
+    });
+    await click("テキスト", container.querySelector(".drawing-toolbar")!);
+    const pointer = (type: string, x: number, y: number) => act(async () => {
+      const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      canvas.dispatchEvent(event);
+    });
+    await pointer("pointerdown", 100, 100);
+    await pointer("pointermove", 250, 180);
+    expect(await snapshot()).toEqual(revisions[3]);
+    await pointer("pointercancel", 250, 180);
+    expect(await snapshot()).toEqual(revisions[3]);
+    await pointer("pointerdown", 100, 100);
+    await pointer("pointermove", 250, 180);
+    await pointer("pointerup", 250, 180);
+    revisions.push(await snapshot());
+    expect(revisions[4].files.find((file) => file.path.endsWith(".draw.json"))?.content).toContain('"width": 150');
+    const drawing = container.querySelector(".drawing-editor")!;
+    await act(async () => drawing.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+    })));
+    expect(await snapshot()).toEqual(revisions[3]);
+    await act(async () => drawing.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Z", metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+    })));
+    expect(await snapshot()).toEqual(revisions[4]);
+
+    await act(async () => container.querySelector<HTMLElement>('[data-path="index.md"]')!.click());
+    await click("編集");
+    vi.mocked(open).mockResolvedValue(["C:/report.pdf", "C:/data.zip"]);
+    vi.mocked(tauri.readAttachment).mockImplementation(async (path) => ({
+      file_name: path.split("/").pop()!, base64: path.endsWith("pdf") ? "cGRm" : "emlw",
+    }));
+    await click("添付ファイルを追加");
+    revisions.push(await snapshot());
+    expect(revisions[5].files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "attachments/report.pdf", base64: "cGRm" }),
+      expect.objectContaining({ path: "attachments/data.zip", base64: "emlw" }),
+    ]));
+
+    const editor = container.querySelector("textarea")!;
+    const start = editor.value.indexOf("Body edited");
+    await act(async () => { editor.setSelectionRange(start, start + "Body edited".length); editor.click(); });
+    await click("AI");
+    await click("書き換え");
+    await click("生成");
+    const onEvent = vi.mocked(tauri.startAiSelectionAction).mock.lastCall![1];
+    await act(async () => {
+      onEvent({ type: "delta", request_id: "rewrite", content: "AI result" });
+      onEvent({ type: "completed", request_id: "rewrite" });
+    });
+    await click("選択範囲を置換");
+    revisions.push(await snapshot());
+    expect(revisions[6].files[0].content).toContain("AI result");
+
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "docs/guide.md" } });
+    await act(async () => container.querySelector(".file-tree")!.dispatchEvent(drop));
+    await click("移動", container.querySelector('[role="dialog"]')!);
+    revisions.push(await snapshot());
+    expect(revisions[7].files[0].content).toContain("[Guide](guide.md)");
+    await click("Edit test table");
+    await click("元に戻す", container.querySelector(".notification-banner")!);
+    expect(container.querySelector(".markdown-table-editor")).not.toBeNull();
+    expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
+    await click("キャンセル", container.querySelector(".markdown-table-editor")!);
+
+    for (let index = revisions.length - 2; index >= 0; index--) {
+      await historyShortcut("z");
+      expect(await snapshot(), `undo to revision ${index}`).toEqual(revisions[index]);
+    }
+    for (let index = 1; index < revisions.length; index++) {
+      await historyShortcut("y");
+      expect(await snapshot(), `redo to revision ${index}`).toEqual(revisions[index]);
+    }
+    expect(tauri.readAttachment).toHaveBeenCalledTimes(2);
+    expect(tauri.startAiSelectionAction).toHaveBeenCalledTimes(1);
+  });
+
+  test("applies and replays AI diagram source and its validated SVG together", async () => {
+    const oldSource = "graph TD\nA-->B";
+    const newSource = "graph TD\nA-->C";
+    const oldSvg = '<svg xmlns="http://www.w3.org/2000/svg"><text>Old</text></svg>';
+    const newSvg = '<svg xmlns="http://www.w3.org/2000/svg"><text>New</text></svg>';
+    const info = documentInfo("Original");
+    info.manifest.resources = [{ type: "mermaid", source: "chart.mmd", rendered: "chart.svg" }];
+    info.files.push(
+      { path: "chart.mmd", content: oldSource, is_text: true, base64: null },
+      { path: "chart.svg", content: oldSvg, is_text: true, base64: null },
+    );
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    vi.mocked(tauri.loadAiConfig).mockResolvedValue({
+      provider: "OpenAiCompatible", base_url: "http://localhost:11434/v1", api_key: null, model: "test",
+      temperature: 0.7, max_output_tokens: 128, connect_timeout_seconds: 10, request_timeout_seconds: 30,
+    });
+    vi.mocked(tauri.startAiDiagramEdit).mockResolvedValue("diagram");
+    vi.mocked(renderMermaid).mockResolvedValue(newSvg);
+    await act(async () => nativeDrop(["diagram.mdpkg"]));
+    await click("編集");
+    await edit("Earlier Markdown edit");
+    await act(async () => { await import("./components/MermaidEditor"); });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await act(async () => container.querySelector<HTMLElement>('[data-path="chart.mmd"]')!.click());
+    await click("AI で生成");
+    const instruction = container.querySelector<HTMLTextAreaElement>('[aria-label="生成する図の説明"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(instruction, "Change the destination");
+      instruction.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("図を生成");
+    const onEvent = vi.mocked(tauri.startAiDiagramEdit).mock.lastCall![1];
+    await act(async () => {
+      onEvent({ type: "delta", request_id: "diagram", content: newSource });
+      onEvent({ type: "completed", request_id: "diagram" });
+    });
+    await click("適用");
+    const checkSaved = async (markdown: string, source: string, svg: string) => {
+      await act(async () => saveShortcut());
+      expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+        files: [
+          expect.objectContaining({ path: "index.md", content: markdown }),
+          expect.objectContaining({ path: "chart.mmd", content: source }),
+          expect.objectContaining({ path: "chart.svg", content: svg }),
+        ],
+      }));
+    };
+    await checkSaved("Earlier Markdown edit", newSource, newSvg);
+    await historyShortcut("z");
+    await checkSaved("Earlier Markdown edit", oldSource, oldSvg);
+    await historyShortcut("z");
+    await checkSaved("Original", oldSource, oldSvg);
+    await historyShortcut("y");
+    await historyShortcut("y");
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    await checkSaved("Earlier Markdown edit", newSource, newSvg);
+    expect(renderMermaid).toHaveBeenCalledTimes(1);
+    expect(tauri.startAiDiagramEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test("adds attachments to the latest working copy and ignores reads from a replaced document", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
+    vi.mocked(open).mockResolvedValue("C:/report.pdf");
+    const first = deferred();
+    vi.mocked(tauri.readAttachment).mockReturnValueOnce(first.promise.then(() => ({ file_name: "report.pdf", base64: "cGRm" })));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    await click("編集");
+    await click("添付ファイルを追加");
+    await edit("Edited during read");
+    await act(async () => first.resolve());
+    await act(async () => saveShortcut());
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [
+        expect.objectContaining({ content: expect.stringContaining("Edited during read") }),
+        expect.objectContaining({ path: "attachments/report.pdf", base64: "cGRm" }),
+      ],
+    }));
+    await historyShortcut("z");
+    await act(async () => saveShortcut());
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [expect.objectContaining({ content: "Edited during read" })],
+    }));
+
+    const second = deferred();
+    vi.mocked(tauri.readAttachment).mockReturnValueOnce(second.promise.then(() => ({ file_name: "late.pdf", base64: "bGF0ZQ==" })));
+    await click("添付ファイルを追加");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Other document"));
+    await act(async () => nativeDrop(["other.mdpkg"]));
+    await act(async () => second.resolve());
+    await act(async () => saveShortcut());
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      path: "other.mdpkg", files: [expect.objectContaining({ content: "Other document" })],
+    }));
   });
 
   test.each(["保存", "名前を付けて保存"])("%s keeps edits made while writing and blocks duplicate saves", async (command) => {

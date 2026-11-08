@@ -13,7 +13,7 @@ import { validateDiagramSource } from "../lib/aiDiagramValidation";
 
 interface Props {
   format: DiagramFormat; path: string; currentSource: string;
-  onApply: (source: string, snapshot: { path: string; source: string }) => void;
+  onApply: (source: string, svg: string, snapshot: { path: string; source: string }) => void;
   onClose: () => void; onOpenAiSettings: () => void;
 }
 
@@ -34,8 +34,16 @@ export function AiDiagramEditDialog({ format, path, currentSource, onApply, onCl
   useEffect(() => () => { void service.cancel(); }, [service]);
   useEffect(() => {
     if (stream.status !== "completed") return;
+    let active = true;
     setSvg(""); setValidationError(null); setValidating(true);
-    void validateDiagramSource(format, stream.result).then(setSvg).catch((reason) => setValidationError(String(reason))).finally(() => setValidating(false));
+    void validateDiagramSource(format, stream.result).then((result) => {
+      if (active) setSvg(result);
+    }).catch((reason) => {
+      if (active) setValidationError(String(reason));
+    }).finally(() => {
+      if (active) setValidating(false);
+    });
+    return () => { active = false; };
   }, [stream.status, stream.result, format]);
 
   const run = async () => {
@@ -52,6 +60,20 @@ export function AiDiagramEditDialog({ format, path, currentSource, onApply, onCl
     {!configured && <p className="ai-status ai-status-error">{uiText("AI is not configured.")}<button onClick={onOpenAiSettings}>{uiText("Open AI Settings")}</button></p>}
     {(stream.status === "idle" || stream.status === "error" || stream.status === "cancelled") && <><div className="about-dialog-actions"><button disabled={!configured || !instruction.trim()} onClick={() => void run()}>{stream.status === "idle" ? uiText("Generate Diagram") : uiText("Retry")}</button><button onClick={() => void close()}>{uiText("Cancel")}</button></div>{stream.status === "error" && stream.error && <AiErrorFeedback error={stream.error} />}{stream.status === "cancelled" && <p className="ai-status ai-status-error">{uiText("Cancelled")}</p>}</>}
     {stream.status === "running" && <><p className="ai-status ai-status-testing">{uiText("Generating…")}</p><pre className="ai-result-preview">{stream.result}</pre><div className="about-dialog-actions"><button onClick={() => void service.cancel()}>{uiText("Cancel request")}</button><button onClick={() => void close()}>{uiText("Close")}</button></div></>}
-    {stream.status === "completed" && <><button type="button" onClick={() => setShowOriginal((value) => !value)}>{showOriginal ? uiText("Hide Original") : uiText("Show Original")}</button>{showOriginal && <pre aria-label={uiText("Original diagram source")} className="ai-result-original">{snapshot.source}</pre>}<pre aria-label={uiText("Updated diagram source")} className="ai-result-preview">{stream.result}</pre>{validating && <p>{uiText("Validating…")}</p>}{validationError && <DiagramRenderError summary={uiText("Diagram validation failed:")} detail={validationError} />}{svg && <div className="plantuml-preview" dangerouslySetInnerHTML={{ __html: sanitizeHtml(svg) }} />}<div className="about-dialog-actions"><button disabled={!svg || validating} onClick={() => onApply(stream.result, snapshot)}>{uiText("Apply")}</button><button onClick={() => void run()}>{uiText("Retry")}</button><button onClick={() => void close()}>{uiText("Discard")}</button></div></>}
+    {stream.status === "completed" && <>
+      <button type="button" onClick={() => setShowOriginal((value) => !value)}>
+        {showOriginal ? uiText("Hide Original") : uiText("Show Original")}
+      </button>
+      {showOriginal && <pre aria-label={uiText("Original diagram source")} className="ai-result-original">{snapshot.source}</pre>}
+      <pre aria-label={uiText("Updated diagram source")} className="ai-result-preview">{stream.result}</pre>
+      {validating && <p>{uiText("Validating…")}</p>}
+      {validationError && <DiagramRenderError summary={uiText("Diagram validation failed:")} detail={validationError} />}
+      {svg && <div className="plantuml-preview" dangerouslySetInnerHTML={{ __html: sanitizeHtml(svg) }} />}
+      <div className="about-dialog-actions">
+        <button disabled={!svg || validating} onClick={() => onApply(stream.result, svg, snapshot)}>{uiText("Apply")}</button>
+        <button onClick={() => void run()}>{uiText("Retry")}</button>
+        <button onClick={() => void close()}>{uiText("Discard")}</button>
+      </div>
+    </>}
   </Dialog>;
 }

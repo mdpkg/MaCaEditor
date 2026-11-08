@@ -9,6 +9,7 @@ import { DiagramRenderError } from "./DiagramRenderError";
 interface Props {
   source: string;
   initialSvg: string;
+  renderPending?: boolean;
   onSourceChange: (source: string) => void;
   onRendered: (source: string, svg: string) => void;
   render?: (source: string) => Promise<string>;
@@ -20,6 +21,7 @@ interface Props {
 export function PlantUmlEditor({
   source,
   initialSvg,
+  renderPending = true,
   onSourceChange,
   onRendered,
   render = renderPlantUml,
@@ -34,6 +36,12 @@ export function PlantUmlEditor({
   const sanitizedSvg = sanitizeHtml(svg);
 
   useEffect(() => {
+    if (!renderPending) {
+      setSvg(plantUmlErrorDetail(initialSvg) ? "" : initialSvg);
+      setRendering(false);
+      setError(null);
+      return;
+    }
     let active = true;
     const timeout = window.setTimeout(() => {
       setRendering(true);
@@ -53,7 +61,7 @@ export function PlantUmlEditor({
       active = false;
       window.clearTimeout(timeout);
     };
-  }, [source, render, onRendered]);
+  }, [source, initialSvg, renderPending, render, onRendered]);
 
   return (
     <div className="plantuml-editor">

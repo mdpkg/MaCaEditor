@@ -1,4 +1,4 @@
-import type { DocumentState } from "../document";
+import { updateRenderedDiagram, type DocumentState } from "../document";
 import { insertMarkdownImages } from "../markdown";
 
 export const DEFAULT_MERMAID_DIR = "diagrams";
@@ -91,13 +91,5 @@ export function saveMermaidToDocument(
 ): DocumentState {
   const resource = findMermaidResourceBySource(state.manifest, sourcePath);
   if (!resource) throw new Error(`Mermaid resource not found: ${sourcePath}`);
-  return {
-    ...state,
-    dirty: true,
-    files: state.files.map((file) => {
-      if (file.path === sourcePath) return { ...file, content: source };
-      if (file.path === resource.rendered) return { ...file, content: svg };
-      return file;
-    }),
-  };
+  return updateRenderedDiagram(state, sourcePath, resource.rendered, source, svg);
 }
