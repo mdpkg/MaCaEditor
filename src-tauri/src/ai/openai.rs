@@ -2,7 +2,7 @@
 /// `async-openai` はこの実装内部に閉じ込め、
 /// アプリケーション層へは MaCa Editor 独自型のみを公開する。
 use async_openai::config::Config;
-use async_openai::error::{ApiError, OpenAIError, WrappedError};
+use async_openai::error::{ApiError, ApiErrorResponse, OpenAIError, WrappedError};
 use async_openai::middleware::{retry::OpenAIRetryLayer, HttpRequestFactory, ReqwestService};
 use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
@@ -13,7 +13,8 @@ use async_openai::types::chat::{
 };
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::StreamExt;
-use tower::{Layer, ServiceExt};
+use reqwest::StatusCode;
+use tower::{service_fn, Layer, ServiceExt};
 
 use crate::ai::error::{classify_http_status, AiError};
 use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
@@ -35,8 +36,10 @@ impl OpenAiCompatibleProvider {
             }
         }
         let http = reqwest::Client::new();
+        let transport = http.clone();
+        let service = service_fn(move |request| execute_http_request(transport.clone(), request));
         Self {
-            client: async_openai::Client::build(http.clone(), config),
+            client: async_openai::Client::build(http.clone(), config).with_http_service(service),
             http,
             model: "default".to_string(),
         }
@@ -199,9 +202,7 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
                 .build();
             async { request.map_err(OpenAIError::Reqwest) }
         });
-        let response = OpenAIRetryLayer::default()
-            .layer(ReqwestService::new(self.http.clone()))
-            .oneshot(factory)
+        let response = execute_http_request(self.http.clone(), factory)
             .await
             .map_err(map_openai_error)?;
         let status = response.status();
@@ -227,6 +228,56 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
 
         Ok(Box::new(Box::pin(stream_events(response))))
     }
+}
+
+async fn execute_http_request(
+    http: reqwest::Client,
+    request: HttpRequestFactory,
+) -> Result<reqwest::Response, OpenAIError> {
+    let response = OpenAIRetryLayer::default()
+        .layer(ReqwestService::new(http))
+        .oneshot(request)
+        .await;
+    let response = match response {
+        // The retry layer deserializes only 429 responses and drops their status if parsing fails.
+        Err(OpenAIError::JSONDeserialize(_, body)) => {
+            return Err(unstructured_http_error(StatusCode::TOO_MANY_REQUESTS, &body));
+        }
+        other => other?,
+    };
+
+    let status = response.status();
+    if !matches!(
+        status,
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::REQUEST_TIMEOUT
+    ) {
+        return Ok(response);
+    }
+    let bytes = response.bytes().await.map_err(OpenAIError::Reqwest)?;
+    match serde_json::from_slice::<WrappedError>(&bytes) {
+        Ok(wrapped) => Err(OpenAIError::ApiError(ApiErrorResponse {
+            status_code: status,
+            api_error: wrapped.error,
+        })),
+        Err(_) => Err(unstructured_http_error(status, &String::from_utf8_lossy(&bytes))),
+    }
+}
+
+fn unstructured_http_error(status: StatusCode, body: &str) -> OpenAIError {
+    let message = if body.is_empty() {
+        format!("HTTP {}", status.as_u16())
+    } else {
+        format!("HTTP {}\n\n{body}", status.as_u16())
+    };
+    OpenAIError::ApiError(ApiErrorResponse {
+        status_code: status,
+        api_error: ApiError {
+            message,
+            r#type: None,
+            param: None,
+            code: None,
+        },
+    })
 }
 
 async fn read_body(response: reqwest::Response) -> Result<String, AiError> {
