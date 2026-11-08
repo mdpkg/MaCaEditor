@@ -47,6 +47,10 @@ export function listSavedEditHistories(): Promise<SavedEditHistory[]> {
   return invoke("list_saved_edit_histories");
 }
 
+export function estimateReclaimableHistoryBytes(documentIds: string[]): Promise<number> {
+  return invoke("estimate_reclaimable_history_bytes", { documentIds });
+}
+
 export function deleteSavedEditHistory(documentId: string): Promise<void> {
   return invoke("delete_saved_edit_history", { documentId });
 }

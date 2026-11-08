@@ -34,6 +34,7 @@ export interface SavedEditHistory {
   path: string;
   saved_at: number | null;
   access: "available" | "missing" | "unavailable" | "denied" | "wrong_kind";
+  size_bytes: number;
 }
 
 export interface FileContent {

@@ -1388,7 +1388,9 @@ body {
 }
 
 .saved-history-table-scroll {
-  overflow-x: auto;
+  height: min(42vh, 360px);
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .saved-history-batch-controls {
@@ -1412,7 +1414,9 @@ body {
 
 .saved-history-table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .saved-history-table th,
@@ -1423,8 +1427,15 @@ body {
   vertical-align: top;
 }
 
+.saved-history-table th:nth-child(2) { width: 172px; }
+.saved-history-table th:nth-child(3) { width: 146px; }
+.saved-history-table th:nth-child(4) { width: 105px; }
+.saved-history-table th:nth-child(5) { width: 36px; }
+.saved-history-table th:nth-child(6) { width: 75px; }
+
 .saved-history-table th button,
-.saved-history-table td:not(:first-child) {
+.saved-history-table td:nth-child(2),
+.saved-history-table td:nth-child(4) {
   white-space: nowrap;
 }
 
@@ -1444,6 +1455,10 @@ body {
 .saved-history-confirm-list {
   max-height: 35vh;
   overflow-y: auto;
+}
+
+.saved-history-estimate {
+  font-weight: 600;
 }
 
 .saved-history-dialog .about-dialog-actions {
