@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use rusqlite::ErrorCode;
 use tokio::sync::watch::{self, Receiver, Sender};
 
-use crate::saved_history::{self, HistoryError};
+use crate::saved_history;
 
 const SAVE_QUIET_PERIOD: Duration = Duration::from_millis(500);
 
@@ -65,12 +64,7 @@ async fn run(database: PathBuf, mut changes: Receiver<SaveActivity>) {
         .await;
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(HistoryError::Sql(error)))
-                if matches!(
-                    error.sqlite_error_code(),
-                    Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
-                ) =>
-            {
+            Ok(Err(error)) if error.is_busy() => {
                 // An independent connection can release its lock without a local save notification.
                 continue;
             }

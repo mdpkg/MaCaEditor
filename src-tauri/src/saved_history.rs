@@ -1,5 +1,6 @@
 use std::fs;
 use std::io;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -8,6 +9,9 @@ use rusqlite::{
     params, Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior,
 };
 use sha2::{Digest, Sha256};
+
+#[path = "saved_history_compaction.rs"]
+mod compaction;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EditCheckpoint {
@@ -44,6 +48,17 @@ pub enum HistoryError {
     Schema(i64),
     #[error("edit history path is not UTF-8")]
     Path,
+    #[error("edit history database changed or is in use")]
+    Busy,
+}
+
+impl HistoryError {
+    pub(crate) fn is_busy(&self) -> bool {
+        matches!(self, Self::Busy)
+            || matches!(self, Self::Sql(error) if matches!(
+                error.sqlite_error_code(), Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+            ))
+    }
 }
 
 type Result<T> = std::result::Result<T, HistoryError>;
@@ -83,21 +98,49 @@ pub fn existing_revision(path: &Path) -> io::Result<Option<String>> {
     Ok(Some(format!("{:x}", hash.finalize())))
 }
 
-fn connect(path: &Path) -> Result<Connection> {
+struct HistoryConnection {
+    db: Connection,
+    _publication_guard: fs::File,
+}
+
+impl Deref for HistoryConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        &self.db
+    }
+}
+
+impl DerefMut for HistoryConnection {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.db
+    }
+}
+
+fn connect(path: &Path) -> Result<HistoryConnection> {
     connect_with_timeout(path, Duration::from_secs(5))
 }
 
-fn connect_with_timeout(path: &Path, timeout: Duration) -> Result<Connection> {
+fn connect_with_timeout(path: &Path, timeout: Duration) -> Result<HistoryConnection> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let publication_guard = compaction::read_guard(path, timeout)?;
+    let db = connect_sqlite(path, timeout)?;
+    Ok(HistoryConnection {
+        db,
+        _publication_guard: publication_guard,
+    })
+}
+
+fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
     let mut db = Connection::open(path)?;
     db.busy_timeout(timeout)?;
     db.execute_batch(
         "PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL;",
     )?;
     let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if matches!(version, 0 | 1) {
+    if matches!(version, 0..=2) {
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS checkpoint (
@@ -120,10 +163,10 @@ fn connect_with_timeout(path: &Path, timeout: Duration) -> Result<Connection> {
                 BEFORE INSERT ON checkpoint_payload
                 WHEN EXISTS (SELECT 1 FROM payload_reclaim WHERE digest = NEW.digest)
                 BEGIN SELECT RAISE(ABORT, 'attachment is being reclaimed'); END;
-             PRAGMA user_version = 2;",
+             PRAGMA user_version = 3;",
         )?;
         tx.commit()?;
-    } else if version != 2 {
+    } else if version != 3 {
         return Err(HistoryError::Schema(version));
     }
     Ok(db)
@@ -191,15 +234,8 @@ fn reclaim_payload_chunk(tx: &Transaction<'_>, key: &str, zeroes: &[u8]) -> Resu
             "UPDATE payload_reclaim SET next_offset = ?2 WHERE digest = ?1",
             params![key, (offset + count) as u32],
         )?;
-        return Ok(false);
+        return Ok(offset + count == size);
     }
-
-    // The payload bytes have already been zeroed in committed batches. Free its overflow
-    // pages without rewriting the entire chain with zeros a second time.
-    tx.pragma_update(None, "secure_delete", "FAST")?;
-    let removed = tx.execute("DELETE FROM payload WHERE digest = ?1", [key]);
-    tx.pragma_update(None, "secure_delete", "ON")?;
-    removed?;
     Ok(true)
 }
 
@@ -252,24 +288,8 @@ pub(crate) fn reclaim_pending(
             }
         }
     }
-    if should_yield() {
-        return Ok(());
-    }
-    db.progress_handler(100, Some(should_yield.clone()))?;
-    let result = reclaim_free_pages(&db);
-    db.progress_handler(0, None::<fn() -> bool>)?;
-    if let Err(error) = result {
-        if error.sqlite_error_code() == Some(ErrorCode::OperationInterrupted) && should_yield() {
-            return Ok(());
-        }
-        return Err(error.into());
-    }
-    if should_yield() {
-        return Ok(());
-    }
-    // Keep requests committed by other saves while maintenance was running.
-    db.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
-    Ok(())
+    drop(db);
+    compaction::rebuild(database, last_request, should_yield)
 }
 
 pub struct PendingCheckpoint {
@@ -465,6 +485,149 @@ mod tests {
         ))
     }
 
+    fn remove_test_database(database: &Path) {
+        fs::remove_file(database).unwrap();
+        for suffix in [".publish-lock", ".reclaim-lock"] {
+            let path = compaction::sidecar(database, suffix);
+            if path.exists() {
+                fs::remove_file(path).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn final_page_release_can_pause_without_deleting_the_live_payload() {
+        let database = test_database();
+        let document = "package:/branch";
+        for (revision, attachments) in [
+            ("old", vec![Ok(vec![0; 9 * 1024 * 1024])]),
+            ("branch", vec![]),
+        ] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                document.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        let db = connect(&database).unwrap();
+        db.execute(
+            "INSERT INTO payload_reclaim SELECT digest, length(data) FROM payload",
+            [],
+        )
+        .unwrap();
+        drop(db);
+
+        let scratch = database.with_extension("sqlite3.reclaim");
+        reclaim_pending(&database, move || scratch.exists()).unwrap();
+
+        let db = connect(&database).unwrap();
+        let pending: u32 = db
+            .query_row("SELECT count(*) FROM payload_reclaim", [], |row| row.get(0))
+            .unwrap();
+        drop(db);
+        remove_test_database(&database);
+        assert_eq!(
+            pending, 1,
+            "the original must still have the pending payload when final release yields"
+        );
+    }
+
+    #[test]
+    fn stale_or_busy_compaction_never_replaces_the_current_database() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+
+        let database = test_database();
+        let target = "package:/branch";
+        let other = "folder:/later";
+        for (revision, attachments) in [
+            ("old", vec![Ok(vec![0; 9 * 1024 * 1024])]),
+            ("branch", vec![]),
+        ] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                target.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        let db = connect(&database).unwrap();
+        db.execute(
+            "INSERT INTO payload_reclaim SELECT digest, length(data) FROM payload",
+            [],
+        )
+        .unwrap();
+        drop(db);
+
+        let live = database.clone();
+        let scratch = compaction::sidecar(&database, ".reclaim");
+        let observed_scratch = scratch.clone();
+        let copied = Arc::new(AtomicBool::new(false));
+        let saved = Arc::new(AtomicBool::new(false));
+        let did_save = saved.clone();
+        let result = reclaim_pending(&database, move || {
+            // Start a new save after the copy has been compacted, but before publication.
+            let size = fs::metadata(&observed_scratch)
+                .map(|info| info.len())
+                .unwrap_or(0);
+            if size >= 9 * 1024 * 1024 {
+                copied.store(true, Ordering::Relaxed);
+            }
+            if copied.load(Ordering::Relaxed)
+                && (4096..128 * 1024).contains(&size)
+                && !did_save.swap(true, Ordering::Relaxed)
+            {
+                PendingCheckpoint::prepare(
+                    live.clone(),
+                    other.into(),
+                    "latest",
+                    true,
+                    "newer history".into(),
+                    [Ok(vec![1, 2, 3])],
+                )
+                .unwrap()
+                .complete("latest")
+                .unwrap();
+            }
+            false
+        });
+        assert!(saved.load(Ordering::Relaxed));
+        assert!(matches!(result, Err(HistoryError::Busy)));
+        assert!(!scratch.exists());
+        assert!(fs::metadata(&database).unwrap().len() > 9 * 1024 * 1024);
+
+        let reader = connect(&database).unwrap();
+        assert!(matches!(
+            reclaim_pending(&database, || false),
+            Err(HistoryError::Busy)
+        ));
+        drop(reader);
+
+        reclaim_pending(&database, || false).unwrap();
+        assert!(fs::metadata(&database).unwrap().len() < 128 * 1024);
+        let newer = load(&database, other, "latest")
+            .unwrap()
+            .unwrap()
+            .checkpoint;
+        assert_eq!(newer.data, "newer history");
+        assert_eq!(newer.attachments, ["AQID"]);
+        assert!(load(&database, target, "branch").unwrap().is_some());
+        remove_test_database(&database);
+    }
+
     #[test]
     fn a_single_attachment_can_pause_after_its_first_reclaim_batch() {
         let database = test_database();
@@ -546,7 +709,7 @@ mod tests {
         let bytes = STANDARD.decode(&recovered.attachments[0]).unwrap();
         assert_eq!(bytes.len(), size);
         assert!(bytes.iter().all(|&byte| byte == 0xcd));
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -593,7 +756,7 @@ mod tests {
         let version: i64 = db
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let count: u32 = db
             .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
             .unwrap();
@@ -605,7 +768,7 @@ mod tests {
             .checkpoint;
         assert_eq!(legacy.data, "old cursor");
         assert_eq!(legacy.attachments, ["AQID"]);
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -636,7 +799,7 @@ mod tests {
         let elapsed = start.elapsed();
         save.commit().unwrap();
         drop(foreground);
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
         assert!(
             elapsed < Duration::from_secs(1),
             "maintenance waited {elapsed:?} on a foreground writer"
@@ -672,10 +835,10 @@ mod tests {
         let original_size = fs::metadata(&database).unwrap().len();
         let observe = database.clone();
         reclaim_pending(&database, move || {
-            // Request a pause when the first deletion becomes visible to another connection.
+            // Request a pause when the first complete erase becomes visible to another connection.
             let db = Connection::open(&observe).unwrap();
             let count: u32 = db
-                .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+                .query_row("SELECT count(*) FROM payload_reclaim JOIN payload USING(digest) WHERE next_offset = length(data)", [], |row| row.get(0))
                 .unwrap();
             count == 1
         })
@@ -683,7 +846,7 @@ mod tests {
 
         let db = connect(&database).unwrap();
         let count: u32 = db
-            .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+            .query_row("SELECT count(*) FROM payload_reclaim JOIN payload USING(digest) WHERE next_offset = length(data)", [], |row| row.get(0))
             .unwrap();
         let pending: u32 = db
             .query_row("SELECT count(*) FROM reclaim_request", [], |row| row.get(0))
@@ -703,16 +866,11 @@ mod tests {
                 .data,
             "branch"
         );
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
-    fn interrupted_vacuum_preserves_the_request_and_saved_payloads() {
-        use std::sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        };
-
+    fn deferred_compaction_preserves_the_request_and_saved_payloads() {
         let database = test_database();
         let document = "folder:/branch";
         let survivor = "package:/keep";
@@ -743,13 +901,8 @@ mod tests {
         tx.commit().unwrap();
         drop(db);
         let original_size = fs::metadata(&database).unwrap().len();
-        let checks = Arc::new(AtomicUsize::new(0));
-        reclaim_pending(&database, move || {
-            // There are no orphan BLOBs left. Permit entry and the pre-VACUUM check, then
-            // request a pause when SQLite calls the progress handler.
-            checks.fetch_add(1, Ordering::Relaxed) >= 2
-        })
-        .unwrap();
+        let scratch = compaction::sidecar(&database, ".reclaim");
+        reclaim_pending(&database, move || scratch.exists()).unwrap();
         assert_eq!(fs::metadata(&database).unwrap().len(), original_size);
         let before = load(&database, survivor, "keep")
             .unwrap()
@@ -766,7 +919,7 @@ mod tests {
                 .checkpoint,
             before
         );
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -844,7 +997,7 @@ mod tests {
             .unwrap();
         assert_eq!(requests, 0);
         drop(db);
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -891,7 +1044,7 @@ mod tests {
                 .data,
             "saved branch"
         );
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -926,7 +1079,7 @@ mod tests {
             .unwrap();
         assert_eq!(maintenance_tables, 0);
         drop(db);
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -982,7 +1135,7 @@ mod tests {
             [0xab]
         );
         let compacted_size = fs::metadata(&database).unwrap().len();
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
         assert!(original_size.saturating_sub(compacted_size) >= unique_bytes as u64,
             "expected at least {unique_bytes} bytes back, file went from {original_size} to {compacted_size} bytes");
     }
@@ -1017,7 +1170,7 @@ mod tests {
             .is_none());
 
         let size = fs::metadata(&database).unwrap().len();
-        fs::remove_file(&database).unwrap();
+        remove_test_database(&database);
         assert!(
             size < 128 * 1024,
             "empty database still occupies {size} bytes"
@@ -1057,7 +1210,7 @@ mod tests {
         assert!(read_chunk(&database, download.id, 1, download.sizes[1], 10).is_err());
         clear(&database, document).unwrap();
         assert!(read_chunk(&database, download.id, 1, 0, 10).is_err());
-        std::fs::remove_file(database).unwrap();
+        remove_test_database(&database);
     }
 
     #[test]
@@ -1102,6 +1255,6 @@ mod tests {
         assert_eq!(read("new").as_deref(), Some("new history"));
         clear(&database, document).unwrap();
         assert_eq!(read("new"), None);
-        std::fs::remove_file(database).unwrap();
+        remove_test_database(&database);
     }
 }
