@@ -42,12 +42,69 @@ export interface EditHistory {
   cursor: number;
 }
 
+interface AttachmentPayload {
+  base64: string;
+  references: number;
+}
+
+const largeAttachmentBase64Length = 2 ** 20;
+const attachmentIndexes = new WeakMap<EditHistory, Map<string, AttachmentPayload[]>>();
+
+function attachmentKey(base64: string): string {
+  const middle = Math.floor(base64.length / 2);
+  return `${base64.length}:${base64.slice(0, 16)}:${base64.slice(middle, middle + 16)}:${base64.slice(-16)}`;
+}
+
+export function reuseAttachmentPayload(history: EditHistory, base64: string): string {
+  const index = attachmentIndexes.get(history);
+  if (!index || base64.length < largeAttachmentBase64Length) return base64;
+  // Samples only select candidates. Exact equality keeps same-sized files with matching samples distinct.
+  return index.get(attachmentKey(base64))?.find((candidate) => candidate.base64 === base64)?.base64 ?? base64;
+}
+
+function updateAttachmentReferences(history: EditHistory, entry: EditHistoryEntry, delta: 1 | -1) {
+  if (entry.kind !== "files") return;
+  let index = attachmentIndexes.get(history);
+  for (const change of entry.files) {
+    for (const file of [change.before?.file, change.after?.file]) {
+      const base64 = file?.base64;
+      if (!base64 || base64.length < largeAttachmentBase64Length) continue;
+      if (!index) {
+        if (delta < 0) return;
+        index = new Map();
+        attachmentIndexes.set(history, index);
+      }
+      const key = attachmentKey(base64);
+      const bucket = index.get(key) ?? [];
+      const position = bucket.findIndex((candidate) => candidate.base64 === base64);
+      if (position < 0) {
+        if (delta > 0) {
+          bucket.push({ base64, references: 1 });
+          index.set(key, bucket);
+        }
+      } else {
+        const candidate = bucket[position];
+        candidate.references += delta;
+        if (candidate.references === 0) {
+          bucket.splice(position, 1);
+          if (bucket.length === 0) index.delete(key);
+        }
+      }
+    }
+  }
+}
+
 export function createEditHistory(): EditHistory {
   return { entries: [], cursor: 0 };
 }
 
 export function recordEdit(history: EditHistory, entry: EditHistoryEntry) {
-  history.entries.splice(history.cursor);
+  if (history.cursor < history.entries.length) {
+    for (const discarded of history.entries.splice(history.cursor)) {
+      updateAttachmentReferences(history, discarded, -1);
+    }
+  }
+  updateAttachmentReferences(history, entry, 1);
   history.entries.push(entry);
   history.cursor++;
 }
@@ -77,6 +134,13 @@ export function sameSavedContent(current: DocumentState, saved: DocumentState): 
   return current.files.every((file) => sameFile(file, savedFiles.get(file.path)));
 }
 
+function historySlice(source: string, from: number, to: number): string {
+  const slice = source.slice(from, to);
+  if (!slice || source.length < 4096 || slice.length * 4 >= source.length) return slice;
+  // A small slice can otherwise keep an entire old document alive. Copy it without changing UTF-16 code units.
+  return JSON.parse(JSON.stringify(slice)) as string;
+}
+
 export function textHistoryEntry(
   path: string, before: string, after: string, beforeStale: string[] | undefined, afterStale: string[] | undefined,
   label = path,
@@ -92,7 +156,7 @@ export function textHistoryEntry(
   return {
     kind: "text", label, path, beforeStale, afterStale,
     change: {
-      from, before: before.slice(from, beforeEnd), after: after.slice(from, afterEnd),
+      from, before: historySlice(before, from, beforeEnd), after: historySlice(after, from, afterEnd),
       beforeLength: before.length, afterLength: after.length,
     },
   };
