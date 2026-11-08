@@ -22,6 +22,8 @@ use windows_sys::{
     },
 };
 
+use super::PrintMonitorEvent;
+
 const PREVIEW_TIMEOUT: Duration = Duration::from_secs(600);
 const EVENT_GRACE: Duration = Duration::from_secs(3);
 
@@ -32,12 +34,12 @@ pub struct PrintMonitor {
 
 struct Request {
     title: String,
-    channel: Channel<String>,
+    channel: Channel<PrintMonitorEvent>,
     ready: oneshot::Sender<Result<(), String>>,
 }
 
 impl PrintMonitor {
-    pub async fn register(&self, channel: Channel<String>) -> Result<String, String> {
+    pub async fn register(&self, channel: Channel<PrintMonitorEvent>) -> Result<String, String> {
         // WebView2 shortens long spooler names in the middle. Keep the marker
         // and its separator within the retained prefix.
         let id = uuid::Uuid::new_v4().simple().to_string();
@@ -69,7 +71,7 @@ impl PrintMonitor {
 }
 
 struct PendingPrint {
-    channel: Channel<String>,
+    channel: Channel<PrintMonitorEvent>,
     started: Instant,
 }
 
@@ -116,10 +118,13 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
         for request in requests.try_iter() {
             add_request(&mut pending, request);
         }
-        if queue.wait()? && !queue.read(&mut jobs, false)? {
-            jobs.clear();
-            failures.clear();
-            queue.read(&mut jobs, true)?;
+        match queue.read_changes(&mut jobs) {
+            Ok(true) => failures.clear(),
+            Ok(false) => {}
+            Err(error) => {
+                notify_monitoring_failure(&pending, &error);
+                return Err(error);
+            }
         }
         let now = Instant::now();
         failures.extend(events.read().map(|failure| (now, failure)));
@@ -129,7 +134,7 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
                 .map(str::to_owned)
             {
                 if let Some(print) = pending.remove(&key) {
-                    let _ = print.channel.send(failure.detail());
+                    let _ = print.channel.send(PrintMonitorEvent::JobFailed(failure.detail()));
                 }
                 return false;
             }
@@ -139,6 +144,14 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
         jobs.retain(|_, job| job.ended.is_none() || job.awaiting_failure_event(now));
     }
     Ok(())
+}
+
+fn notify_monitoring_failure(pending: &Pending, error: &io::Error) {
+    // One lost session can affect several registered prints in the main window.
+    // Report it once through the most recently registered print.
+    if let Some(print) = pending.values().max_by_key(|print| print.started) {
+        let _ = print.channel.send(PrintMonitorEvent::MonitoringFailed(error.to_string()));
+    }
 }
 
 fn update_pending_jobs(pending: &mut Pending, jobs: &HashMap<u32, Job>, now: Instant) {
@@ -156,7 +169,7 @@ fn update_pending_jobs(pending: &mut Pending, jobs: &HashMap<u32, Job>, now: Ins
             } else {
                 job.status_text.clone()
             };
-            let _ = print.channel.send(detail);
+            let _ = print.channel.send(PrintMonitorEvent::JobFailed(detail));
             return false;
         }
         job.ended.is_none()
@@ -315,6 +328,15 @@ impl Queue {
             WAIT_TIMEOUT => Ok(false),
             _ => Err(io::Error::last_os_error()),
         }
+    }
+
+    fn read_changes(&self, jobs: &mut HashMap<u32, Job>) -> io::Result<bool> {
+        if !self.wait()? || self.read(jobs, false)? {
+            return Ok(false);
+        }
+        jobs.clear();
+        self.read(jobs, true)?;
+        Ok(true)
     }
 
     fn read(&self, jobs: &mut HashMap<u32, Job>, refresh: bool) -> io::Result<bool> {
@@ -548,7 +570,7 @@ mod tests {
                 TITLE.to_owned(),
                 PendingPrint {
                     channel: Channel::new(move |body| {
-                        tx.send(body.deserialize::<String>()?).unwrap();
+                        tx.send(body.deserialize::<PrintMonitorEvent>()?).unwrap();
                         Ok(())
                     }),
                     started: now,
@@ -567,7 +589,7 @@ mod tests {
             assert!(rx.try_recv().is_err());
             assert!(pending.contains_key(TITLE));
             update_pending_jobs(&mut pending, &jobs, now + EVENT_GRACE);
-            assert_eq!(rx.try_recv().unwrap(), expected);
+            assert_eq!(rx.try_recv().unwrap(), PrintMonitorEvent::JobFailed(expected.to_owned()));
             assert!(pending.is_empty());
         }
     }
@@ -595,6 +617,37 @@ mod tests {
             update_pending_jobs(&mut pending, &HashMap::from([(1, job)]), now + EVENT_GRACE);
             assert_eq!(pending.contains_key(TITLE), keep_pending);
         }
+    }
+
+    #[test]
+    fn reports_one_monitoring_failure_with_the_os_error() {
+        let now = Instant::now();
+        let (tx, rx) = mpsc::channel();
+        let pending = Pending::from([
+            (
+                "earlier".to_owned(),
+                PendingPrint {
+                    channel: Channel::new(|_| panic!("duplicate monitoring error")),
+                    started: now,
+                },
+            ),
+            (
+                "later".to_owned(),
+                PendingPrint {
+                    channel: Channel::new(move |body| {
+                        tx.send(body.deserialize::<PrintMonitorEvent>()?).unwrap();
+                        Ok(())
+                    }),
+                    started: now + Duration::from_secs(1),
+                },
+            ),
+        ]);
+        let error = io::Error::from_raw_os_error(6);
+
+        notify_monitoring_failure(&pending, &error);
+
+        assert_eq!(rx.try_recv().unwrap(), PrintMonitorEvent::MonitoringFailed(error.to_string()));
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

@@ -273,7 +273,10 @@ describe("App persistence", () => {
     expect(container.querySelector(".status-message")?.textContent).toBe("エディタ設定を保存しました。");
   });
 
-  test("shows a Windows print failure in Japanese and retains the system message", async () => {
+  test.each([
+    ["jobFailed", "印刷", "Win32 エラー コード: 5\nアクセスが拒否されました。\n"],
+    ["monitoringFailed", "印刷状態の監視", "The handle is invalid. (os error 6)"],
+  ] as const)("shows a Windows print error of kind %s in Japanese", async (kind, operation, detail) => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
     await click("開く", container.querySelector(".empty-state")!);
@@ -287,9 +290,8 @@ describe("App persistence", () => {
     expect(print).toHaveBeenCalledOnce();
     expect(document.title).toBe("original.mdpkg — MaCa Editor");
 
-    const detail = "Win32 エラー コード: 5\nアクセスが拒否されました。\n";
-    act(() => vi.mocked(tauri.watchPrint).mock.calls[0][0](detail));
-    const summary = "印刷に失敗しました。詳しくは詳細欄を確認してください。";
+    act(() => vi.mocked(tauri.watchPrint).mock.calls[0][0]({ kind, detail }));
+    const summary = `${operation}に失敗しました。詳しくは詳細欄を確認してください。`;
     const banner = container.querySelector(".operation-error")!;
     expect(banner.querySelector('[role="alert"]')?.textContent).toBe(summary);
     expect(container.querySelector(".status-message")?.textContent).toBe(summary);
