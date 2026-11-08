@@ -1,4 +1,5 @@
 import { uiText } from "../lib/uiText";
+import { localizeVimPanel } from "../lib/vimLocalization";
 import { Menu, MenuSubmenu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -290,7 +291,12 @@ export function CodeEditor({
     const vimEditor = getCM(view);
     if (!vimEditor) return;
     vimSaveHandlers.set(vimEditor, () => { void onSaveRef.current?.(); });
-    return () => { vimSaveHandlers.delete(vimEditor); };
+    const panel = view.dom.querySelector<HTMLElement>(".cm-vim-panel");
+    const disposeLocalization = panel && localizeVimPanel(panel, vimEditor);
+    return () => {
+      disposeLocalization?.();
+      vimSaveHandlers.delete(vimEditor);
+    };
   }, [language, vimMode]);
 
   useEffect(() => {

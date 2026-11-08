@@ -149,6 +149,39 @@ describe("CodeEditor", () => {
     act(() => root.unmount());
   });
 
+  test("localizes Vim mode, command prompts, and notifications", async () => {
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<CodeEditor value="alpha beta" onChange={vi.fn()} vimMode />));
+      const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+      const editor = getCM(view)!;
+      const panel = container.querySelector(".cm-vim-panel")!;
+      expect(panel.textContent).toBe("--ノーマル--");
+
+      await act(async () => { Vim.handleKey(editor, "i", "user"); });
+      expect(panel.textContent).toBe("--挿入--");
+      await act(async () => { Vim.handleKey(editor, "<Esc>", "user"); });
+      expect(panel.textContent).toBe("--ノーマル--");
+
+      await act(async () => { Vim.handleKey(editor, ":", "user"); });
+      const input = panel.querySelector("input")!;
+      expect(input.getAttribute("aria-label")).toBe("Vim コマンド");
+      expect(document.activeElement).toBe(input);
+      input.value = "unknownCommand";
+      await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter", keyCode: 13, bubbles: true, cancelable: true,
+      })));
+      expect(panel.querySelector(".cm-vim-message")?.textContent).toBe("不明な Vim コマンドです。:unknownCommand");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("keeps the editor, selection, and undo history when toggling Vim", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
