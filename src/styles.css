@@ -1391,6 +1391,25 @@ body {
   overflow-x: auto;
 }
 
+.saved-history-batch-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.about-dialog label.saved-history-missing-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.about-dialog label.saved-history-missing-filter > input {
+  width: auto;
+  margin: 0;
+}
+
 .saved-history-table {
   width: 100%;
   border-collapse: collapse;
@@ -1420,6 +1439,11 @@ body {
 .saved-history-table td:first-child,
 .saved-history-confirm-path {
   overflow-wrap: anywhere;
+}
+
+.saved-history-confirm-list {
+  max-height: 35vh;
+  overflow-y: auto;
 }
 
 .saved-history-dialog .about-dialog-actions {

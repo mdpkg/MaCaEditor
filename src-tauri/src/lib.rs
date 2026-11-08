@@ -112,6 +112,7 @@ pub fn run() {
             commands::clear_saved_edit_history,
             commands::list_saved_edit_histories,
             commands::delete_saved_edit_history,
+            commands::delete_missing_saved_edit_histories,
             history_transfer::begin_edit_history_upload,
             history_transfer::upload_edit_history_chunk,
             history_transfer::discard_edit_history_upload,

@@ -20,6 +20,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   clearSavedEditHistory: vi.fn(),
   listSavedEditHistories: vi.fn(),
   deleteSavedEditHistory: vi.fn(),
+  deleteMissingSavedEditHistories: vi.fn(),
   exportPackage: vi.fn(),
   watchFolder: vi.fn(),
   watchPrint: vi.fn(),
@@ -694,6 +695,64 @@ describe("App persistence", () => {
     expect(paths().sort()).toEqual([rows[1].path, rows[2].path]);
     expect(tauri.openPackage).not.toHaveBeenCalled();
     expect(tauri.openFolder).not.toHaveBeenCalled();
+  });
+
+  test("confirms a batch of visible missing histories and reports a skipped location", async () => {
+    const rows = [
+      { id: "folder:C:/Drafts/Alpha", path: "C:/Drafts/Alpha", saved_at: 3000, access: "missing" },
+      { id: "package:C:/Drafts/Beta.mdpkg", path: "C:/Drafts/Beta.mdpkg", saved_at: 2000, access: "missing" },
+      { id: "folder:Z:/Offline", path: "Z:/Offline", saved_at: 1000, access: "unavailable" },
+      { id: "package:C:/Private.mdpkg", path: "C:/Private.mdpkg", saved_at: null, access: "denied" },
+    ] as const;
+    vi.mocked(tauri.listSavedEditHistories).mockResolvedValueOnce([...rows]).mockResolvedValueOnce([
+      { ...rows[1], access: "unavailable" }, rows[2], rows[3],
+    ]);
+    const clearBatch = vi.mocked(tauri.deleteMissingSavedEditHistories).mockResolvedValue([rows[0].id]);
+
+    await click("ファイル");
+    await click("保存済み編集履歴…");
+    const dialog = container.querySelector(".saved-history-dialog")!;
+    const checkbox = (path: string) => [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .find((input) => input.getAttribute("aria-label")?.endsWith(path));
+    const confirmation = () => {
+      const dialogs = container.querySelectorAll('[role="dialog"]');
+      return dialogs[dialogs.length - 1];
+    };
+    expect(checkbox(rows[2].path)).toBeUndefined();
+    expect(checkbox(rows[3].path)).toBeUndefined();
+
+    await act(async () => dialog.querySelector<HTMLInputElement>('input[aria-label="「見つかりません」のみ"]')!.click());
+    expect(dialog.textContent).not.toContain(rows[2].path);
+    expect(dialog.textContent).not.toContain(rows[3].path);
+    await act(async () => { checkbox(rows[0].path)!.click(); checkbox(rows[1].path)!.click(); });
+    const search = dialog.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await inputValue(search, "alpha");
+    expect(checkbox(rows[1].path)).toBeUndefined();
+    await click("選択した履歴を消去…", dialog);
+    let confirm = confirmation();
+    expect(confirm.textContent).toContain(rows[0].path);
+    expect(confirm.textContent).not.toContain(rows[1].path);
+    await click("キャンセル", confirm);
+    expect(clearBatch).not.toHaveBeenCalled();
+
+    await inputValue(search, "");
+    await act(async () => checkbox(rows[1].path)!.click());
+    await click("選択した履歴を消去…", dialog);
+    confirm = confirmation();
+    expect(confirm.textContent).toContain(rows[0].path);
+    expect(confirm.textContent).toContain(rows[1].path);
+    expect(clearBatch).not.toHaveBeenCalled();
+    await click("消去", confirm);
+
+    expect(clearBatch).toHaveBeenCalledTimes(1);
+    expect(clearBatch).toHaveBeenCalledWith([rows[0].id, rows[1].id]);
+    expect(tauri.deleteSavedEditHistory).not.toHaveBeenCalled();
+    expect(dialog.textContent).toContain("1 件の履歴を残しました");
+    await act(async () => dialog.querySelector<HTMLInputElement>('input[aria-label="「見つかりません」のみ"]')!.click());
+    expect(dialog.textContent).not.toContain(rows[0].path);
+    expect(dialog.textContent).toContain(rows[1].path);
+    expect(dialog.textContent).toContain(rows[2].path);
+    expect(dialog.textContent).toContain(rows[3].path);
   });
 
   test("clears local history and reports when SQLite could not release disk space", async () => {

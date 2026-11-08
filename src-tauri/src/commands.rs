@@ -375,6 +375,22 @@ pub async fn delete_saved_edit_history(app: AppHandle, document_id: String) -> R
     .map_err(|error| format!("edit history deletion task failed: {error}"))?
 }
 
+#[tauri::command]
+pub async fn delete_missing_saved_edit_histories(
+    app: AppHandle,
+    document_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let database = history_database(&app)?;
+    let write = prioritize_history_save(&app);
+    tokio::task::spawn_blocking(move || {
+        let _write = write;
+        saved_history::delete_missing_saved_edit_histories(&database, &document_ids)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("edit history bulk deletion task failed: {error}"))?
+}
+
 pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_local_data_dir()

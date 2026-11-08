@@ -51,6 +51,10 @@ export function deleteSavedEditHistory(documentId: string): Promise<void> {
   return invoke("delete_saved_edit_history", { documentId });
 }
 
+export function deleteMissingSavedEditHistories(documentIds: string[]): Promise<string[]> {
+  return invoke("delete_missing_saved_edit_histories", { documentIds });
+}
+
 export function exportPackage(request: SaveRequest): Promise<void> {
   return invoke("export_package", { request });
 }
