@@ -16,6 +16,7 @@ use futures::StreamExt;
 use reqwest::StatusCode;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio_util::task::AbortOnDropHandle;
 use tower::{service_fn, Layer, ServiceExt};
 
 use crate::ai::error::{classify_http_status, AiError};
@@ -204,12 +205,13 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
                 .lock()
                 .unwrap()
                 .take()
+                .map(|error| error.lock().unwrap().clone())
                 .unwrap_or_else(|| AiError::Timeout("connect timeout".to_owned()))),
         }
     }
 }
 
-type RetryError = Arc<Mutex<Option<AiError>>>;
+type RetryError = Arc<Mutex<Option<Arc<Mutex<AiError>>>>>;
 
 impl OpenAiCompatibleProvider {
     async fn open_stream(
@@ -314,26 +316,43 @@ async fn remember_retryable_error(
         return Ok(response);
     }
 
-    *last_error.lock().unwrap() = Some(classify_http_status(
+    // Each attempt owns its diagnostic so a discarded response cannot overwrite a later one.
+    let diagnostic = Arc::new(Mutex::new(classify_http_status(
         status.as_u16(),
         &format!("HTTP {}", status.as_u16()),
-    ));
+    )));
+    *last_error.lock().unwrap() = Some(diagnostic.clone());
     let headers = response.headers().clone();
     let version = response.version();
-    let bytes = response.bytes().await.map_err(OpenAIError::Reqwest)?;
-    let body = String::from_utf8_lossy(&bytes);
-    let error = if status.is_server_error() {
-        classify_http_status(status.as_u16(), &body)
+    let body = if status.is_server_error() {
+        // The SDK decides whether to retry 5xx from its headers. Read the body separately so
+        // a stalled body cannot stop the next attempt. Dropping the response stops that read.
+        let reader = AbortOnDropHandle::new(tokio::spawn(async move {
+            let bytes = response.bytes().await?;
+            *diagnostic.lock().unwrap() =
+                classify_http_status(status.as_u16(), &String::from_utf8_lossy(&bytes));
+            Ok::<_, reqwest::Error>(bytes)
+        }));
+        reqwest::Body::wrap_stream(futures::stream::once(async move {
+            reader
+                .await
+                .map_err(std::io::Error::other)?
+                .map_err(std::io::Error::other)
+        }))
     } else {
-        match serde_json::from_slice::<WrappedError>(&bytes) {
+        // The SDK also reads 429 bodies before retrying to check for exhausted quota.
+        let bytes = response.bytes().await.map_err(OpenAIError::Reqwest)?;
+        *diagnostic.lock().unwrap() = match serde_json::from_slice::<WrappedError>(&bytes) {
             Ok(wrapped) => map_api_error(status, wrapped.error),
-            Err(_) => map_openai_error(unstructured_http_error(status, &body)),
-        }
+            Err(_) => map_openai_error(unstructured_http_error(
+                status,
+                &String::from_utf8_lossy(&bytes),
+            )),
+        };
+        reqwest::Body::from(bytes)
     };
-    *last_error.lock().unwrap() = Some(error);
 
-    // Replay the buffered error to the SDK so that it still applies its normal retry policy.
-    let mut response = tauri::http::Response::new(bytes);
+    let mut response = tauri::http::Response::new(body);
     *response.status_mut() = status;
     *response.version_mut() = version;
     *response.headers_mut() = headers;

@@ -77,6 +77,8 @@ pub enum Scenario {
     HttpBody(u16, &'static str, &'static str),
     RetryAfter(u16, u64, &'static str),
     RetryAfterThenStream(Arc<AtomicBool>),
+    SlowErrorBody,
+    SlowErrorBodyThenStream(Arc<AtomicBool>),
 }
 
 async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
@@ -104,11 +106,24 @@ async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
                 Scenario::RetryAfter(503, 0, "Temporary failure")
             }
         }
+        Scenario::SlowErrorBodyThenStream(retried) => {
+            if retried.swap(true, Ordering::Relaxed) {
+                Scenario::Streaming
+            } else {
+                Scenario::SlowErrorBody
+            }
+        }
         other => other,
     };
 
     match scenario {
-        Scenario::RetryAfterThenStream(_) => unreachable!(),
+        Scenario::RetryAfterThenStream(_) | Scenario::SlowErrorBodyThenStream(_) => unreachable!(),
+        Scenario::SlowErrorBody => {
+            let _ = stream.write_all(
+                b"HTTP/1.1 503 Unavailable\r\nRetry-After: 0\r\nContent-Length: 20\r\nConnection: close\r\n\r\n"
+            ).await;
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
         Scenario::RetryAfter(status, seconds, body) => {
             let response = format!(
                 "HTTP/1.1 {status} Mock Error\r\nRetry-After: {seconds}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -417,6 +432,38 @@ mod tests {
             Some(Ok(crate::ai::types::AiStreamEvent::Completed { .. }))
         ));
         assert_eq!(server.request_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn retries_a_server_error_without_waiting_for_its_body() {
+        use crate::ai::streaming::AiStreamCoordinator;
+
+        let retried = Arc::new(AtomicBool::new(false));
+        let server = MockOpenAiServer::start(Scenario::SlowErrorBodyThenStream(retried)).await;
+        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+        let coordinator = AiStreamCoordinator::new(provider);
+        let result = coordinator.start(sample_request(), Some(1), None).await;
+
+        assert_eq!(result.as_ref().err(), None);
+        let events: Vec<_> = result.unwrap().collect().await;
+        assert!(matches!(
+            events.last(),
+            Some(Ok(crate::ai::types::AiStreamEvent::Completed { .. }))
+        ));
+        assert_eq!(server.request_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_server_status_if_the_last_retry_body_never_finishes() {
+        use crate::ai::streaming::AiStreamCoordinator;
+
+        let server = MockOpenAiServer::start(Scenario::SlowErrorBody).await;
+        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+        let coordinator = AiStreamCoordinator::new(provider);
+        let result = coordinator.start(sample_request(), Some(1), None).await;
+
+        assert_eq!(result.err(), Some(AiError::ServerError("HTTP 503".to_owned())));
+        assert_eq!(server.request_count(), 4);
     }
 
     #[tokio::test]
