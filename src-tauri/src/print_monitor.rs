@@ -22,9 +22,24 @@ pub async fn watch_print(
     monitor.register(channel).await.map(Some)
 }
 
+#[cfg(windows)]
+#[tauri::command]
+pub fn close_print_preview(
+    title: String,
+    monitor: tauri::State<'_, PrintMonitor>,
+) -> Result<(), String> {
+    monitor.close_preview(title)
+}
+
 #[cfg(not(windows))]
 #[tauri::command]
 pub fn watch_print(channel: Channel<PrintMonitorEvent>) -> Option<String> {
     drop(channel);
     None
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn close_print_preview(title: String) {
+    drop(title);
 }

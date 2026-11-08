@@ -69,6 +69,7 @@ import {
   saveAttachment,
   watchFolder,
   watchPrint,
+  closePrintPreview,
   usesMacPreparedPrint,
   printPreparedPages,
   stopWatchingFolder,
@@ -786,9 +787,15 @@ export default function App() {
     }
     const title = document.title;
     const taggedTitle = jobTitle ? `${jobTitle} — ${title}` : title;
+    let restored = false;
     const restoreTitle = () => {
+      if (restored) return;
+      restored = true;
       window.removeEventListener("afterprint", restoreTitle);
       if (document.title === taggedTitle) document.title = title;
+      if (jobTitle) {
+        void closePrintPreview(jobTitle).catch((reason) => console.error("close_print_preview", reason));
+      }
       dispose?.();
       printDialogRef.current = false;
     };

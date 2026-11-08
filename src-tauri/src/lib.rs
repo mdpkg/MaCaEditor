@@ -113,6 +113,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             macos_print::print_prepared_pages,
             print_monitor::watch_print,
+            print_monitor::close_print_preview,
             folder_watcher::watch_folder,
             folder_watcher::stop_watching_folder,
             commands::save_ai_config,
