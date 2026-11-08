@@ -13,7 +13,10 @@ use tokio::sync::oneshot;
 use windows_sys::{
     core::w,
     Win32::{
-        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT},
+        Foundation::{
+            CloseHandle, ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT, HANDLE, INVALID_HANDLE_VALUE,
+            WAIT_OBJECT_0, WAIT_TIMEOUT,
+        },
         Graphics::Printing::*,
         System::{
             EventLog::*,
@@ -113,10 +116,18 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
         let _ = first.ready.send(Err(error.to_string()));
         return Err(error);
     }
+    let mut events = Some(events);
     add_request(&mut pending, first);
     while !pending.is_empty() {
+        let mut event_error = None;
         for request in requests.try_iter() {
             add_request(&mut pending, request);
+            if events.is_none() && event_error.is_none() {
+                match FailureEvents::open() {
+                    Ok(reader) => events = Some(reader),
+                    Err(error) => event_error = Some(error),
+                }
+            }
         }
         match queue.read_changes(&mut jobs) {
             Ok(true) => failures.clear(),
@@ -127,7 +138,13 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
             }
         }
         let now = Instant::now();
-        failures.extend(events.read().map(|failure| (now, failure)));
+        if let Some(reader) = &events {
+            if let Err(error) = reader.read_into(&mut failures, now) {
+                // Keep monitoring queue status if the event log is unavailable.
+                events = None;
+                event_error = Some(error);
+            }
+        }
         failures.retain(|(received, failure)| {
             if let Some(key) = failure
                 .pending_title(&pending, &jobs, now)
@@ -141,6 +158,9 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
             now.duration_since(*received) < EVENT_GRACE
         });
         update_pending_jobs(&mut pending, &jobs, now);
+        if let Some(error) = event_error {
+            notify_monitoring_failure(&pending, &error);
+        }
         jobs.retain(|_, job| job.ended.is_none() || job.awaiting_failure_event(now));
     }
     Ok(())
@@ -461,18 +481,19 @@ impl FailureEvents {
         Ok(events)
     }
 
-    fn read(&self) -> impl Iterator<Item = Failure> + '_ {
-        std::iter::from_fn(|| {
+    fn read_into(&self, failures: &mut Vec<(Instant, Failure)>, now: Instant) -> io::Result<()> {
+        loop {
             let mut event = 0;
             let mut count = 0;
-            (unsafe { EvtNext(self.subscription, 1, &mut event, 0, 0, &mut count) } != 0)
-                .then_some(event)
-        })
-        .filter_map(|event| {
+            if unsafe { EvtNext(self.subscription, 1, &mut event, 0, 0, &mut count) } == 0 {
+                return finish_event_read(io::Error::last_os_error());
+            }
             let failure = self.render(event);
             unsafe { EvtClose(event) };
-            failure
-        })
+            if let Some(failure) = failure {
+                failures.push((now, failure));
+            }
+        }
     }
 
     fn render(&self, event: EVT_HANDLE) -> Option<Failure> {
@@ -534,6 +555,13 @@ impl FailureEvents {
             code: value(9),
             message: value(10),
         })
+    }
+}
+
+fn finish_event_read(error: io::Error) -> io::Result<()> {
+    match error.raw_os_error().map(|code| code as u32) {
+        Some(ERROR_NO_MORE_ITEMS | ERROR_TIMEOUT) => Ok(()),
+        _ => Err(error),
     }
 }
 
@@ -617,6 +645,18 @@ mod tests {
             update_pending_jobs(&mut pending, &HashMap::from([(1, job)]), now + EVENT_GRACE);
             assert_eq!(pending.contains_key(TITLE), keep_pending);
         }
+    }
+
+    #[test]
+    fn distinguishes_an_empty_event_poll_from_a_failed_subscription() {
+        use windows_sys::Win32::Foundation::ERROR_INVALID_HANDLE;
+
+        for code in [ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT] {
+            assert!(finish_event_read(io::Error::from_raw_os_error(code as i32)).is_ok());
+        }
+        let error = finish_event_read(io::Error::from_raw_os_error(ERROR_INVALID_HANDLE as i32))
+            .unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(ERROR_INVALID_HANDLE as i32));
     }
 
     #[test]
