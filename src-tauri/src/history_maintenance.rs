@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tokio::sync::watch::{self, Receiver, Sender};
 
-use crate::saved_history::{self, ReclaimAttempt};
+use crate::saved_history::{self, ReclaimAttempt, ReclaimBatch};
 
 const SAVE_QUIET_PERIOD: Duration = Duration::from_millis(500);
 
@@ -41,6 +41,7 @@ type LatestBatch = Arc<Mutex<Option<ReclaimStatus>>>;
 pub struct HistoryMaintenance {
     activity: Sender<SaveActivity>,
     latest: LatestBatch,
+    ready: Receiver<bool>,
 }
 
 pub struct SaveGuard {
@@ -60,9 +61,29 @@ impl Drop for SaveGuard {
 impl HistoryMaintenance {
     pub fn start(database: PathBuf) -> Self {
         let (activity, changes) = watch::channel(SaveActivity::default());
+        let (initialized, ready) = watch::channel(false);
         let latest = LatestBatch::default();
-        tauri::async_runtime::spawn(run(database, changes, latest.clone()));
-        Self { activity, latest }
+        let worker_batch = latest.clone();
+        tauri::async_runtime::spawn(async move {
+            let path = database.clone();
+            match tokio::task::spawn_blocking(move || saved_history::load_reclaim_batch(&path))
+                .await
+            {
+                Ok(Ok(Some(batch))) => restore_batch(&worker_batch, &changes, batch),
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
+                    eprintln!("could not restore history reclamation status: {error}")
+                }
+                Err(error) => eprintln!("history reclamation status task failed: {error}"),
+            }
+            initialized.send_replace(true);
+            run(database, changes, worker_batch).await;
+        });
+        Self {
+            activity,
+            latest,
+            ready,
+        }
     }
 
     pub fn begin_save(&self) -> SaveGuard {
@@ -111,8 +132,28 @@ impl HistoryMaintenance {
         }
     }
 
-    pub fn status(&self) -> Option<ReclaimStatus> {
+    pub async fn status(&self) -> Option<ReclaimStatus> {
+        let _ = self.ready.clone().wait_for(|ready| *ready).await;
         *self.latest.lock().unwrap()
+    }
+}
+
+fn restore_batch(latest: &LatestBatch, changes: &Receiver<SaveActivity>, batch: ReclaimBatch) {
+    let mut latest = latest.lock().unwrap();
+    if latest.is_none_or(|current| current.request_id < batch.request_id) {
+        let phase = match batch.receipt {
+            Some(receipt) => ReclaimPhase::Completed {
+                released_bytes: receipt.released_bytes,
+                request_count: Some(receipt.request_count),
+            },
+            None if changes.borrow().saving > 0 => ReclaimPhase::PausedForSave,
+            None => ReclaimPhase::Queued,
+        };
+        *latest = Some(ReclaimStatus {
+            request_id: batch.request_id,
+            estimated_bytes: batch.estimated_bytes,
+            phase,
+        });
     }
 }
 
@@ -233,19 +274,19 @@ mod tests {
         .unwrap()
         .complete("saved")
         .unwrap();
-        let maintenance = HistoryMaintenance::start(database);
+        let maintenance = HistoryMaintenance::start(database.clone());
         let save = maintenance.begin_save();
         let deletion =
-            delete_missing_saved_edit_histories(&root.join("history.sqlite3"), &[document])
+            delete_missing_saved_edit_histories(&database, &[document], Some(bytes as i64))
                 .unwrap();
         maintenance.track_batch(deletion.request_id.unwrap(), Some(bytes as i64));
         assert!(matches!(
-            maintenance.status().unwrap().phase,
+            maintenance.status().await.unwrap().phase,
             ReclaimPhase::PausedForSave
         ));
         tokio::time::sleep(SAVE_QUIET_PERIOD).await;
         assert!(matches!(
-            maintenance.status().unwrap().phase,
+            maintenance.status().await.unwrap().phase,
             ReclaimPhase::PausedForSave
         ));
         drop(save);
@@ -253,7 +294,7 @@ mod tests {
         let mut resumed = false;
         let released = tokio::time::timeout(Duration::from_secs(15), async {
             loop {
-                match maintenance.status().unwrap().phase {
+                match maintenance.status().await.unwrap().phase {
                     ReclaimPhase::Reclaiming => resumed = true,
                     ReclaimPhase::Completed {
                         released_bytes,
@@ -273,10 +314,17 @@ mod tests {
         assert!(resumed);
         assert!(released >= bytes as u64);
         assert_eq!(
-            maintenance.status().unwrap().estimated_bytes,
+            maintenance.status().await.unwrap().estimated_bytes,
             Some(bytes as i64)
         );
         drop(maintenance);
+        let restarted = HistoryMaintenance::start(database);
+        let restored = restarted.status().await.unwrap();
+        assert_eq!(restored.estimated_bytes, Some(bytes as i64));
+        assert!(matches!(restored.phase, ReclaimPhase::Completed {
+            released_bytes: Some(actual), request_count: Some(1),
+        } if actual == released));
+        drop(restarted);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -286,6 +334,7 @@ mod tests {
         let maintenance = HistoryMaintenance {
             activity: sender,
             latest: LatestBatch::default(),
+            ready: watch::channel(true).1,
         };
         let first = maintenance.begin_save();
         let second = maintenance.begin_save();

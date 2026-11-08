@@ -401,7 +401,7 @@ pub async fn delete_missing_saved_edit_histories(
         .map(|maintenance| maintenance.begin_write());
     tokio::task::spawn_blocking(move || {
         let _write = write;
-        let deletion = saved_history::delete_missing_saved_edit_histories(&database, &document_ids)
+        let deletion = saved_history::delete_missing_saved_edit_histories(&database, &document_ids, estimated_bytes)
             .map_err(|error| error.to_string())?;
         if let Some(request_id) = deletion.request_id {
             if let Some(maintenance) = app.try_state::<crate::history_maintenance::HistoryMaintenance>() {
@@ -415,9 +415,9 @@ pub async fn delete_missing_saved_edit_histories(
 }
 
 #[tauri::command]
-pub fn get_history_reclaim_status(app: AppHandle) -> Option<crate::history_maintenance::ReclaimStatus> {
-    app.try_state::<crate::history_maintenance::HistoryMaintenance>()
-        .and_then(|maintenance| maintenance.status())
+pub async fn get_history_reclaim_status(app: AppHandle) -> Option<crate::history_maintenance::ReclaimStatus> {
+    let maintenance = app.try_state::<crate::history_maintenance::HistoryMaintenance>()?;
+    maintenance.status().await
 }
 
 pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {

@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use rusqlite::backup::{Backup, StepResult};
 use rusqlite::{Connection, ErrorCode};
 
-use super::{connect_sqlite, reclaim_free_pages, HistoryError, ReclaimAttempt, Result};
+use super::{
+    connect_sqlite, reclaim_batch, reclaim_free_pages, HistoryError, ReclaimAttempt, Result,
+};
 
 const COPY_PAGES: i32 = 128;
 const SQLITE_SIDECARS: [&str; 3] = ["-journal", "-wal", "-shm"];
@@ -167,6 +169,8 @@ pub(super) fn rebuild(
         return Err(HistoryError::Busy);
     };
     let request_count = tx.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
+    let has_receipt =
+        reclaim_batch::mark_published(&tx, first_request_id, last_request, request_count)?;
     tx.commit()?;
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
@@ -178,6 +182,33 @@ pub(super) fn rebuild(
         }
         return Err(error.into());
     }
+    copy.progress_handler(0, None::<fn() -> bool>)?;
+    if should_yield() {
+        return Ok(ReclaimAttempt::Yielded);
+    }
+    // The source version is checked again under the publication lock. Measure the copy after
+    // compaction and persist its receipt before publishing either one.
+    let original_allocation = allocated_bytes(database);
+    let measure = || {
+        original_allocation
+            .zip(allocated_bytes(&scratch.0))
+            .map(|(before, after)| before.saturating_sub(after))
+    };
+    let mut released_bytes = measure();
+    if has_receipt {
+        // Patch the reserved bytes without changing SQLite's layout. Physical allocation may
+        // still change on a compressed or copy-on-write file system.
+        reclaim_batch::write_measurement(&mut copy, released_bytes)?;
+        let observed = measure();
+        if observed != released_bytes {
+            reclaim_batch::write_measurement(&mut copy, observed)?;
+            released_bytes = observed;
+            if measure() != released_bytes {
+                released_bytes = None;
+                reclaim_batch::write_measurement(&mut copy, None)?;
+            }
+        }
+    }
     copy.close().map_err(|(_, error)| error)?;
     OpenOptions::new()
         .write(true)
@@ -186,8 +217,6 @@ pub(super) fn rebuild(
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
     }
-    let compacted_allocation = allocated_bytes(&scratch.0);
-
     // Only the final version check and atomic rename run while ordinary opens are excluded.
     let publication = exclusive_guard(database, ".publish-lock")?;
     if should_yield() {
@@ -202,8 +231,6 @@ pub(super) fn rebuild(
             return Err(HistoryError::Busy);
         }
     }
-    let released_bytes = compacted_allocation
-        .and_then(|after| allocated_bytes(database).map(|before| before.saturating_sub(after)));
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
     }
