@@ -14,6 +14,26 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("localizes diagnostic and control character labels", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<CodeEditor value={"A\u200bB\u001fC"} onChange={vi.fn()} language="markdown" />));
+    const markers = [...container.querySelectorAll<HTMLElement>(".cm-specialChar")];
+    const labels = ["制御文字 ゼロ幅スペース（U+200B）", "制御文字 U+001F"];
+    expect(markers.map((marker) => marker.title)).toEqual(labels);
+    expect(markers.map((marker) => marker.getAttribute("aria-label"))).toEqual(labels);
+
+    const mac = /Mac/.test(navigator.platform);
+    act(() => container.querySelector(".cm-content")!.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "M", code: "KeyM", keyCode: 77, ctrlKey: !mac, metaKey: mac, shiftKey: true, bubbles: true, cancelable: true,
+    })));
+    const diagnostics = container.querySelector(".cm-panel-lint [role=listbox]");
+    expect(diagnostics?.getAttribute("aria-label")).toBe("エディタの診断");
+    expect(diagnostics?.textContent).toBe("診断結果はありません。");
+    act(() => root.unmount());
+  });
+
   test("highlights a navigation match temporarily and maps it safely through edits", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const host = document.createElement("div"); document.body.appendChild(host); const root = createRoot(host);
