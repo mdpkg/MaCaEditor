@@ -16,6 +16,8 @@ pub enum AiError {
     ModelNotFound(String),
     #[error("rate limited: {0}")]
     RateLimited(String),
+    #[error("usage quota exhausted: {0}")]
+    QuotaExceeded(String),
     #[error("request timed out: {0}")]
     Timeout(String),
     #[error("server error: {0}")]

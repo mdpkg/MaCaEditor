@@ -181,6 +181,11 @@ mod tests {
             ),
             (
                 "data: ",
+                r#"{"error":{"message":"Project budget exhausted","code":"project_spend_limit_exceeded"}}"#,
+                AiError::QuotaExceeded,
+            ),
+            (
+                "data: ",
                 r#"{"error":{"message":"Invalid credentials","code":"invalid_api_key"}}"#,
                 AiError::AuthenticationFailed,
             ),
