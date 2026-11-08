@@ -118,6 +118,50 @@ fn prune(tx: &Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
+fn request_reclaim(tx: &Transaction<'_>) -> Result<()> {
+    let has_unreferenced_payload = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM payload WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest))",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if has_unreferenced_payload {
+        // This optional table leaves the existing checkpoint schema readable by older versions.
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS reclaim_request (id INTEGER PRIMARY KEY AUTOINCREMENT);
+             INSERT INTO reclaim_request DEFAULT VALUES;",
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) fn reclaim_pending(database: &Path) -> Result<()> {
+    if !database.try_exists()? {
+        return Ok(());
+    }
+    let mut db = connect(database)?;
+    let has_requests_table = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'reclaim_request')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_requests_table {
+        return Ok(());
+    }
+    let last_request: Option<i64> =
+        db.query_row("SELECT max(id) FROM reclaim_request", [], |row| row.get(0))?;
+    let Some(last_request) = last_request else {
+        return Ok(());
+    };
+
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    prune(&tx)?;
+    tx.commit()?;
+    reclaim_free_pages(&db)?;
+    // Keep requests committed by other saves while maintenance was running.
+    db.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
+    Ok(())
+}
+
 pub struct PendingCheckpoint {
     database: PathBuf,
     id: i64,
@@ -173,11 +217,13 @@ impl PendingCheckpoint {
             "UPDATE checkpoint SET revision = ?1, committed = 1 WHERE id = ?2",
             params![revision, self.id],
         )?;
-        tx.execute(
+        let removed = tx.execute(
             "DELETE FROM checkpoint WHERE document = ?1 AND id < ?2",
             params![self.document, self.id],
         )?;
-        prune(&tx)?;
+        if removed > 0 {
+            request_reclaim(&tx)?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -297,6 +343,166 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn saving_a_new_branch_leaves_obsolete_attachments_for_background_reclaim() {
+        let database = test_database();
+        let target = "package:/branch.mdpkg";
+        let other = "folder:/keep";
+        let unique_bytes = 48 * 1024 * 1024;
+        let shared = vec![0xab; 16 * 1024 * 1024];
+        PendingCheckpoint::prepare(
+            database.clone(),
+            target.into(),
+            "old",
+            true,
+            "saved redo".into(),
+            [Ok(vec![0xcd; unique_bytes]), Ok(shared.clone())],
+        )
+        .unwrap()
+        .complete("old")
+        .unwrap();
+        PendingCheckpoint::prepare(
+            database.clone(),
+            other.into(),
+            "keep",
+            true,
+            "other undo and redo".into(),
+            [Ok(shared)],
+        )
+        .unwrap()
+        .complete("keep")
+        .unwrap();
+        PendingCheckpoint::prepare(
+            database.clone(),
+            target.into(),
+            "branch",
+            true,
+            "new branch".into(),
+            [],
+        )
+        .unwrap()
+        .complete("branch")
+        .unwrap();
+
+        assert!(load(&database, target, "old").unwrap().is_none());
+        let db = connect(&database).unwrap();
+        let payload_count: u32 = db
+            .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+            .unwrap();
+        drop(db);
+        let original_size = fs::metadata(&database).unwrap().len();
+        assert_eq!(
+            payload_count, 2,
+            "saving the branch should leave the large BLOB for background work"
+        );
+
+        reclaim_pending(&database).unwrap();
+
+        let compacted_size = fs::metadata(&database).unwrap().len();
+        assert!(original_size.saturating_sub(compacted_size) >= unique_bytes as u64,
+            "expected at least {unique_bytes} bytes back, file went from {original_size} to {compacted_size} bytes");
+        let branch = load(&database, target, "branch").unwrap().unwrap();
+        assert_eq!(branch.checkpoint.data, "new branch");
+        let survivor = load(&database, other, "keep").unwrap().unwrap();
+        assert_eq!(survivor.checkpoint.data, "other undo and redo");
+        let download = survivor.download.unwrap();
+        assert_eq!(download.sizes, [16 * 1024 * 1024]);
+        assert_eq!(
+            read_chunk(&database, download.id, 0, 16 * 1024 * 1024 - 1, 1).unwrap(),
+            [0xab]
+        );
+
+        let db = connect(&database).unwrap();
+        let requests: u32 = db
+            .query_row("SELECT count(*) FROM reclaim_request", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(requests, 0);
+        drop(db);
+        fs::remove_file(&database).unwrap();
+    }
+
+    #[test]
+    fn resumes_pending_reclaim_after_payload_deletion_committed() {
+        let database = test_database();
+        let document = "folder:/branch";
+        PendingCheckpoint::prepare(
+            database.clone(),
+            document.into(),
+            "old",
+            true,
+            "saved redo".into(),
+            [Ok(vec![0xcd; 2 * 1024 * 1024])],
+        )
+        .unwrap()
+        .complete("old")
+        .unwrap();
+        PendingCheckpoint::prepare(
+            database.clone(),
+            document.into(),
+            "branch",
+            true,
+            "saved branch".into(),
+            [],
+        )
+        .unwrap()
+        .complete("branch")
+        .unwrap();
+
+        // Model interruption between the worker's deletion and VACUUM.
+        let mut db = connect(&database).unwrap();
+        let tx = db.transaction().unwrap();
+        prune(&tx).unwrap();
+        tx.commit().unwrap();
+        drop(db);
+        reclaim_pending(&database).unwrap();
+
+        assert!(fs::metadata(&database).unwrap().len() < 128 * 1024);
+        assert_eq!(
+            load(&database, document, "branch")
+                .unwrap()
+                .unwrap()
+                .checkpoint
+                .data,
+            "saved branch"
+        );
+        fs::remove_file(&database).unwrap();
+    }
+
+    #[test]
+    fn keeps_shared_payloads_without_requesting_reclaim() {
+        let database = test_database();
+        let document = "package:/branch";
+        for (path, revision, attachments) in [
+            (document, "old", vec![Ok(vec![1, 2, 3])]),
+            ("folder:/keep", "keep", vec![Ok(vec![1, 2, 3])]),
+            (document, "branch", vec![]),
+        ] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                path.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        reclaim_pending(&database).unwrap();
+        let db = connect(&database).unwrap();
+        let maintenance_tables: u32 = db
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE name = 'reclaim_request'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(maintenance_tables, 0);
+        drop(db);
+        fs::remove_file(&database).unwrap();
     }
 
     #[test]

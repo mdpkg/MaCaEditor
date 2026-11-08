@@ -3,6 +3,7 @@ pub mod atomic_save;
 pub mod commands;
 pub mod folder_document;
 pub mod folder_watcher;
+mod history_maintenance;
 mod history_transfer;
 #[cfg(target_os = "macos")]
 mod macos_menu;
@@ -77,9 +78,12 @@ pub fn run() {
         .manage(folder_watcher::FolderWatcherState::default())
         .manage(history_transfer::HistoryUpload::default())
         .setup(|app| {
+            use tauri::Manager;
+            if let Ok(database) = commands::history_database(app.handle()) {
+                app.manage(history_maintenance::HistoryMaintenance::start(database));
+            }
             #[cfg(desktop)]
             {
-                use tauri::Manager;
                 use tauri_plugin_window_state::WindowExt;
 
                 #[cfg(windows)]
