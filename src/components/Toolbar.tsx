@@ -196,8 +196,8 @@ export function Toolbar({
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onValidatePackage)}>{uiText("Validate Package...")}</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onEditManifest)}>{uiText("Edit Manifest...")}</button>
             <button type="button" role="menuitem" disabled={!hasDocument} data-shortcut="Ctrl/Cmd+Shift+F" aria-keyshortcuts="Control+Shift+F Meta+Shift+F" title="Ctrl/Cmd+Shift+F" onClick={() => run(onSearchPackage)}>{uiText("Search Package...")}</button>
-            <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>{uiText(documentKind === "package" ? "Undo" : "Undo File Operation")}</button>
-            <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>{uiText(documentKind === "package" ? "Redo" : "Redo File Operation")}</button>
+            <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>{uiText("Undo")}</button>
+            <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>{uiText("Redo")}</button>
           </Menu>
         )}
       </div>

@@ -29,7 +29,7 @@ export function savePackage(request: SaveRequest): Promise<void> {
   return invoke("save_package", { request });
 }
 
-export function saveFolder(request: FolderSaveRequest): Promise<void> {
+export function saveFolder(request: FolderSaveRequest): Promise<string> {
   return invoke("save_folder", { request });
 }
 

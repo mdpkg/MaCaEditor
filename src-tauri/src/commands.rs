@@ -20,6 +20,8 @@ pub struct PackageInfo {
     pub entrypoint: String,
     pub files: Vec<FileInfo>,
     pub manifest_generated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_revision: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -35,6 +37,7 @@ pub struct FolderSaveRequest {
     pub manifest: serde_json::Value,
     pub files: Vec<FileContent>,
     pub original_paths: Vec<String>,
+    pub expected_revision: String,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -138,6 +141,7 @@ pub fn open_package(path: String) -> Result<PackageInfo, String> {
         entrypoint: loaded.manifest.entrypoint.clone(),
         files,
         manifest_generated: false,
+        folder_revision: None,
     })
 }
 
@@ -168,6 +172,7 @@ fn folder_package_info(
         manifest,
         files,
         manifest_generated: loaded.manifest_was_generated,
+        folder_revision: Some(loaded.revision),
     })
 }
 
@@ -183,16 +188,21 @@ pub fn save_package(request: SaveRequest) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_folder(request: FolderSaveRequest) -> Result<(), String> {
-    let manifest = parse_manifest(&request.manifest)?;
-    let files = parse_files(request.files)?;
-    crate::folder_document::save_folder(
-        &PathBuf::from(request.path),
-        &manifest,
-        &files,
-        &request.original_paths,
-    )
-    .map_err(|e| e.to_string())
+pub async fn save_folder(request: FolderSaveRequest) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let manifest = parse_manifest(&request.manifest)?;
+        let files = parse_files(request.files)?;
+        crate::folder_document::save_folder(
+            &PathBuf::from(request.path),
+            &manifest,
+            &files,
+            &request.original_paths,
+            &request.expected_revision,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("folder save task failed: {error}"))?
 }
 
 #[tauri::command]

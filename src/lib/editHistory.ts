@@ -29,20 +29,20 @@ function metadata(state: DocumentState) {
   return { entrypoint, directories, staleResources, manifest: manifestFields };
 }
 
-export type PackageHistoryEntry =
+export type EditHistoryEntry =
   | { kind: "text"; label: string; path: string; change: TextChange; beforeStale: string[] | undefined; afterStale: string[] | undefined }
   | { kind: "files"; label: string; files: FileChange[]; before: ReturnType<typeof metadata>; after: ReturnType<typeof metadata> };
 
-export interface PackageHistory {
-  entries: PackageHistoryEntry[];
+export interface EditHistory {
+  entries: EditHistoryEntry[];
   cursor: number;
 }
 
-export function createPackageHistory(): PackageHistory {
+export function createEditHistory(): EditHistory {
   return { entries: [], cursor: 0 };
 }
 
-export function recordPackageEdit(history: PackageHistory, entry: PackageHistoryEntry) {
+export function recordEdit(history: EditHistory, entry: EditHistoryEntry) {
   history.entries.splice(history.cursor);
   history.entries.push(entry);
   history.cursor++;
@@ -66,7 +66,7 @@ function sameJson(left: unknown, right: unknown): boolean {
     leftFields.every(([key, value]) => Object.prototype.hasOwnProperty.call(rightFields, key) && sameJson(value, rightFields[key]));
 }
 
-export function samePackageContent(current: DocumentState, saved: DocumentState): boolean {
+export function sameSavedContent(current: DocumentState, saved: DocumentState): boolean {
   if (current.files.length !== saved.files.length || !sameJson(metadata(current).manifest, metadata(saved).manifest)) return false;
   if (current.files.every((file, index) => sameFile(file, saved.files[index]))) return true;
   const savedFiles = new Map(saved.files.map((file) => [file.path, file]));
@@ -75,7 +75,7 @@ export function samePackageContent(current: DocumentState, saved: DocumentState)
 
 export function textHistoryEntry(
   path: string, before: string, after: string, beforeStale: string[] | undefined, afterStale: string[] | undefined,
-): PackageHistoryEntry {
+): EditHistoryEntry {
   let from = 0;
   while (from < Math.min(before.length, after.length) && before[from] === after[from]) from++;
   let beforeEnd = before.length;
@@ -93,7 +93,7 @@ export function textHistoryEntry(
   };
 }
 
-export function fileHistoryEntry(current: DocumentState, next: DocumentState, label: string): PackageHistoryEntry | undefined {
+export function fileHistoryEntry(current: DocumentState, next: DocumentState, label: string): EditHistoryEntry | undefined {
   const beforeFiles = new Map(current.files.map((file, index) => [file.path, { file, index }]));
   const afterFiles = new Map(next.files.map((file, index) => [file.path, { file, index }]));
   const files: FileChange[] = [];
@@ -108,7 +108,7 @@ export function fileHistoryEntry(current: DocumentState, next: DocumentState, la
   return { kind: "files", label, files, before, after };
 }
 
-export function applyPackageHistoryEntry(current: DocumentState, entry: PackageHistoryEntry, direction: HistoryDirection): DocumentState {
+export function applyEditHistoryEntry(current: DocumentState, entry: EditHistoryEntry, direction: HistoryDirection): DocumentState {
   const undo = direction === "undo";
   const conflict = () => new Error("履歴が現在の文書と一致しません。");
   if (entry.kind === "text") {

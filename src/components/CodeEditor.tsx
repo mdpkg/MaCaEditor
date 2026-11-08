@@ -12,7 +12,7 @@ import { Decoration, highlightSpecialChars } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE, PACKAGE_PATH_POINTER_DROP, type PackagePathPointerDrop } from "../lib/packageDrag";
 import { historyShortcut, isDocumentSearchShortcut } from "../lib/shortcuts";
-import type { HistoryDirection, TextEditGroup } from "../lib/packageHistory";
+import type { HistoryDirection, TextEditGroup } from "../lib/editHistory";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
 
 interface Props {

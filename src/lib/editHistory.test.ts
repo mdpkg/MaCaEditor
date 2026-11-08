@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { createDocumentState, movePath } from "./document";
-import { applyPackageHistoryEntry, fileHistoryEntry } from "./packageHistory";
+import { applyEditHistoryEntry, fileHistoryEntry } from "./editHistory";
 
 test("rejects an occupied original path without partially undoing a move or its link edits", () => {
   const before = createDocumentState({
@@ -15,11 +15,11 @@ test("rejects an occupied original path without partially undoing a move or its 
   const entry = fileHistoryEntry(before, after, "Move guide")!;
   const conflicting = { ...after, files: [...after.files, { ...before.files[1], content: "Another file" }] };
 
-  expect(() => applyPackageHistoryEntry(conflicting, entry, "undo")).toThrow();
+  expect(() => applyEditHistoryEntry(conflicting, entry, "undo")).toThrow();
   expect(conflicting.files.map(({ path, content }) => [path, content])).toEqual([
     ["index.md", "[Guide](guide.md)"],
     ["guide.md", "[Home](index.md)"],
     ["docs/guide.md", "Another file"],
   ]);
-  expect(applyPackageHistoryEntry(after, entry, "undo").files).toEqual(before.files);
+  expect(applyEditHistoryEntry(after, entry, "undo").files).toEqual(before.files);
 });
