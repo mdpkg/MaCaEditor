@@ -39,20 +39,6 @@ pub fn set_images_enabled(app: &AppHandle, enabled: bool) {
         .store(enabled, Ordering::Relaxed);
 }
 
-pub fn configure(mut context: tauri::Context<tauri::Wry>) -> tauri::Context<tauri::Wry> {
-    if let Some(main) = context
-        .config_mut()
-        .app
-        .windows
-        .iter_mut()
-        .find(|w| w.label == "main")
-    {
-        // Wry accepts every CF_HDROP with DROPEFFECT_COPY. Install a Windows target instead.
-        main.drag_drop_enabled = false;
-    }
-    context
-}
-
 pub fn install(window: &WebviewWindow) -> tauri::Result<()> {
     let app = window.app_handle().clone();
     window.with_webview(move |webview| {
