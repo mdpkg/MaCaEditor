@@ -355,6 +355,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn does_not_retry_a_quota_code_without_an_error_type() {
+        let body = r#"{"error":{"message":"Budget reached","code":"project_spend_limit_exceeded"}}"#;
+        let server = MockOpenAiServer::start(Scenario::HttpBody(429, "application/json", body)).await;
+        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+        let expected = AiError::QuotaExceeded(
+            "Budget reached\n\ncode: project_spend_limit_exceeded".to_owned(),
+        );
+
+        assert_eq!(provider.list_models().await, Err(expected.clone()));
+        assert_eq!(server.request_count(), 1);
+        assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+        assert_eq!(server.request_count(), 2);
+        assert_eq!(provider.stream(sample_request()).await.err(), Some(expected));
+        assert_eq!(server.request_count(), 3);
+    }
+
+    #[tokio::test]
     async fn maps_429_to_rate_limited() {
         let server = MockOpenAiServer::start(Scenario::HttpError(429, "mock")).await;
         let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
@@ -363,6 +380,7 @@ mod tests {
             result,
             Err(crate::ai::error::AiError::RateLimited(_))
         ));
+        assert_eq!(server.request_count(), 4);
     }
 
     #[tokio::test]
