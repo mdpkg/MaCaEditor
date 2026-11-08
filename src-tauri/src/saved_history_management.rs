@@ -5,7 +5,7 @@ use std::path::Path;
 
 use rusqlite::TransactionBehavior;
 
-use super::{connect, enqueue_reclaim, Result};
+use super::{connect, enqueue_reclaim, reclaim_batch::record_batch, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -194,13 +194,15 @@ pub struct BulkDeletion {
 pub fn delete_missing_saved_edit_histories(
     database: &Path,
     ids: &[String],
+    estimated_bytes: Option<i64>,
 ) -> Result<BulkDeletion> {
-    delete_missing_with_metadata(database, ids, probe_access)
+    delete_missing_with_metadata(database, ids, estimated_bytes, probe_access)
 }
 
 fn delete_missing_with_metadata(
     database: &Path,
     ids: &[String],
+    estimated_bytes: Option<i64>,
     metadata: impl Fn(&Path) -> io::Result<Metadata>,
 ) -> Result<BulkDeletion> {
     if ids.is_empty() || !database.try_exists()? {
@@ -252,7 +254,11 @@ fn delete_missing_with_metadata(
         }
     }
     let request_id = (!deleted.is_empty())
-        .then(|| enqueue_reclaim(&tx))
+        .then(|| {
+            let id = enqueue_reclaim(&tx)?;
+            record_batch(&tx, id, estimated_bytes)?;
+            Ok::<_, super::HistoryError>(id)
+        })
         .transpose()?;
     tx.commit()?;
     Ok(BulkDeletion {
@@ -271,6 +277,99 @@ mod tests {
         let path = std::env::temp_dir().join("unavailable.mdpkg");
         let status = access_status("package", &path, &|_| Err(ErrorKind::NotFound.into()));
         assert_eq!(status, Access::Unavailable);
+    }
+
+    #[test]
+    fn restores_the_estimate_and_receipt_around_an_interrupted_attachment_reclaim() {
+        use crate::saved_history::{load_reclaim_batch, ReclaimAttempt, RECLAIM_CHUNK_BYTES};
+        let root =
+            std::env::temp_dir().join(format!("maca-reclaim-restart-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let database = root.join("history.sqlite3");
+        let document = format!("package:{}", root.join("Removed.mdpkg").display());
+        let retained = format!("folder:{}", root.join("Retained").display());
+        let size = 3 * RECLAIM_CHUNK_BYTES;
+        for (id, bytes) in [(&document, vec![0xab; size]), (&retained, vec![0x12, 0x34])] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                id.clone(),
+                "saved",
+                true,
+                id.clone(),
+                [Ok(bytes)],
+            )
+            .unwrap()
+            .complete("saved")
+            .unwrap();
+        }
+        let estimate =
+            estimate_reclaimable_history_bytes(&database, std::slice::from_ref(&document)).unwrap();
+        let deletion = delete_missing_saved_edit_histories(
+            &database,
+            std::slice::from_ref(&document),
+            Some(estimate),
+        )
+        .unwrap();
+        let request_id = deletion.request_id.unwrap();
+        let pending = load_reclaim_batch(&database).unwrap().unwrap();
+        assert_eq!(pending.request_id, request_id);
+        assert_eq!(pending.estimated_bytes, Some(estimate));
+        assert!(pending.receipt.is_none());
+
+        fn offset(path: &Path) -> Option<usize> {
+            let db = rusqlite::Connection::open(path).unwrap();
+            db.query_row("SELECT next_offset FROM payload_reclaim", [], |row| {
+                row.get::<_, u32>(0)
+            })
+            .ok()
+            .map(|offset| offset as usize)
+        }
+        let observe = database.clone();
+        assert!(matches!(
+            reclaim_pending(&database, move || offset(&observe).is_some()).unwrap(),
+            ReclaimAttempt::Yielded
+        ));
+        // Reopen the live database after stopping the worker. The first chunk is already committed.
+        assert_eq!(offset(&database), Some(RECLAIM_CHUNK_BYTES));
+        let pending = load_reclaim_batch(&database).unwrap().unwrap();
+        assert_eq!(pending.estimated_bytes, Some(estimate));
+        assert!(pending.receipt.is_none());
+        let before = fs::metadata(&database).unwrap().len();
+        let ReclaimAttempt::Published { released_bytes, .. } =
+            reclaim_pending(&database, || false).unwrap()
+        else {
+            panic!("the existing request was not resumed");
+        };
+        let complete = load_reclaim_batch(&database).unwrap().unwrap();
+        assert_eq!(complete.request_id, request_id);
+        assert_eq!(complete.estimated_bytes, Some(estimate));
+        let receipt = complete.receipt.unwrap();
+        assert_eq!(receipt.request_count, 1);
+        assert_eq!(receipt.released_bytes, released_bytes);
+        let reduced = before - fs::metadata(&database).unwrap().len();
+        assert!(receipt.released_bytes.unwrap().abs_diff(reduced) < 256 * 1024);
+        assert_eq!(
+            load(&database, &retained, "saved")
+                .unwrap()
+                .unwrap()
+                .checkpoint
+                .attachments,
+            ["EjQ="]
+        );
+        assert!(matches!(
+            reclaim_pending(&database, || false).unwrap(),
+            ReclaimAttempt::Idle
+        ));
+        assert_eq!(
+            load_reclaim_batch(&database)
+                .unwrap()
+                .unwrap()
+                .receipt
+                .unwrap()
+                .released_bytes,
+            released_bytes
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -348,7 +447,7 @@ mod tests {
 
         let before = fs::metadata(&database).unwrap().len();
         assert_eq!(
-            delete_missing_saved_edit_histories(&database, &selected)
+            delete_missing_saved_edit_histories(&database, &selected, Some(estimated))
                 .unwrap()
                 .deleted_ids,
             [folder, package]
@@ -453,7 +552,7 @@ mod tests {
             .chain(protected)
             .cloned()
             .collect::<Vec<_>>();
-        let deleted = delete_missing_with_metadata(&database, &selected, probe)
+        let deleted = delete_missing_with_metadata(&database, &selected, None, probe)
             .unwrap()
             .deleted_ids;
         assert_eq!(deleted, [gone_folder.clone(), gone_package.clone()]);

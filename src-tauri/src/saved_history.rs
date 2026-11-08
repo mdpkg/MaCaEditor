@@ -14,10 +14,13 @@ use sha2::{Digest, Sha256};
 mod compaction;
 #[path = "saved_history_management.rs"]
 mod management;
+#[path = "saved_history_reclaim_batch.rs"]
+mod reclaim_batch;
 pub use management::{
     delete_missing_saved_edit_histories, delete_saved_edit_history,
     estimate_reclaimable_history_bytes, list_saved_edit_histories, SavedEditHistory,
 };
+pub(crate) use reclaim_batch::{load_reclaim_batch, ReclaimBatch};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EditCheckpoint {
