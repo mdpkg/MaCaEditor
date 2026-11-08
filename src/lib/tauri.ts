@@ -80,6 +80,10 @@ export function watchPrint(onError: (event: PrintMonitorEvent) => void): Promise
   return invoke("watch_print", { channel });
 }
 
+export function closePrintPreview(title: string): Promise<void> {
+  return invoke("close_print_preview", { title });
+}
+
 export function usesMacPreparedPrint(): boolean {
   return isTauri() && navigator.userAgent.includes("Macintosh");
 }

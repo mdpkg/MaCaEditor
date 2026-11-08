@@ -18,6 +18,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   exportPackage: vi.fn(),
   watchFolder: vi.fn(),
   watchPrint: vi.fn(),
+  closePrintPreview: vi.fn(),
   stopWatchingFolder: vi.fn(),
   onFolderChanged: vi.fn(),
   onNativeFileDrop: vi.fn(),
@@ -281,13 +282,18 @@ describe("App persistence", () => {
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
     await click("開く", container.querySelector(".empty-state")!);
     vi.mocked(tauri.watchPrint).mockResolvedValue("MaCa Editor [print-id]");
+    vi.mocked(tauri.closePrintPreview).mockResolvedValue(undefined);
     const print = vi.spyOn(window, "print").mockImplementation(() => {
       expect(document.title).toBe("MaCa Editor [print-id] — original.mdpkg — MaCa Editor");
-      window.dispatchEvent(new Event("afterprint"));
     });
     await click("ファイル");
     await click("印刷");
     expect(print).toHaveBeenCalledOnce();
+    expect(tauri.closePrintPreview).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event("afterprint"));
+    window.dispatchEvent(new Event("afterprint"));
+    expect(tauri.closePrintPreview).toHaveBeenCalledOnce();
+    expect(tauri.closePrintPreview).toHaveBeenCalledWith("MaCa Editor [print-id]");
     expect(document.title).toBe("original.mdpkg — MaCa Editor");
 
     act(() => vi.mocked(tauri.watchPrint).mock.calls[0][0]({ kind, detail }));

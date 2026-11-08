@@ -27,18 +27,23 @@ use windows_sys::{
 
 use super::PrintMonitorEvent;
 
-const PREVIEW_TIMEOUT: Duration = Duration::from_secs(600);
+const CLOSED_PREVIEW_GRACE: Duration = Duration::from_secs(600);
 const EVENT_GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Default)]
 pub struct PrintMonitor {
-    sender: Mutex<Option<mpsc::Sender<Request>>>,
+    sender: Mutex<Option<mpsc::Sender<Message>>>,
 }
 
 struct Request {
     title: String,
     channel: Channel<PrintMonitorEvent>,
     ready: oneshot::Sender<Result<(), String>>,
+}
+
+enum Message {
+    Register(Request),
+    ClosePreview(String),
 }
 
 impl PrintMonitor {
@@ -61,21 +66,32 @@ impl PrintMonitor {
             sender
                 .as_ref()
                 .unwrap()
-                .send(Request {
+                .send(Message::Register(Request {
                     title: title.clone(),
                     channel,
                     ready,
-                })
+                }))
                 .map_err(|error| error.to_string())?;
         }
         started.await.map_err(|error| error.to_string())??;
         Ok(title)
+    }
+
+    pub fn close_preview(&self, title: String) -> Result<(), String> {
+        let sender = self.sender.lock().map_err(|error| error.to_string())?;
+        if let Some(sender) = sender.as_ref() {
+            sender
+                .send(Message::ClosePreview(title))
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
     }
 }
 
 struct PendingPrint {
     channel: Channel<PrintMonitorEvent>,
     started: Instant,
+    preview_closed: Option<Instant>,
 }
 
 type Pending = HashMap<String, PendingPrint>;
@@ -87,20 +103,24 @@ fn add_request(pending: &mut Pending, request: Request) {
             PendingPrint {
                 channel: request.channel,
                 started: Instant::now(),
+                preview_closed: None,
             },
         );
     }
 }
 
-fn monitor_prints(requests: mpsc::Receiver<Request>) {
-    while let Ok(first) = requests.recv() {
+fn monitor_prints(requests: mpsc::Receiver<Message>) {
+    while let Ok(message) = requests.recv() {
+        let Message::Register(first) = message else {
+            continue;
+        };
         if let Err(error) = monitor_session(&requests, first) {
             eprintln!("Windows print monitor: {error}");
         }
     }
 }
 
-fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Result<()> {
+fn monitor_session(requests: &mpsc::Receiver<Message>, first: Request) -> io::Result<()> {
     let queue = match Queue::open() {
         Ok(queue) => queue,
         Err(error) => {
@@ -123,8 +143,16 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
     add_request(&mut pending, first);
     while !pending.is_empty() {
         let mut event_error = startup_event_error.take();
-        for request in requests.try_iter() {
-            add_request(&mut pending, request);
+        for message in requests.try_iter() {
+            match message {
+                Message::Register(request) => add_request(&mut pending, request),
+                Message::ClosePreview(title) => {
+                    if let Some(print) = pending.get_mut(&title) {
+                        print.preview_closed.get_or_insert_with(Instant::now);
+                    }
+                    continue;
+                }
+            }
             if events.is_none() && event_error.is_none() {
                 match FailureEvents::open() {
                     Ok(reader) => events = Some(reader),
@@ -180,7 +208,10 @@ fn notify_monitoring_failure(pending: &Pending, error: &io::Error) {
 fn update_pending_jobs(pending: &mut Pending, jobs: &HashMap<u32, Job>, now: Instant) {
     pending.retain(|title, print| {
         let Some(job) = jobs.values().find(|job| title_matches(&job.document, title)) else {
-            return now.duration_since(print.started) < PREVIEW_TIMEOUT;
+            // The user may leave a print dialog open before submitting the job.
+            return print
+                .preview_closed
+                .is_none_or(|closed| now.duration_since(closed) < CLOSED_PREVIEW_GRACE);
         };
         // Give PrintService a chance to provide the original failure record first.
         if job.awaiting_failure_event(now) {
@@ -608,6 +639,37 @@ mod tests {
     const TITLE: &str = "MaCa-1234567890abcdef12345678";
 
     #[test]
+    fn keeps_long_open_previews_and_expires_closed_previews_without_jobs() {
+        let opened = Instant::now();
+        let closed = opened + CLOSED_PREVIEW_GRACE + Duration::from_secs(1);
+        let mut pending = Pending::from([(
+            TITLE.to_owned(),
+            PendingPrint {
+                channel: Channel::new(|_| panic!("unexpected print error")),
+                started: opened,
+                preview_closed: None,
+            },
+        )]);
+        let jobs = HashMap::new();
+
+        update_pending_jobs(&mut pending, &jobs, closed);
+        assert!(pending.contains_key(TITLE));
+        pending.get_mut(TITLE).unwrap().preview_closed = Some(closed);
+
+        let deadline = closed + CLOSED_PREVIEW_GRACE;
+        update_pending_jobs(&mut pending, &jobs, deadline - Duration::from_secs(1));
+        assert!(pending.contains_key(TITLE));
+
+        let mut job = Job::new(closed);
+        job.document = TITLE.to_owned();
+        update_pending_jobs(&mut pending, &HashMap::from([(1, job)]), deadline);
+        assert!(pending.contains_key(TITLE));
+
+        update_pending_jobs(&mut pending, &jobs, deadline);
+        assert!(pending.is_empty());
+    }
+
+    #[test]
     fn reports_queue_error_after_grace_even_without_status_text() {
         for (text, status, expected) in [
             ("", JOB_STATUS_ERROR, "JOB_STATUS_ERROR (Status 0x00000002)"),
@@ -624,6 +686,7 @@ mod tests {
                         Ok(())
                     }),
                     started: now,
+                    preview_closed: None,
                 },
             )]);
             let mut job = Job::new(now);
@@ -657,6 +720,7 @@ mod tests {
                 PendingPrint {
                     channel: Channel::new(|_| panic!("unexpected print error")),
                     started: now,
+                    preview_closed: None,
                 },
             )]);
             let mut job = Job::new(now);
@@ -693,6 +757,7 @@ mod tests {
                 PendingPrint {
                     channel: Channel::new(|_| panic!("duplicate monitoring error")),
                     started: now,
+                    preview_closed: None,
                 },
             ),
             (
@@ -703,6 +768,7 @@ mod tests {
                         Ok(())
                     }),
                     started: now + Duration::from_secs(1),
+                    preview_closed: None,
                 },
             ),
         ]);
@@ -722,6 +788,7 @@ mod tests {
             PendingPrint {
                 channel: Channel::new(|_| Ok(())),
                 started: now,
+                preview_closed: None,
             },
         )]);
         let failure = Failure {
