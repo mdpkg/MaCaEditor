@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{
+    params, Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior,
+};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -80,11 +82,15 @@ pub fn existing_revision(path: &Path) -> io::Result<Option<String>> {
 }
 
 fn connect(path: &Path) -> Result<Connection> {
+    connect_with_timeout(path, Duration::from_secs(5))
+}
+
+fn connect_with_timeout(path: &Path, timeout: Duration) -> Result<Connection> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let mut db = Connection::open(path)?;
-    db.busy_timeout(Duration::from_secs(5))?;
+    db.busy_timeout(timeout)?;
     db.execute_batch(
         "PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL;",
     )?;
@@ -134,11 +140,14 @@ fn request_reclaim(tx: &Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn reclaim_pending(database: &Path) -> Result<()> {
-    if !database.try_exists()? {
+pub(crate) fn reclaim_pending(
+    database: &Path,
+    should_yield: impl Fn() -> bool + Clone + Send + 'static,
+) -> Result<()> {
+    if should_yield() || !database.try_exists()? {
         return Ok(());
     }
-    let mut db = connect(database)?;
+    let mut db = connect_with_timeout(database, Duration::ZERO)?;
     let has_requests_table = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'reclaim_request')",
         [],
@@ -153,10 +162,46 @@ pub(crate) fn reclaim_pending(database: &Path) -> Result<()> {
         return Ok(());
     };
 
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    prune(&tx)?;
-    tx.commit()?;
-    reclaim_free_pages(&db)?;
+    let candidates = {
+        let mut query = db.prepare(
+            "SELECT digest FROM payload
+             WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest)",
+        )?;
+        let rows = query.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for digest in candidates {
+        if should_yield() {
+            return Ok(());
+        }
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if should_yield() {
+            return Ok(());
+        }
+        // Release the write lock between BLOBs. Committing each deletion avoids redoing
+        // large rollback-journal writes when a save arrives during a BLOB operation.
+        tx.execute(
+            "DELETE FROM payload WHERE digest = ?1
+             AND NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = ?1)",
+            [digest],
+        )?;
+        tx.commit()?;
+    }
+    if should_yield() {
+        return Ok(());
+    }
+    db.progress_handler(100, Some(should_yield.clone()))?;
+    let result = reclaim_free_pages(&db);
+    db.progress_handler(0, None::<fn() -> bool>)?;
+    if let Err(error) = result {
+        if error.sqlite_error_code() == Some(ErrorCode::OperationInterrupted) && should_yield() {
+            return Ok(());
+        }
+        return Err(error.into());
+    }
+    if should_yield() {
+        return Ok(());
+    }
     // Keep requests committed by other saves while maintenance was running.
     db.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
     Ok(())
@@ -346,6 +391,167 @@ mod tests {
     }
 
     #[test]
+    fn background_reclaim_does_not_wait_for_a_save_holding_the_write_lock() {
+        let database = test_database();
+        let document = "package:/branch";
+        for (revision, attachments) in
+            [("old", vec![Ok(vec![0xcd; 64 * 1024])]), ("branch", vec![])]
+        {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                document.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        let mut foreground = connect(&database).unwrap();
+        let save = foreground
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let start = std::time::Instant::now();
+        let _ = reclaim_pending(&database, || false);
+        let elapsed = start.elapsed();
+        save.commit().unwrap();
+        drop(foreground);
+        fs::remove_file(&database).unwrap();
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "maintenance waited {elapsed:?} on a foreground writer"
+        );
+    }
+
+    #[test]
+    fn reclaim_can_pause_between_attachments_and_resume_with_the_saved_request() {
+        let database = test_database();
+        let document = "package:/branch";
+        for (revision, attachments) in [
+            (
+                "old",
+                vec![
+                    Ok(vec![0xcd; 2 * 1024 * 1024]),
+                    Ok(vec![0xce; 2 * 1024 * 1024]),
+                ],
+            ),
+            ("branch", vec![]),
+        ] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                document.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        let original_size = fs::metadata(&database).unwrap().len();
+        let observe = database.clone();
+        reclaim_pending(&database, move || {
+            // Request a pause when the first deletion becomes visible to another connection.
+            let db = Connection::open(&observe).unwrap();
+            let count: u32 = db
+                .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+                .unwrap();
+            count == 1
+        })
+        .unwrap();
+
+        let db = connect(&database).unwrap();
+        let count: u32 = db
+            .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+            .unwrap();
+        let pending: u32 = db
+            .query_row("SELECT count(*) FROM reclaim_request", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(pending, 1);
+        assert_eq!(fs::metadata(&database).unwrap().len(), original_size);
+        drop(db);
+
+        reclaim_pending(&database, || false).unwrap();
+        assert!(fs::metadata(&database).unwrap().len() < 128 * 1024);
+        assert_eq!(
+            load(&database, document, "branch")
+                .unwrap()
+                .unwrap()
+                .checkpoint
+                .data,
+            "branch"
+        );
+        fs::remove_file(&database).unwrap();
+    }
+
+    #[test]
+    fn interrupted_vacuum_preserves_the_request_and_saved_payloads() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let database = test_database();
+        let document = "folder:/branch";
+        let survivor = "package:/keep";
+        for (path, revision, attachments) in [
+            (document, "old", vec![Ok(vec![0xcd; 2 * 1024 * 1024])]),
+            (
+                survivor,
+                "keep",
+                (0..32).map(|value| Ok(vec![value; 1024])).collect(),
+            ),
+            (document, "branch", vec![]),
+        ] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                path.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        let mut db = connect(&database).unwrap();
+        let tx = db.transaction().unwrap();
+        prune(&tx).unwrap();
+        tx.commit().unwrap();
+        drop(db);
+        let original_size = fs::metadata(&database).unwrap().len();
+        let checks = Arc::new(AtomicUsize::new(0));
+        reclaim_pending(&database, move || {
+            // There are no orphan BLOBs left. Permit entry and the pre-VACUUM check, then
+            // request a pause when SQLite calls the progress handler.
+            checks.fetch_add(1, Ordering::Relaxed) >= 2
+        })
+        .unwrap();
+        assert_eq!(fs::metadata(&database).unwrap().len(), original_size);
+        let before = load(&database, survivor, "keep")
+            .unwrap()
+            .unwrap()
+            .checkpoint;
+        assert_eq!(before.attachments.len(), 32);
+
+        reclaim_pending(&database, || false).unwrap();
+        assert!(fs::metadata(&database).unwrap().len() < 256 * 1024);
+        assert_eq!(
+            load(&database, survivor, "keep")
+                .unwrap()
+                .unwrap()
+                .checkpoint,
+            before
+        );
+        fs::remove_file(&database).unwrap();
+    }
+
+    #[test]
     fn saving_a_new_branch_leaves_obsolete_attachments_for_background_reclaim() {
         let database = test_database();
         let target = "package:/branch.mdpkg";
@@ -398,7 +604,7 @@ mod tests {
             "saving the branch should leave the large BLOB for background work"
         );
 
-        reclaim_pending(&database).unwrap();
+        reclaim_pending(&database, || false).unwrap();
 
         let compacted_size = fs::metadata(&database).unwrap().len();
         assert!(original_size.saturating_sub(compacted_size) >= unique_bytes as u64,
@@ -456,7 +662,7 @@ mod tests {
         prune(&tx).unwrap();
         tx.commit().unwrap();
         drop(db);
-        reclaim_pending(&database).unwrap();
+        reclaim_pending(&database, || false).unwrap();
 
         assert!(fs::metadata(&database).unwrap().len() < 128 * 1024);
         assert_eq!(
@@ -491,7 +697,7 @@ mod tests {
             .complete(revision)
             .unwrap();
         }
-        reclaim_pending(&database).unwrap();
+        reclaim_pending(&database, || false).unwrap();
         let db = connect(&database).unwrap();
         let maintenance_tables: u32 = db
             .query_row(
