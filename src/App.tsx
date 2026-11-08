@@ -136,7 +136,7 @@ import {
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import {
-  applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, sameSavedContent,
+  applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, reuseAttachmentPayload, sameSavedContent,
   textHistoryEntry, type HistoryDirection, type EditHistoryEntry, type EditHistoryFocus, type TextEditGroup,
 } from "./lib/editHistory";
 import { blocksFolderSave, externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
@@ -1343,7 +1343,8 @@ export default function App() {
     let next = current;
     const addedPaths: string[] = [];
     for (const attachment of attachments) {
-      const added = addAttachment(next, attachment.file_name, attachment.base64, markdownPath);
+      const payload = reuseAttachmentPayload(editHistoryRef.current, attachment.base64);
+      const added = addAttachment(next, attachment.file_name, payload, markdownPath);
       next = added.state;
       addedPaths.push(added.path);
     }

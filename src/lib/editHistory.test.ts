@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { createDocumentState, movePath } from "./document";
-import { applyEditHistoryEntry, fileHistoryEntry } from "./editHistory";
+import { addAttachment, createDocumentState, movePath, updateFileContent } from "./document";
+import { applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, reuseAttachmentPayload, textHistoryEntry } from "./editHistory";
 
 test("rejects an occupied original path without partially undoing a move or its link edits", () => {
   const before = createDocumentState({
@@ -22,4 +22,39 @@ test("rejects an occupied original path without partially undoing a move or its 
     ["docs/guide.md", "Another file"],
   ]);
   expect(applyEditHistoryEntry(after, entry, "undo").files).toEqual(before.files);
+});
+
+function documentWithText(content: string) {
+  return createDocumentState({
+    entrypoint: "index.md",
+    manifest: { version: "2.0", entrypoint: "index.md" },
+    files: [{ path: "index.md", content, is_text: true, base64: null }],
+  }, "book.mdpkg");
+}
+
+test("small history patches preserve the exact UTF-16 code units", () => {
+  const prefix = "x".repeat(5000);
+  const before = prefix + "\ud83d\ude00\r\n\ud800";
+  const after = prefix + "\ud83d\ude42\n\udc00";
+  const initial = documentWithText(before);
+  const next = updateFileContent(initial, "index.md", after);
+  const entry = textHistoryEntry("index.md", before, after, initial.staleResources, next.staleResources);
+  expect(applyEditHistoryEntry(next, entry, "undo").files[0].content).toBe(before);
+  expect(applyEditHistoryEntry(initial, entry, "redo").files[0].content).toBe(after);
+});
+
+test("large attachments with identical size and samples replay their own bytes", () => {
+  const initial = documentWithText("Attachments");
+  const history = createEditHistory();
+  const first = "A".repeat(2 ** 20);
+  const second = first.slice(0, 100) + "B" + first.slice(101);
+  const addedFirst = addAttachment(initial, "first.bin", reuseAttachmentPayload(history, first), "index.md");
+  recordEdit(history, fileHistoryEntry(initial, addedFirst.state, "Add first")!);
+  const addedSecond = addAttachment(addedFirst.state, "second.bin", reuseAttachmentPayload(history, second), "index.md");
+  const entry = fileHistoryEntry(addedFirst.state, addedSecond.state, "Add second")!;
+  recordEdit(history, entry);
+
+  const undone = applyEditHistoryEntry(addedSecond.state, entry, "undo");
+  expect(undone.files.map((file) => file.base64)).toEqual([null, first]);
+  expect(applyEditHistoryEntry(undone, entry, "redo").files.map((file) => file.base64)).toEqual([null, first, second]);
 });
