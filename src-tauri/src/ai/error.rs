@@ -43,6 +43,7 @@ pub fn classify_http_status(status: u16, message: &str) -> AiError {
         404 => AiError::ModelNotFound(message.to_string()),
         429 => AiError::RateLimited(message.to_string()),
         408 => AiError::Timeout(message.to_string()),
+        500..=599 if message.trim().is_empty() => AiError::ServerError(format!("HTTP {status}")),
         500..=599 => AiError::ServerError(message.to_string()),
         _ => AiError::Unknown(message.to_string()),
     }
