@@ -7,7 +7,7 @@ import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
 import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
-import { Decoration } from "@codemirror/view";
+import { Decoration, highlightSpecialChars } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE, PACKAGE_PATH_POINTER_DROP, type PackagePathPointerDrop } from "../lib/packageDrag";
 import { isDocumentSearchShortcut } from "../lib/shortcuts";
@@ -35,6 +35,42 @@ interface Props {
 }
 
 const noDiagnosticRanges: NonNullable<Props["diagnosticRanges"]> = [];
+const specialCharacterNames: Partial<Record<number, string>> = {
+  0x0000: "ヌル文字",
+  0x0007: "ベル",
+  0x0008: "後退",
+  0x000A: "改行",
+  0x000B: "垂直タブ",
+  0x000D: "復帰",
+  0x001B: "エスケープ",
+  0x200B: "ゼロ幅スペース",
+  0x200C: "ゼロ幅非接合子",
+  0x200D: "ゼロ幅接合子",
+  0x200E: "左から右へのマーク",
+  0x200F: "右から左へのマーク",
+  0x2028: "行区切り",
+  0x2029: "段落区切り",
+  0x202D: "左から右への上書き",
+  0x202E: "右から左への上書き",
+  0x2066: "左から右への分離開始",
+  0x2067: "右から左への分離開始",
+  0x2069: "方向分離の終了",
+  0xFEFF: "ゼロ幅改行なしスペース",
+  0xFFFC: "オブジェクト置換文字",
+};
+const localizedSpecialCharacters = highlightSpecialChars({
+  render: (code, _description, placeholder) => {
+    const name = specialCharacterNames[code];
+    const codePoint = "U+" + code.toString(16).toUpperCase().padStart(4, "0");
+    const label = name ? `制御文字 ${name}（${codePoint}）` : `制御文字 ${codePoint}`;
+    const marker = document.createElement("span");
+    marker.className = "cm-specialChar";
+    marker.textContent = placeholder;
+    marker.title = label;
+    marker.setAttribute("aria-label", label);
+    return marker;
+  },
+});
 const controlledChange = Annotation.define<boolean>();
 const setNavigationHighlight = StateEffect.define<{ from: number; to: number } | null>();
 const navigationHighlight = StateField.define({
@@ -137,7 +173,9 @@ export function CodeEditor({
       })),
       vimCompartmentRef.current.of([]),
       basicSetup,
+      localizedSpecialCharacters,
       EditorState.phrases.of({
+        Completions: "補完候補", Diagnostics: "エディタの診断", "No diagnostics": "診断結果はありません。",
         Find: "検索", Replace: "置換", next: "次へ", previous: "前へ", all: "すべて",
         "match case": "大文字と小文字を区別", regexp: "正規表現", "by word": "単語単位",
         replace: "置換", "replace all": "すべて置換", close: "閉じる",
