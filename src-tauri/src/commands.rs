@@ -244,9 +244,11 @@ pub async fn save_package(
     let uploaded = edit_history_upload
         .map(|token| uploads.take(&token))
         .transpose();
-    tokio::task::spawn_blocking(move || save_package_at(request, database, uploaded))
+    let outcome = tokio::task::spawn_blocking(move || save_package_at(request, database, uploaded))
         .await
-        .map_err(|error| format!("package save task failed: {error}"))?
+        .map_err(|error| format!("package save task failed: {error}"))??;
+    request_history_maintenance(&app);
+    Ok(outcome)
 }
 
 fn save_package_at(
@@ -287,9 +289,11 @@ pub async fn save_folder(
     let uploaded = edit_history_upload
         .map(|token| uploads.take(&token))
         .transpose();
-    tokio::task::spawn_blocking(move || save_folder_at(request, database, uploaded))
+    let outcome = tokio::task::spawn_blocking(move || save_folder_at(request, database, uploaded))
         .await
-        .map_err(|error| format!("folder save task failed: {error}"))?
+        .map_err(|error| format!("folder save task failed: {error}"))??;
+    request_history_maintenance(&app);
+    Ok(outcome)
 }
 
 fn save_folder_at(
@@ -349,6 +353,12 @@ pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
         .app_local_data_dir()
         .map(|path| path.join("edit-history.sqlite3"))
         .map_err(|error| error.to_string())
+}
+
+fn request_history_maintenance(app: &AppHandle) {
+    if let Some(maintenance) = app.try_state::<crate::history_maintenance::HistoryMaintenance>() {
+        maintenance.request();
+    }
 }
 
 fn attach_saved_history(
