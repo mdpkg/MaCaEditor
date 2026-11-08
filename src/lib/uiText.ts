@@ -27,6 +27,7 @@ const labels: Record<string, string> = {
   "Search Package...": "パッケージを検索...",
   "Search Package": "パッケージを検索",
   "Undo File Operation": "ファイル操作を元に戻す",
+  "Only the latest edit can be undone from this notification.": "この通知から取り消せるのは、直前の編集だけです。",
   "Redo File Operation": "ファイル操作をやり直す",
   "Start with New Empty Folder": "新しい空のフォルダで開始",
   "Insert Diagram": "図を挿入",

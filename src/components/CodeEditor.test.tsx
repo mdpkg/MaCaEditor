@@ -14,6 +14,65 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("routes document history through the host in standard and Vim modes", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onHistory = vi.fn();
+    const onChange = vi.fn();
+    const render = (vimMode: boolean) => act(() => root.render(<CodeEditor
+      value="Original" onChange={onChange} onHistory={onHistory} vimMode={vimMode} />));
+    try {
+      render(false);
+      const view = EditorView.findFromDOM(host.querySelector<HTMLElement>(".cm-editor")!)!;
+      act(() => view.dispatch({ changes: { from: 8, insert: "!" } }));
+      act(() => view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+      })));
+      expect(onHistory).toHaveBeenLastCalledWith("undo");
+      expect(view.state.doc.toString()).toBe("Original!");
+
+      render(true);
+      const vim = getCM(view) as CodeMirrorV;
+      act(() => Vim.handleKey(vim, "u", "user"));
+      act(() => Vim.handleKey(vim, "<C-r>", "user"));
+      act(() => Vim.handleEx(vim, "undo"));
+      act(() => view.contentDOM.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "historyRedo", bubbles: true, cancelable: true,
+      })));
+      expect(onHistory.mock.calls).toEqual([["undo"], ["undo"], ["redo"], ["undo"], ["redo"]]);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  test("reports a composition only after its final change", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const onHistory = vi.fn();
+    act(() => root.render(<CodeEditor value="" onChange={onChange} onHistory={onHistory} />));
+    try {
+      const view = EditorView.findFromDOM(host.querySelector<HTMLElement>(".cm-editor")!)!;
+      const composing = vi.spyOn(view, "composing", "get").mockReturnValue(true);
+      const compositionEvent = (name: string) => view.contentDOM.dispatchEvent(new CompositionEvent(name, { bubbles: true }));
+      act(() => {
+        compositionEvent("compositionstart");
+        view.dispatch({ changes: { from: 0, insert: "か" }, userEvent: "input.type.compose" });
+        view.dispatch({ changes: { from: 0, to: 1, insert: "漢" }, userEvent: "input.type.compose" });
+      });
+      expect(onChange).not.toHaveBeenCalled();
+      await act(async () => {
+        composing.mockReturnValue(false);
+        compositionEvent("compositionend");
+      });
+      expect(onChange.mock.calls).toEqual([["漢"]]);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   test("localizes diagnostic and control character labels", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

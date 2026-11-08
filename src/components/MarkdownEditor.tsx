@@ -1,9 +1,11 @@
 import { CodeEditor } from "./CodeEditor";
 import type { AiTaskKind } from "../lib/aiSelection";
+import type { HistoryDirection, TextEditGroup } from "../lib/packageHistory";
 
 interface Props {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, group?: TextEditGroup) => void;
+  onHistory?: (direction: HistoryDirection) => void;
   onCursorChange?: (position: number) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onSave?: () => void | Promise<void>;
@@ -19,12 +21,13 @@ interface Props {
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
-export function MarkdownEditor({ value, onChange, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges }: Props) {
+export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
       value={value}
       onChange={onChange}
+      onHistory={onHistory}
       onCursorChange={onCursorChange}
       onSelectionChange={onSelectionChange}
       onSave={onSave}

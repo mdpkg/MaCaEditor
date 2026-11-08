@@ -96,7 +96,7 @@ import {
   isMarkdownPath,
   packageFileMarkdownLink,
 } from "./lib/markdown";
-import { isPackageSearchShortcut, isSaveShortcut } from "./lib/shortcuts";
+import { historyShortcut, isPackageSearchShortcut, isSaveShortcut } from "./lib/shortcuts";
 import {
   droppedFileToImage,
   importedImageDataUrl,
@@ -136,6 +136,10 @@ import {
 } from "./lib/editorPreferences";
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
+import {
+  applyPackageHistoryEntry, createPackageHistory, fileHistoryEntry, recordPackageEdit, samePackageContent,
+  textHistoryEntry, type HistoryDirection, type PackageHistoryEntry, type TextEditGroup,
+} from "./lib/packageHistory";
 import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { supportsPrintPageMargins } from "./lib/printPageMargins";
 import { diagnosePackage, diagnoseRelatedMarkdown, type PackageDiagnostic } from "./lib/packageDiagnostics";
@@ -253,6 +257,9 @@ export default function App() {
   const [pendingInferredFolder, setPendingInferredFolder] = useState<PendingInferredFolder | null>(null);
   const operationUndoRef = useRef<FileOperation[]>([]);
   const operationRedoRef = useRef<FileOperation[]>([]);
+  const packageHistoryRef = useRef(createPackageHistory());
+  const savedPackageRef = useRef<DocumentState | null>(null);
+  const packageTypingRef = useRef<{ group: TextEditGroup; path: string; before: string; stale: string[] | undefined } | null>(null);
   const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
@@ -277,10 +284,24 @@ export default function App() {
     setFolderConflictState(conflict);
   };
 
-  const setDoc = (update: DocumentState | ((current: DocumentState | null) => DocumentState | null)) => {
-    const next = typeof update === "function" ? update(documentRef.current) : update;
+  const applyDocumentState = (next: DocumentState | null) => {
     documentRef.current = next;
     setDocumentState(next);
+  };
+
+  const setDoc = (update: DocumentState | ((current: DocumentState | null) => DocumentState | null)) => {
+    const next = typeof update === "function" ? update(documentRef.current) : update;
+    if (next?.origin.kind === "package" && next !== documentRef.current) {
+      // Editors outside package history can replace files independently of the recorded edits.
+      packageHistoryRef.current = createPackageHistory();
+      packageTypingRef.current = null;
+    }
+    applyDocumentState(next);
+  };
+
+  const withPackageDirty = (next: DocumentState) => {
+    const saved = savedPackageRef.current;
+    return { ...next, dirty: !saved || !samePackageContent(next, saved) };
   };
 
   const replaceDocument = (next: DocumentState) => {
@@ -298,10 +319,13 @@ export default function App() {
     setNavigationTarget(null);
     operationUndoRef.current = [];
     operationRedoRef.current = [];
+    packageHistoryRef.current = createPackageHistory();
+    packageTypingRef.current = null;
+    savedPackageRef.current = next.origin.kind === "package" ? next : null;
     setFolderConflict(false);
     setError(null);
     setNotifications((current) => current.filter((notice) => !notice.action));
-    setDoc(next);
+    applyDocumentState(next);
 
   };
 
@@ -353,6 +377,14 @@ export default function App() {
   );
   const recordDocumentOperation = (next: DocumentState, label: string, move?: PathMove) => {
     if (!doc) return;
+    if (doc.origin.kind === "package") {
+      const entry = fileHistoryEntry(doc, next, label);
+      if (!entry) return;
+      packageTypingRef.current = null;
+      recordPackageEdit(packageHistoryRef.current, entry);
+      applyDocumentState(withPackageDirty(next));
+      return entry;
+    }
     const entry: FileOperation = move ? { kind: "move", move, label } : { kind: "snapshot", state: doc, label };
     operationUndoRef.current.push(entry);
     operationRedoRef.current = [];
@@ -360,10 +392,35 @@ export default function App() {
     setOperationHistoryRevision((revision) => revision + 1);
     return entry;
   };
-  const applyFileOperationHistory = (direction: "undo" | "redo", expectedEntry?: FileOperation) => {
+  const applyFileOperationHistory = (direction: HistoryDirection, expectedEntry?: FileOperation | PackageHistoryEntry) => {
     const current = documentRef.current;
     if (!current) return;
     const undo = direction === "undo";
+    if (current.origin.kind === "package") {
+      const history = packageHistoryRef.current;
+      const index = undo ? history.cursor - 1 : history.cursor;
+      const entry = history.entries[index];
+      if (expectedEntry && entry !== expectedEntry) {
+        showNotification(uiText("Only the latest edit can be undone from this notification."), "warning");
+        return;
+      }
+      if (!entry) return;
+      const operation = uiText(undo ? "Undo" : "Redo");
+      try {
+        const next = withPackageDirty(applyPackageHistoryEntry(current, entry, direction));
+        packageTypingRef.current = null;
+        history.cursor += undo ? -1 : 1;
+        applyDocumentState(next);
+        setSelectedFolder(null);
+        setSelectedPath(entry.kind === "text" ? entry.path : next.entrypoint);
+        if (entry.kind === "files") setMode("preview");
+        clearError(operation);
+        setStatus(`${entry.label}を${undo ? "元に戻しました" : "やり直しました"}`);
+      } catch (reason) {
+        reportError(operation, reason);
+      }
+      return;
+    }
     const source = undo ? operationUndoRef.current : operationRedoRef.current;
     const destination = undo ? operationRedoRef.current : operationUndoRef.current;
     const entry = source[source.length - 1];
@@ -695,7 +752,13 @@ export default function App() {
   const finishSave = (snapshot: DocumentState, saved: DocumentState) => {
     const current = documentRef.current;
     if (!current) return;
-    setDoc(current === snapshot ? saved : applySavedBaseline(current, saved));
+    const next = current === snapshot ? saved : applySavedBaseline(current, saved);
+    if (saved.origin.kind === "package") {
+      savedPackageRef.current = saved;
+      applyDocumentState(withPackageDirty(next));
+    } else {
+      setDoc(next);
+    }
     for (const entry of [...operationUndoRef.current, ...operationRedoRef.current]) {
       if (entry.kind === "snapshot") entry.state = applySavedBaseline(entry.state, saved);
     }
@@ -704,6 +767,7 @@ export default function App() {
   };
 
   const performSaveAs = () => runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
+    packageTypingRef.current = null;
     const result = await saveDialog({
       filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
@@ -725,6 +789,7 @@ export default function App() {
       return;
     }
     await runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
+      packageTypingRef.current = null;
       const saved = await saveDocument(snapshot);
       if (isCurrentSession()) finishSave(snapshot, saved);
     });
@@ -981,9 +1046,25 @@ export default function App() {
     setMode("preview");
   };
 
-  const handleContentChange = (content: string) => {
-    if (!doc || !selectedPath) return;
-    setDoc((current) => current && updateFileContent(current, selectedPath, content));
+  const handleContentChange = (path: string, session: number, content: string, group?: TextEditGroup) => {
+    const current = documentRef.current;
+    if (!current || session !== documentSessionRef.current) return;
+    const file = current.files.find((candidate) => candidate.path === path);
+    if (!file?.is_text || file.content === content) return;
+    const next = updateFileContent(current, path, content);
+    if (current.origin.kind === "package" && file.content != null) {
+      const history = packageHistoryRef.current;
+      const typing = packageTypingRef.current;
+      if (typing && typing.group === group && typing.path === path) {
+        history.entries[history.cursor - 1] = textHistoryEntry(path, typing.before, content, typing.stale, next.staleResources);
+      } else {
+        packageTypingRef.current = group ? { group, path, before: file.content, stale: current.staleResources } : null;
+        recordPackageEdit(history, textHistoryEntry(path, file.content, content, current.staleResources, next.staleResources));
+      }
+      applyDocumentState(withPackageDirty(next));
+    } else {
+      setDoc(next);
+    }
   };
 
   const handleSelectionChange = (selection: { from: number; to: number; text: string } | null) => {
@@ -1642,6 +1723,15 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
+      const direction = historyShortcut(event);
+      const target = event.target instanceof Element ? event.target : null;
+      if (direction && doc?.origin.kind === "package" && (mode === "preview" || mode === "split") &&
+          !target?.closest("input, textarea, select, [contenteditable], [role=dialog]") &&
+          !document.querySelector('[role="dialog"][aria-modal="true"]')) {
+        event.preventDefault();
+        applyFileOperationHistory(direction);
+        return;
+      }
       if (isPackageSearchShortcut(event) && doc) {
         event.preventDefault();
         setPackageDiagnostics(null);
@@ -1653,7 +1743,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [doc]);
+  }, [doc, mode]);
 
   const displayFile = selectedFile ?? entrypointFile;
   const printTitle = doc ? `${documentName} — ${displayFile?.path ?? ""}` : "MaCa Editor";
@@ -1768,8 +1858,10 @@ export default function App() {
         onValidatePackage={handleValidatePackage}
         onUndoFileOperation={() => applyFileOperationHistory("undo")}
         onRedoFileOperation={() => applyFileOperationHistory("redo")}
-        canUndoFileOperation={operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
-        canRedoFileOperation={operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
+        canUndoFileOperation={doc?.origin.kind === "package" ? packageHistoryRef.current.cursor > 0
+          : operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
+        canRedoFileOperation={doc?.origin.kind === "package" ? packageHistoryRef.current.cursor < packageHistoryRef.current.entries.length
+          : operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
         onEditManifest={() => setManifestEditorOpen(true)}
         onSearchPackage={() => { setPackageDiagnostics(null); setPackageSearchOpen(true); }}
         onAddMarkdown={() => void handleAdd("markdown")}
@@ -1983,7 +2075,8 @@ export default function App() {
                   <MarkdownEditor
                     key={`${editorSession}:${displayFile.path}`}
                     value={displayContent}
-                    onChange={handleContentChange}
+                    onChange={(content, group) => handleContentChange(displayFile.path, editorSession, content, group)}
+                    onHistory={doc.origin.kind === "package" ? applyFileOperationHistory : undefined}
                     onCursorChange={(position) => {
                       if (editorSession === documentSessionRef.current) editorCursorsRef.current.set(displayFile.path, position);
                     }}

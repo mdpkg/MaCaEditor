@@ -4,19 +4,21 @@ import { Menu, MenuSubmenu } from "./Menu";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { markdown } from "@codemirror/lang-markdown";
-import { getCM, Vim, vim } from "@replit/codemirror-vim";
+import { CodeMirror, getCM, Vim, vim } from "@replit/codemirror-vim";
 import { basicSetup, EditorView } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
-import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { Decoration, highlightSpecialChars } from "@codemirror/view";
 import type { AiTaskKind } from "../lib/aiSelection";
 import { PACKAGE_PATH_DRAG_TYPE, PACKAGE_PATH_POINTER_DROP, type PackagePathPointerDrop } from "../lib/packageDrag";
-import { isDocumentSearchShortcut } from "../lib/shortcuts";
+import { historyShortcut, isDocumentSearchShortcut } from "../lib/shortcuts";
+import type { HistoryDirection, TextEditGroup } from "../lib/packageHistory";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
 
 interface Props {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, group?: TextEditGroup) => void;
+  onHistory?: (direction: HistoryDirection) => void;
   onCursorChange?: (position: number) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onSave?: () => void | Promise<void>;
@@ -86,9 +88,18 @@ const navigationHighlight = StateField.define({
   provide: (field) => EditorView.decorations.from(field),
 });
 const vimSaveHandlers = new WeakMap<object, () => void>();
+const vimHistoryHandlers = new WeakMap<object, (direction: HistoryDirection) => boolean>();
 Vim.defineEx("write", "w", (editor) => {
   vimSaveHandlers.get(editor)?.();
 });
+for (const direction of ["undo", "redo"] as const) {
+  const localCommand = CodeMirror.commands[direction];
+  const command = (editor: CodeMirror) => {
+    if (!vimHistoryHandlers.get(editor)?.(direction)) localCommand(editor);
+  };
+  CodeMirror.commands[direction] = command;
+  Vim.defineEx(direction, direction === "undo" ? "u" : "red", command);
+}
 
 function preserveScrollPosition(view: EditorView, scrollTop: number, scrollLeft: number) {
   const restore = () => {
@@ -105,6 +116,7 @@ function preserveScrollPosition(view: EditorView, scrollTop: number, scrollLeft:
 export function CodeEditor({
   value,
   onChange,
+  onHistory,
   onCursorChange,
   onSave,
   vimMode = false,
@@ -126,6 +138,7 @@ export function CodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const onHistoryRef = useRef(onHistory);
   const onCursorChangeRef = useRef(onCursorChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onAiSelectionRef = useRef(onAiSelection);
@@ -143,6 +156,7 @@ export function CodeEditor({
   const highlightTimer = useRef<number | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
+  onHistoryRef.current = onHistory;
   onCursorChangeRef.current = onCursorChange;
   onSelectionChangeRef.current = onSelectionChange;
   onAiSelectionRef.current = onAiSelection;
@@ -152,6 +166,16 @@ export function CodeEditor({
 
   useEffect(() => {
     if (!hostRef.current) return;
+    let typing: { group: TextEditGroup; kind: "input" | "delete"; time: number } | undefined;
+    let compositionStart: string | undefined;
+    const finishComposition = (view: EditorView) => {
+      if (compositionStart === undefined || view.composing) return;
+      const before = compositionStart;
+      compositionStart = undefined;
+      typing = undefined;
+      const content = view.state.doc.toString();
+      if (before !== content) onChangeRef.current(content);
+    };
     const openMenu = (view: EditorView, x: number, y: number) => {
       const { from, to } = view.state.selection.main;
       view.focus();
@@ -165,15 +189,41 @@ export function CodeEditor({
       Prec.highest(EditorView.domEventHandlers({
         keydown: (event, view) => {
           if (event.isComposing) return false;
+          finishComposition(view);
+          const direction = historyShortcut(event);
+          if (direction && onHistoryRef.current && view.contentDOM.contains(event.target as Node)) {
+            if (!view.composing) onHistoryRef.current(direction);
+            return true;
+          }
           if (isDocumentSearchShortcut(event)) return openSearchPanel(view);
           if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return false;
           const anchor = view.coordsAtPos(view.state.selection.main.head) ?? view.contentDOM.getBoundingClientRect();
           openMenu(view, anchor.left, anchor.bottom);
           return true;
         },
+        beforeinput: (event, view) => {
+          const direction = event.inputType === "historyUndo" ? "undo" : event.inputType === "historyRedo" ? "redo" : undefined;
+          if (!direction || !onHistoryRef.current || !view.contentDOM.contains(event.target as Node)) return false;
+          finishComposition(view);
+          if (!event.isComposing && !view.composing) onHistoryRef.current(direction);
+          return true;
+        },
+        compositionstart: (_event, view) => {
+          if (onHistoryRef.current) compositionStart ??= view.state.doc.toString();
+          return false;
+        },
+        compositionend: (_event, view) => {
+          // CodeMirror may flush the final DOM mutation in its own microtask.
+          queueMicrotask(() => queueMicrotask(() => {
+            if (viewRef.current === view) finishComposition(view);
+          }));
+          return false;
+        },
       })),
       vimCompartmentRef.current.of([]),
       basicSetup,
+      EditorState.transactionExtender.of((transaction) =>
+        onHistoryRef.current && transaction.docChanged ? { annotations: Transaction.addToHistory.of(false) } : null),
       localizedSpecialCharacters,
       EditorState.phrases.of({
         Completions: "補完候補", Diagnostics: "エディタの診断", "No diagnostics": "診断結果はありません。",
@@ -194,8 +244,37 @@ export function CodeEditor({
       navigationHighlight,
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": uiText(ariaLabel) })] : []),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged && update.transactions.some((tr) => tr.docChanged && !tr.annotation(controlledChange))) {
-          onChangeRef.current(update.state.doc.toString());
+        const edits = update.transactions.filter((tr) => tr.docChanged && !tr.annotation(controlledChange));
+        if (edits.length > 0) {
+          const { view, state } = update;
+          if (!onHistoryRef.current) {
+            onChangeRef.current(state.doc.toString());
+          } else if (view.composing || compositionStart !== undefined) {
+            compositionStart ??= update.startState.doc.toString();
+            finishComposition(view);
+          } else {
+            const edit = edits.length === 1 ? edits[0] : undefined;
+            const kind = edit?.isUserEvent("input.type") && !edit.isUserEvent("input.type.compose") ? "input"
+              : edit?.isUserEvent("delete") ? "delete" : undefined;
+            const selection = update.startState.selection.main;
+            let ranges = 0;
+            let touchesCursor = false;
+            update.changes.iterChangedRanges((from, to) => {
+              ranges++;
+              touchesCursor ||= from <= selection.head && selection.head <= to;
+            });
+            const time = Date.now();
+            if (kind && selection.empty && ranges === 1 && touchesCursor) {
+              const group = typing?.kind === kind && time - typing.time <= 500 ? typing.group : {};
+              typing = { group, kind, time };
+              onChangeRef.current(state.doc.toString(), group);
+            } else {
+              typing = undefined;
+              onChangeRef.current(state.doc.toString());
+            }
+          }
+        } else if (update.selectionSet || update.docChanged) {
+          typing = undefined;
         }
         if (update.docChanged || update.selectionSet) {
           onCursorChangeRef.current?.(update.state.selection.main.head);
@@ -291,11 +370,17 @@ export function CodeEditor({
     const vimEditor = getCM(view);
     if (!vimEditor) return;
     vimSaveHandlers.set(vimEditor, () => { void onSaveRef.current?.(); });
+    vimHistoryHandlers.set(vimEditor, (direction) => {
+      if (!onHistoryRef.current) return false;
+      if (!view.composing) onHistoryRef.current(direction);
+      return true;
+    });
     const panel = view.dom.querySelector<HTMLElement>(".cm-vim-panel");
     const disposeLocalization = panel && localizeVimPanel(panel, vimEditor);
     return () => {
       disposeLocalization?.();
       vimSaveHandlers.delete(vimEditor);
+      vimHistoryHandlers.delete(vimEditor);
     };
   }, [language, vimMode]);
 
