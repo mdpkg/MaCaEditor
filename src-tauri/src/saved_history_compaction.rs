@@ -122,19 +122,27 @@ pub(super) fn rebuild(
         return Err(io::Error::other("history compaction requires DELETE journal mode").into());
     }
     let version = data_version(&source)?;
-    let generation = copy::generation(&source)?;
+    let revision = copy::revision(&source)?;
+    let generation = revision.generation;
+    let partial_erase: bool = source.query_row(
+        "SELECT EXISTS(SELECT 1 FROM payload_reclaim JOIN payload USING(digest)
+                       WHERE next_offset < octet_length(data))",
+        [],
+        |row| row.get(0),
+    )?;
+    if partial_erase {
+        return Err(HistoryError::Busy);
+    }
     let scratch = Scratch(sidecar(database, ".reclaim"));
-    let (mut copy, mut cursor) = copy::open(&source, &scratch, generation, last_request)?;
+    let (mut copy, mut cursor) = copy::open(&source, &scratch, revision, last_request)?;
     while !cursor.done() {
         if should_yield() {
             return Ok(ReclaimAttempt::Yielded);
         }
         if data_version(&source)? != version {
-            drop(copy);
-            scratch.clean()?;
             return Err(HistoryError::Busy);
         }
-        cursor = copy::step(&source, &mut copy, cursor, last_request)?;
+        cursor = copy::step(&source, &mut copy, cursor, last_request, generation)?;
     }
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
@@ -153,6 +161,33 @@ pub(super) fn rebuild(
     let has_receipt =
         reclaim_batch::mark_published(&tx, first_request_id, last_request, request_count)?;
     tx.commit()?;
+    let incomplete: bool = copy.query_row(
+        "SELECT EXISTS(SELECT 1 FROM reclaim_partial)
+             OR EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
+        [],
+        |row| row.get(0),
+    )?;
+    if incomplete {
+        return Err(io::Error::other("incomplete data in compacted edit history").into());
+    }
+    // Reconciliation can remove rows already copied into the scratch DB. Release those pages
+    // in separate transactions so a save does not force a full VACUUM or discard the scratch.
+    let mut pages: u32 = copy.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+    while pages > 0 {
+        if should_yield() {
+            return Ok(ReclaimAttempt::Yielded);
+        }
+        {
+            let mut stmt = copy.prepare("PRAGMA incremental_vacuum(1024)")?;
+            let mut rows = stmt.query([])?;
+            while rows.next()?.is_some() {}
+        }
+        let remaining: u32 = copy.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+        if remaining >= pages {
+            return Err(io::Error::other("could not release scratch database pages").into());
+        }
+        pages = remaining;
+    }
     // Closing SQLite releases any file space it preallocated while growing the scratch DB.
     copy.close().map_err(|(_, error)| error)?;
     if should_yield() {
@@ -193,8 +228,7 @@ pub(super) fn rebuild(
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
     }
-    if data_version(&source)? != version || copy::generation(&source)? != generation {
-        scratch.clean()?;
+    if data_version(&source)? != version || copy::revision(&source)?.generation != generation {
         return Err(HistoryError::Busy);
     }
     source.close().map_err(|(_, error)| error)?;

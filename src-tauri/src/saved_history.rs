@@ -149,15 +149,18 @@ fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
         "PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL;",
     )?;
     let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if matches!(version, 0..=4) {
+    if version == 0 {
+        db.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+    }
+    if matches!(version, 0..=5) {
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         // Another connection may have finished the migration while this one waited.
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version == 5 {
+        if version == 6 {
             tx.commit()?;
             return Ok(db);
         }
-        if !(0..=4).contains(&version) {
+        if !(0..=5).contains(&version) {
             return Err(HistoryError::Schema(version));
         }
         if version < 4 {
@@ -185,16 +188,22 @@ fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
              ALTER TABLE checkpoint ADD COLUMN saved_at INTEGER;",
             )?;
         }
-        tx.execute_batch(
-            "CREATE TABLE history_generation (
+        if version < 5 {
+            tx.execute_batch(
+                "CREATE TABLE history_generation (
                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                 token BLOB NOT NULL CHECK(length(token) = 16)
              );
-             INSERT INTO history_generation VALUES(1, randomblob(16));
-             PRAGMA user_version = 5;",
+             INSERT INTO history_generation VALUES(1, randomblob(16));",
+            )?;
+        }
+        tx.execute_batch(
+            "ALTER TABLE history_generation ADD COLUMN lineage BLOB;
+             UPDATE history_generation SET lineage = randomblob(16);
+             PRAGMA user_version = 6;",
         )?;
         tx.commit()?;
-    } else if version != 5 {
+    } else if version != 6 {
         return Err(HistoryError::Schema(version));
     }
     Ok(db)
@@ -514,14 +523,22 @@ pub fn clear(database: &Path, document: &str) -> Result<ClearOutcome> {
     if !database.try_exists()? {
         return Ok(ClearOutcome::default());
     }
+    // VACUUM can renumber implicit rowids used by the background copy cursor.
+    let reclaim = compaction::reclaim_guard(database);
     let mut db = connect(database)?;
     let tx = begin_history_write(&mut db)?;
     tx.execute("DELETE FROM checkpoint WHERE document = ?1", [document])?;
     prune(&tx)?;
+    if reclaim.is_err() {
+        enqueue_reclaim(&tx)?;
+    }
     tx.commit()?;
 
     // VACUUM needs its own transaction. Keep the deletion committed if reclaiming space fails.
-    let reclaim_warning = reclaim_free_pages(&db).err().map(|error| error.to_string());
+    let reclaim_warning = match reclaim {
+        Ok(_lease) => reclaim_free_pages(&db).err().map(|error| error.to_string()),
+        Err(error) => Some(error.to_string()),
+    };
     Ok(ClearOutcome { reclaim_warning })
 }
 
@@ -573,7 +590,12 @@ mod tests {
 
     fn remove_test_database(database: &Path) {
         fs::remove_file(database).unwrap();
-        for suffix in [".publish-lock", ".reclaim-lock"] {
+        for suffix in [
+            ".publish-lock",
+            ".reclaim-lock",
+            ".reclaim",
+            ".reclaim-journal",
+        ] {
             let path = compaction::sidecar(database, suffix);
             if path.exists() {
                 fs::remove_file(path).unwrap();
@@ -657,7 +679,7 @@ mod tests {
                 .ok()?;
             db.busy_timeout(Duration::ZERO).ok()?;
             db.query_row(
-                "SELECT blob_offset FROM reclaim_copy WHERE stage = 1",
+                "SELECT blob_offset FROM reclaim_copy WHERE stage = 1 AND row_cursor = 2",
                 [],
                 |row| row.get(0),
             )
@@ -673,6 +695,20 @@ mod tests {
         let offset = copied(&scratch)
             .expect("the interrupted compaction must retain its scratch DB and cursor");
         assert!(offset > 0 && offset < 24 * mib as u32);
+        let saved = "package:/during-compaction";
+        for revision in ["first", "second", "third"] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                saved.into(),
+                revision,
+                true,
+                revision.into(),
+                [Ok(vec![1, 2, 3])],
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
         let before = fs::metadata(&database).unwrap().len();
         let allocated_before = compaction::allocated_bytes(&database).unwrap();
         let observed = scratch.clone();
@@ -704,6 +740,10 @@ mod tests {
             read_chunk(&database, download.id, 0, 24 * mib - 1, 1).unwrap(),
             [0xab]
         );
+        let latest = load(&database, saved, "third").unwrap().unwrap().checkpoint;
+        assert_eq!(latest.data, "third");
+        assert_eq!(latest.attachments, ["AQID"]);
+        assert!(load(&database, saved, "first").unwrap().is_none());
         remove_test_database(&database);
     }
 
@@ -717,6 +757,19 @@ mod tests {
         let database = test_database();
         let target = "package:/branch";
         let other = "folder:/later";
+        // The save below removes a blob already in the scratch DB. Its pages need to be
+        // released without rebuilding the unaffected rows.
+        PendingCheckpoint::prepare(
+            database.clone(),
+            other.into(),
+            "previous",
+            true,
+            "previous".into(),
+            [Ok(vec![0x34; 8 * 1024 * 1024])],
+        )
+        .unwrap()
+        .complete("previous")
+        .unwrap();
         for (revision, attachments) in [
             ("old", vec![Ok(vec![0; 9 * 1024 * 1024])]),
             ("branch", vec![]),
@@ -735,7 +788,9 @@ mod tests {
         }
         let db = connect(&database).unwrap();
         db.execute(
-            "INSERT INTO payload_reclaim SELECT digest, length(data) FROM payload",
+            "INSERT INTO payload_reclaim
+             SELECT digest, length(data) FROM payload
+             WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest)",
             [],
         )
         .unwrap();
@@ -754,7 +809,7 @@ mod tests {
             )
             .and_then(|db| {
                 db.busy_timeout(Duration::ZERO)?;
-                db.query_row("SELECT stage = 7 FROM reclaim_copy", [], |row| {
+                db.query_row("SELECT stage = 14 FROM reclaim_copy", [], |row| {
                     row.get::<_, bool>(0)
                 })
             })
@@ -776,7 +831,7 @@ mod tests {
         });
         assert!(saved.load(Ordering::Relaxed));
         assert!(matches!(result, Err(HistoryError::Busy)));
-        assert!(!scratch.exists());
+        assert!(scratch.exists());
         assert!(fs::metadata(&database).unwrap().len() > 9 * 1024 * 1024);
 
         let reader = connect(&database).unwrap();
@@ -926,7 +981,7 @@ mod tests {
         let version: i64 = db
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let legacy_saved_at: Option<i64> = db
             .query_row(
                 "SELECT saved_at FROM checkpoint WHERE document = 'package:/legacy'",

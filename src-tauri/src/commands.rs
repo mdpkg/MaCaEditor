@@ -343,7 +343,10 @@ pub async fn clear_saved_edit_history(
         return Err("unsupported edit history document kind".into());
     }
     let database = history_database(&app)?;
+    let write = app.try_state::<crate::history_maintenance::HistoryMaintenance>()
+        .map(|maintenance| maintenance.begin_write());
     tokio::task::spawn_blocking(move || {
+        let _write = write;
         let document =
             saved_history::identity(&kind, Path::new(&path)).map_err(|e| e.to_string())?;
         saved_history::clear(&database, &document).map_err(|e| e.to_string())
