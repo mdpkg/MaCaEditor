@@ -251,14 +251,13 @@ fn stream_events(
                 )),
                 EventStreamError::Parser(_) => AiError::InvalidResponse(error.to_string()),
             })?;
-            if event.data == "[DONE]" {
+            if event.event != "error" && event.data == "[DONE]" {
                 return Ok(None);
             }
             if event.event == "keepalive" {
                 continue;
             }
-            let chunk = serde_json::from_str::<CreateChatCompletionStreamResponse>(&event.data)
-                .map_err(|error| invalid_response(error, &event.data))?;
+            let chunk = parse_stream_chunk(&event.data, event.event == "error")?;
             saw_finish |= chunk
                 .choices
                 .first()
@@ -274,6 +273,51 @@ fn stream_events(
             "stream ended without a completion marker".to_string(),
         ))
     })
+}
+
+fn parse_stream_chunk(
+    data: &str,
+    is_error_event: bool,
+) -> Result<CreateChatCompletionStreamResponse, AiError> {
+    if is_error_event {
+        let error = serde_json::from_str::<WrappedError>(data)
+            .map(|wrapped| wrapped.error)
+            .or_else(|_| serde_json::from_str::<ApiError>(data))
+            .map_err(|error| invalid_response(error, data))?;
+        return Err(map_stream_api_error(error, data));
+    }
+
+    serde_json::from_str(data).map_err(|parse_error| {
+        match serde_json::from_str::<WrappedError>(data) {
+            Ok(wrapped) => map_stream_api_error(wrapped.error, data),
+            Err(_) => invalid_response(parse_error, data),
+        }
+    })
+}
+
+fn stream_error_kind(code: &str) -> Option<fn(String) -> AiError> {
+    Some(match code {
+        "invalid_project" => AiError::InvalidProject,
+        "invalid_api_key" | "authentication_error" => AiError::AuthenticationFailed,
+        "permission_denied" | "permission_error" => AiError::PermissionDenied,
+        "model_not_found" => AiError::ModelNotFound,
+        "invalid_request_error" => AiError::InvalidConfiguration,
+        "rate_limit_exceeded" | "rate_limit_error" | "slow_down" => AiError::RateLimited,
+        "request_timeout" | "timeout" => AiError::Timeout,
+        "server_error" | "internal_error" | "internal_server_error" | "server_is_overloaded"
+        | "server_overloaded" | "service_unavailable_error" => AiError::ServerError,
+        _ => return None,
+    })
+}
+
+fn map_stream_api_error(error: ApiError, data: &str) -> AiError {
+    let kind = error
+        .code
+        .as_deref()
+        .and_then(stream_error_kind)
+        .or_else(|| error.r#type.as_deref().and_then(stream_error_kind))
+        .unwrap_or(AiError::Unknown);
+    kind(data.to_owned())
 }
 
 fn invalid_response(error: serde_json::Error, body: &str) -> AiError {
