@@ -16,9 +16,26 @@ pub fn save_folder(
     original: &[String],
     expected_revision: &str,
 ) -> Result<String, FolderError> {
-    save_folder_with(path, manifest, files, original, expected_revision, |_| {
-        Ok(())
-    })
+    save_folder_with_checkpoint(path, manifest, files, original, expected_revision, |_| {})
+}
+
+pub fn save_folder_with_checkpoint(
+    path: &Path,
+    manifest: &Manifest,
+    files: &[PackageFile],
+    original: &[String],
+    expected_revision: &str,
+    prepare_checkpoint: impl FnOnce(&str),
+) -> Result<String, FolderError> {
+    save_folder_with(
+        path,
+        manifest,
+        files,
+        original,
+        expected_revision,
+        |_| Ok(()),
+        prepare_checkpoint,
+    )
 }
 
 struct WriteFile<'a> {
@@ -34,6 +51,7 @@ pub(super) fn save_folder_with(
     original: &[String],
     expected_revision: &str,
     mut before_publish: impl FnMut(&Path) -> io::Result<()>,
+    prepare_checkpoint: impl FnOnce(&str),
 ) -> Result<String, FolderError> {
     let loaded = load_folder(path)?;
     if loaded.revision != expected_revision {
@@ -95,6 +113,7 @@ pub(super) fn save_folder_with(
     };
     let write_manifest = manifest_write.original != Some(manifest_write.content);
     if writes.is_empty() && removals.is_empty() && !write_manifest {
+        prepare_checkpoint(&loaded.revision);
         return Ok(loaded.revision);
     }
     let retained = old
@@ -136,6 +155,7 @@ pub(super) fn save_folder_with(
         if load_folder_inner(root, true)?.revision != expected_revision {
             return Err(FolderError::Conflict);
         }
+        prepare_checkpoint(&planned_revision);
         // Retire a blocking path before publishing only when a file and directory trade places.
         let (blockers, remaining): (Vec<_>, Vec<_>) = removals.iter().partition(|(old, _)| {
             writes

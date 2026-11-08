@@ -1,10 +1,12 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tauri::{AppHandle, Manager};
 
 use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
 use crate::package_loader::{load_package, LoadedPackage};
 use crate::package_writer::write_package;
+use crate::saved_history::{self, EditCheckpoint, PendingCheckpoint};
 
 #[derive(Debug, serde::Serialize)]
 pub struct FileInfo {
@@ -22,6 +24,18 @@ pub struct PackageInfo {
     pub manifest_generated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folder_revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_history: Option<EditCheckpoint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_history_warning: Option<String>,
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct SaveOutcome {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_history_warning: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -29,6 +43,7 @@ pub struct SaveRequest {
     pub path: String,
     pub manifest: serde_json::Value,
     pub files: Vec<FileContent>,
+    pub edit_history: Option<EditCheckpoint>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -36,6 +51,7 @@ pub struct FolderSaveRequest {
     pub path: String,
     pub manifest: serde_json::Value,
     pub files: Vec<FileContent>,
+    pub edit_history: Option<EditCheckpoint>,
     pub original_paths: Vec<String>,
     pub expected_revision: String,
 }
@@ -129,30 +145,63 @@ fn encode_base64(data: &[u8]) -> String {
 
 /// `.mdpkg` を開く Tauri コマンド。
 #[tauri::command]
-pub fn open_package(path: String) -> Result<PackageInfo, String> {
-    let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+pub async fn open_package(app: AppHandle, path: String) -> Result<PackageInfo, String> {
+    let database = history_database(&app);
+    tokio::task::spawn_blocking(move || open_package_at(Path::new(&path), database))
+        .await
+        .map_err(|error| format!("package open task failed: {error}"))?
+}
+
+fn open_package_at(path: &Path, database: Result<PathBuf, String>) -> Result<PackageInfo, String> {
+    let data = std::fs::read(path).map_err(|e| e.to_string())?;
     let loaded: LoadedPackage = load_package(&data).map_err(|e| e.to_string())?;
 
     let files: Vec<FileInfo> = loaded.files.iter().map(to_file_info).collect();
     let manifest = serde_json::to_value(&loaded.manifest).map_err(|e| e.to_string())?;
-
-    Ok(PackageInfo {
+    let mut info = PackageInfo {
         manifest,
         entrypoint: loaded.manifest.entrypoint.clone(),
         files,
         manifest_generated: false,
         folder_revision: None,
-    })
+        edit_history: None,
+        edit_history_warning: None,
+    };
+    attach_saved_history(
+        &mut info,
+        database,
+        "package",
+        path,
+        &saved_history::revision(&data),
+    );
+    Ok(info)
 }
 
 #[tauri::command]
-pub async fn open_folder(path: String) -> Result<PackageInfo, String> {
-    let loaded = tokio::task::spawn_blocking(move || {
-        crate::folder_document::load_folder(&PathBuf::from(path)).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("folder scan failed: {e}"))??;
-    folder_package_info(loaded)
+pub async fn open_folder(
+    app: AppHandle,
+    path: String,
+    with_edit_history: Option<bool>,
+) -> Result<PackageInfo, String> {
+    let database = with_edit_history
+        .unwrap_or(false)
+        .then(|| history_database(&app));
+    tokio::task::spawn_blocking(move || open_folder_at(Path::new(&path), database))
+        .await
+        .map_err(|e| format!("folder scan failed: {e}"))?
+}
+
+fn open_folder_at(
+    path: &Path,
+    database: Option<Result<PathBuf, String>>,
+) -> Result<PackageInfo, String> {
+    let loaded = crate::folder_document::load_folder(path).map_err(|e| e.to_string())?;
+    let revision = loaded.revision.clone();
+    let mut info = folder_package_info(loaded)?;
+    if let Some(database) = database {
+        attach_saved_history(&mut info, database, "folder", path, &revision);
+    }
+    Ok(info)
 }
 
 #[tauri::command]
@@ -173,36 +222,181 @@ fn folder_package_info(
         files,
         manifest_generated: loaded.manifest_was_generated,
         folder_revision: Some(loaded.revision),
+        edit_history: None,
+        edit_history_warning: None,
     })
 }
 
 /// Document Model を `.mdpkg` として保存する Tauri コマンド。
 #[tauri::command]
-pub fn save_package(request: SaveRequest) -> Result<(), String> {
+pub async fn save_package(app: AppHandle, request: SaveRequest) -> Result<SaveOutcome, String> {
+    let database = history_database(&app);
+    tokio::task::spawn_blocking(move || save_package_at(request, database))
+        .await
+        .map_err(|error| format!("package save task failed: {error}"))?
+}
+
+fn save_package_at(
+    request: SaveRequest,
+    database: Result<PathBuf, String>,
+) -> Result<SaveOutcome, String> {
     let manifest = parse_manifest(&request.manifest)?;
     let files = parse_files(request.files)?;
-
     let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
-    atomic_save(&PathBuf::from(&request.path), &zip).map_err(|e| e.to_string())?;
-    Ok(())
+    let path = Path::new(&request.path);
+    let mut history = HistoryWrite::new(database, request.edit_history);
+    let revision = history.checkpoint.is_some().then(|| {
+        let revision = saved_history::revision(&zip);
+        let recoverable = saved_history::existing_revision(path)
+            .is_ok_and(|old| old.as_deref() != Some(&revision));
+        history.prepare("package", path, &revision, recoverable);
+        revision
+    });
+    history.finish(
+        atomic_save(path, &zip).map_err(|e| e.to_string()),
+        revision.as_deref(),
+    )?;
+    Ok(SaveOutcome {
+        edit_history_warning: history.warning,
+        ..SaveOutcome::default()
+    })
 }
 
 #[tauri::command]
-pub async fn save_folder(request: FolderSaveRequest) -> Result<String, String> {
+pub async fn save_folder(
+    app: AppHandle,
+    request: FolderSaveRequest,
+) -> Result<SaveOutcome, String> {
+    let database = history_database(&app);
+    tokio::task::spawn_blocking(move || save_folder_at(request, database))
+        .await
+        .map_err(|error| format!("folder save task failed: {error}"))?
+}
+
+fn save_folder_at(
+    request: FolderSaveRequest,
+    database: Result<PathBuf, String>,
+) -> Result<SaveOutcome, String> {
+    let manifest = parse_manifest(&request.manifest)?;
+    let files = parse_files(request.files)?;
+    let path = Path::new(&request.path);
+    let mut history = HistoryWrite::new(database, request.edit_history);
+    let result = crate::folder_document::save_folder_with_checkpoint(
+        path,
+        &manifest,
+        &files,
+        &request.original_paths,
+        &request.expected_revision,
+        |revision| {
+            history.prepare(
+                "folder",
+                path,
+                revision,
+                revision != request.expected_revision,
+            )
+        },
+    )
+    .map_err(|error| error.to_string());
+    let revision = result.as_ref().ok().cloned();
+    let revision = history.finish(result, revision.as_deref())?;
+    Ok(SaveOutcome {
+        folder_revision: Some(revision),
+        edit_history_warning: history.warning,
+    })
+}
+
+#[tauri::command]
+pub async fn clear_saved_edit_history(
+    app: AppHandle,
+    path: String,
+    kind: String,
+) -> Result<(), String> {
+    if !matches!(kind.as_str(), "package" | "folder") {
+        return Err("unsupported edit history document kind".into());
+    }
+    let database = history_database(&app)?;
     tokio::task::spawn_blocking(move || {
-        let manifest = parse_manifest(&request.manifest)?;
-        let files = parse_files(request.files)?;
-        crate::folder_document::save_folder(
-            &PathBuf::from(request.path),
-            &manifest,
-            &files,
-            &request.original_paths,
-            &request.expected_revision,
-        )
-        .map_err(|error| error.to_string())
+        let document =
+            saved_history::identity(&kind, Path::new(&path)).map_err(|e| e.to_string())?;
+        saved_history::clear(&database, &document).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|error| format!("folder save task failed: {error}"))?
+    .map_err(|error| format!("edit history clear task failed: {error}"))?
+}
+
+fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map(|path| path.join("edit-history.sqlite3"))
+        .map_err(|error| error.to_string())
+}
+
+fn attach_saved_history(
+    info: &mut PackageInfo,
+    database: Result<PathBuf, String>,
+    kind: &str,
+    path: &Path,
+    revision: &str,
+) {
+    let result = database.and_then(|database| {
+        let document = saved_history::identity(kind, path).map_err(|error| error.to_string())?;
+        saved_history::load(&database, &document, revision).map_err(|error| error.to_string())
+    });
+    match result {
+        Ok(checkpoint) => info.edit_history = checkpoint,
+        Err(error) => info.edit_history_warning = Some(error),
+    }
+}
+
+struct HistoryWrite {
+    database: Result<PathBuf, String>,
+    checkpoint: Option<EditCheckpoint>,
+    pending: Option<PendingCheckpoint>,
+    warning: Option<String>,
+}
+
+impl HistoryWrite {
+    fn new(database: Result<PathBuf, String>, checkpoint: Option<EditCheckpoint>) -> Self {
+        Self {
+            database,
+            checkpoint,
+            pending: None,
+            warning: None,
+        }
+    }
+
+    fn prepare(&mut self, kind: &str, path: &Path, revision: &str, recoverable: bool) {
+        let Some(checkpoint) = self.checkpoint.take() else {
+            return;
+        };
+        let result = self.database.clone().and_then(|database| {
+            let document =
+                saved_history::identity(kind, path).map_err(|error| error.to_string())?;
+            PendingCheckpoint::prepare(database, document, revision, recoverable, checkpoint)
+                .map_err(|error| error.to_string())
+        });
+        match result {
+            Ok(pending) => self.pending = Some(pending),
+            Err(error) => self.warning = Some(error),
+        }
+    }
+
+    fn finish<T>(
+        &mut self,
+        result: Result<T, String>,
+        revision: Option<&str>,
+    ) -> Result<T, String> {
+        if let Some(pending) = self.pending.take() {
+            let history_result = match revision {
+                Some(revision) if result.is_ok() => pending.complete(revision),
+                _ => pending.discard(),
+            };
+            if let Err(error) = history_result {
+                self.warning = Some(error.to_string());
+            }
+        }
+        result
+    }
 }
 
 #[tauri::command]
@@ -547,6 +741,10 @@ mod tests {
         create_new_package, export_folder, export_package, read_attachment, save_attachment,
         FileContent, SaveRequest,
     };
+    use super::{
+        open_folder_at, open_package_at, save_folder_at, save_package_at, FolderSaveRequest,
+    };
+    use crate::saved_history::{self, EditCheckpoint};
     use std::path::PathBuf;
 
     fn temporary_attachment_path() -> PathBuf {
@@ -558,6 +756,108 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    fn checkpoint(text: &str) -> EditCheckpoint {
+        EditCheckpoint {
+            data: text.into(),
+            attachments: vec!["AQID".into()],
+        }
+    }
+
+    fn index_file(text: &str) -> Vec<FileContent> {
+        vec![FileContent {
+            path: "index.md".into(),
+            is_text: true,
+            content: Some(text.into()),
+            base64: None,
+        }]
+    }
+
+    #[test]
+    fn package_reopens_with_the_saved_checkpoint_only_for_matching_bytes() {
+        let temp = temporary_attachment_path();
+        std::fs::create_dir(&temp).unwrap();
+        let path = temp.join("document.mdpkg");
+        let database = temp.join("history.sqlite3");
+        let manifest = serde_json::json!({
+            "format": "mdpkg", "version": "2.0", "entrypoint": "index.md", "title": "Document"
+        });
+        let request = |content, edit_history| SaveRequest {
+            path: path.to_string_lossy().into_owned(),
+            manifest: manifest.clone(),
+            files: index_file(content),
+            edit_history,
+        };
+        let saved = checkpoint("saved cursor");
+        let outcome =
+            save_package_at(request("saved", Some(saved.clone())), Ok(database.clone())).unwrap();
+        assert!(outcome.edit_history_warning.is_none());
+        let opened = open_package_at(&path, Ok(database.clone())).unwrap();
+        assert_eq!(opened.edit_history, Some(saved));
+        assert_eq!(opened.files[0].content.as_deref(), Some("saved"));
+
+        // The document remains usable when a subsequent history write fails.
+        let invalid = EditCheckpoint {
+            data: "new cursor".into(),
+            attachments: vec!["!".into()],
+        };
+        let outcome = save_package_at(
+            request("changed externally", Some(invalid)),
+            Ok(database.clone()),
+        )
+        .unwrap();
+        assert!(outcome.edit_history_warning.is_some());
+        let opened = open_package_at(&path, Ok(database)).unwrap();
+        assert_eq!(
+            opened.files[0].content.as_deref(),
+            Some("changed externally")
+        );
+        assert!(opened.edit_history.is_none());
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn folder_reopens_with_the_last_saved_checkpoint_after_a_failed_save() {
+        let temp = temporary_attachment_path();
+        std::fs::create_dir(&temp).unwrap();
+        let path = temp.join("document");
+        let database = temp.join("history.sqlite3");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("index.md"), "# Original").unwrap();
+        let initial = open_folder_at(&path, Some(Ok(database.clone()))).unwrap();
+        let initial_revision = initial.folder_revision.unwrap();
+        let request = |expected_revision: String, content, edit_history| FolderSaveRequest {
+            path: path.to_string_lossy().into_owned(),
+            manifest: initial.manifest.clone(),
+            files: index_file(content),
+            edit_history: Some(edit_history),
+            original_paths: vec!["index.md".into()],
+            expected_revision,
+        };
+        let saved = checkpoint("saved cursor");
+        let outcome = save_folder_at(
+            request(initial_revision.clone(), "# Saved", saved.clone()),
+            Ok(database.clone()),
+        )
+        .unwrap();
+        assert!(outcome.edit_history_warning.is_none());
+        let failed = save_folder_at(
+            request(initial_revision, "# Not saved", checkpoint("failed cursor")),
+            Ok(database.clone()),
+        );
+        assert!(failed.is_err());
+        let opened = open_folder_at(&path, Some(Ok(database.clone()))).unwrap();
+        assert_eq!(opened.edit_history, Some(saved));
+        assert_eq!(opened.files[0].content.as_deref(), Some("# Saved"));
+        assert!(open_folder_at(&path, None).unwrap().edit_history.is_none());
+
+        let document = saved_history::identity("folder", &path).unwrap();
+        saved_history::clear(&database, &document).unwrap();
+        let opened = open_folder_at(&path, Some(Ok(database))).unwrap();
+        assert!(opened.edit_history.is_none());
+        assert_eq!(opened.files[0].content.as_deref(), Some("# Saved"));
+        std::fs::remove_dir_all(temp).unwrap();
     }
 
     #[test]
@@ -600,6 +900,7 @@ mod tests {
     fn exports_a_valid_document_as_mdpkg() {
         let path = temporary_attachment_path().with_extension("mdpkg");
         let request = SaveRequest {
+            edit_history: None,
             path: path.to_string_lossy().into_owned(),
             manifest: serde_json::json!({
                 "format": "mdpkg", "version": "1.0", "entrypoint": "README.md", "title": "T"
@@ -623,6 +924,7 @@ mod tests {
         let package_path = temporary_attachment_path().with_extension("mdpkg");
         let dest = temporary_attachment_path().with_extension("folder");
         export_package(SaveRequest {
+            edit_history: None,
             path: package_path.to_string_lossy().into_owned(),
             manifest: serde_json::json!({
                 "format": "mdpkg", "version": "1.0", "entrypoint": "README.md",

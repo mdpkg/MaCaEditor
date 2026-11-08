@@ -17,6 +17,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   openFolder: vi.fn(),
   savePackage: vi.fn(),
   saveFolder: vi.fn(),
+  clearSavedEditHistory: vi.fn(),
   exportPackage: vi.fn(),
   watchFolder: vi.fn(),
   watchPrint: vi.fn(),
@@ -644,11 +645,43 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
   });
 
+  test.each(["package", "folder"] as const)("restores the saved undo and redo position on restart in %s mode", async (kind) => {
+    const reader = kind === "folder" ? tauri.openFolder : tauri.openPackage;
+    const writer = kind === "folder" ? tauri.saveFolder : tauri.savePackage;
+    const path = kind === "folder" ? folderPath : "persistent.mdpkg";
+    vi.mocked(reader).mockResolvedValue(documentInfo("Original"));
+    await act(async () => nativeDrop([path], kind));
+    await click("編集");
+    await edit("First edit");
+    await edit("Second edit");
+    await historyShortcut("z");
+    await act(async () => saveShortcut());
+    const written = vi.mocked(writer).mock.lastCall![0];
+    expect(written.files[0].content).toBe("First edit");
+    expect(written.edit_history).toBeDefined();
+    await edit("Unsaved edit");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    vi.mocked(reader).mockResolvedValue({
+      ...documentInfo("First edit"), edit_history: written.edit_history,
+    });
+    await act(async () => root.render(<App />));
+    await act(async () => nativeDrop([path], kind));
+    expect(container.querySelector(".document-area")?.textContent).toContain("First edit");
+    await historyShortcut("y");
+    expect(container.querySelector(".document-area")?.textContent).toContain("Second edit");
+    await historyShortcut("z");
+    await historyShortcut("z");
+    expect(container.querySelector(".document-area")?.textContent).toContain("Original");
+    expect(container.querySelector(".document-area")?.textContent).not.toContain("Unsaved edit");
+  });
+
   test("undoes folder edits across saves using the last written paths for deletions", async () => {
     const info = { ...documentInfo("[Guide](docs/guide.md)"), folder_revision: "before" };
     info.files.push({ path: "docs/guide.md", content: "[Home](../index.md)", is_text: true, base64: null });
     vi.mocked(tauri.openFolder).mockResolvedValue(info);
-    vi.mocked(tauri.saveFolder).mockResolvedValueOnce("after-move").mockResolvedValueOnce("after-undo");
+    vi.mocked(tauri.saveFolder).mockResolvedValueOnce({ folder_revision: "after-move" }).mockResolvedValueOnce({ folder_revision: "after-undo" });
     await act(async () => nativeDrop([folderPath], "folder"));
     await click("編集");
     await edit("[Guide](docs/guide.md)\n\nLocal");
@@ -732,7 +765,7 @@ describe("App persistence", () => {
     await click("編集");
     await edit("Written");
     const write = deferred();
-    vi.mocked(tauri.savePackage).mockReturnValueOnce(write.promise);
+    vi.mocked(tauri.savePackage).mockReturnValueOnce(write.promise.then(() => ({})));
     await act(async () => saveShortcut());
     await historyShortcut("z");
     expect(container.querySelector("textarea")?.value).toBe("Disk");
@@ -855,18 +888,20 @@ describe("App persistence", () => {
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
   });
 
-  test.each(["package", "folder"] as const)("replays mixed Markdown, table, Drawing, attachment, AI, and move edits in %s mode", async (kind) => {
+  test.each(["package", "folder"] as const)("replays mixed Markdown, table, Drawing, attachment, AI, and move edits after reopening in %s mode", async (kind) => {
     const original = "Before\n\n[Guide](docs/guide.md)\n\n| A | B |\n| --- | --- |\n| 1 | 2 |";
     const info = documentInfo(original);
     info.files.push({ path: "docs/guide.md", content: "[Home](../index.md)", is_text: true, base64: null });
-    vi.mocked(kind === "folder" ? tauri.openFolder : tauri.openPackage).mockResolvedValue(info);
+    const reader = kind === "folder" ? tauri.openFolder : tauri.openPackage;
+    const path = kind === "folder" ? folderPath : "mixed.mdpkg";
+    vi.mocked(reader).mockResolvedValue(info);
     vi.mocked(tauri.hasAiConfiguration).mockResolvedValue(true);
     vi.mocked(tauri.loadAiConfig).mockResolvedValue({
       provider: "OpenAiCompatible", base_url: "http://localhost:11434/v1", api_key: null, model: "test",
       temperature: 0.7, max_output_tokens: 128, connect_timeout_seconds: 10, request_timeout_seconds: 30,
     });
     vi.mocked(tauri.startAiSelectionAction).mockResolvedValue("rewrite");
-    await act(async () => nativeDrop([kind === "folder" ? folderPath : "mixed.mdpkg"], kind));
+    await act(async () => nativeDrop([path], kind));
     const writer = kind === "folder" ? tauri.saveFolder : tauri.savePackage;
     const snapshot = async () => {
       await act(async () => saveShortcut());
@@ -964,6 +999,20 @@ describe("App persistence", () => {
     expect(container.querySelector(".markdown-table-editor")).not.toBeNull();
     expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
     await click("キャンセル", container.querySelector(".markdown-table-editor")!);
+
+    const written = vi.mocked(writer).mock.lastCall![0];
+    expect(written.edit_history?.attachments).toEqual(["cGRm", "emlw"]);
+    act(() => root.unmount());
+    root = createRoot(container);
+    vi.mocked(reader).mockResolvedValue({
+      ...info,
+      manifest: written.manifest as PackageInfo["manifest"],
+      // Folder scans and package readers need not return entries in editor order.
+      files: [...written.files].reverse(),
+      edit_history: written.edit_history,
+    });
+    await act(async () => root.render(<App />));
+    await act(async () => nativeDrop([path], kind));
 
     for (let index = revisions.length - 2; index >= 0; index--) {
       await historyShortcut("z");
@@ -1082,7 +1131,7 @@ describe("App persistence", () => {
     await edit("First edit");
 
     const write = deferred();
-    vi.mocked(tauri.savePackage).mockReturnValueOnce(write.promise);
+    vi.mocked(tauri.savePackage).mockReturnValueOnce(write.promise.then(() => ({})));
     await click("ファイル");
     await click(command);
     expect(container.textContent).toContain("保存しています…");

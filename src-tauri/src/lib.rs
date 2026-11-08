@@ -12,6 +12,7 @@ pub mod package_file;
 pub mod package_loader;
 pub mod package_validation;
 pub mod package_writer;
+mod saved_history;
 pub mod path_validator;
 mod print_monitor;
 #[cfg(windows)]
@@ -102,6 +103,7 @@ pub fn run() {
             commands::create_empty_folder,
             commands::save_package,
             commands::save_folder,
+            commands::clear_saved_edit_history,
             commands::export_package,
             commands::create_new_package,
             commands::import_folder,

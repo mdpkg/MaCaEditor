@@ -25,6 +25,7 @@ interface Props {
   onRedoFileOperation?: () => void;
   canUndoFileOperation?: boolean;
   canRedoFileOperation?: boolean;
+  onClearEditHistory?: () => void;
   onEditManifest?: () => void;
   onSearchPackage?: () => void;
   onAddMarkdown?: () => void;
@@ -81,6 +82,7 @@ export function Toolbar({
   onRedoFileOperation = () => {},
   canUndoFileOperation = false,
   canRedoFileOperation = false,
+  onClearEditHistory,
   onEditManifest = () => {},
   onSearchPackage = () => {},
   onAddMarkdown = () => {},
@@ -198,6 +200,8 @@ export function Toolbar({
             <button type="button" role="menuitem" disabled={!hasDocument} data-shortcut="Ctrl/Cmd+Shift+F" aria-keyshortcuts="Control+Shift+F Meta+Shift+F" title="Ctrl/Cmd+Shift+F" onClick={() => run(onSearchPackage)}>{uiText("Search Package...")}</button>
             <button type="button" role="menuitem" disabled={!canUndoFileOperation} onClick={() => run(onUndoFileOperation)}>{uiText("Undo")}</button>
             <button type="button" role="menuitem" disabled={!canRedoFileOperation} onClick={() => run(onRedoFileOperation)}>{uiText("Redo")}</button>
+            {onClearEditHistory && <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress}
+              onClick={() => run(onClearEditHistory)}>{uiText("Clear edit history…")}</button>}
           </Menu>
         )}
       </div>

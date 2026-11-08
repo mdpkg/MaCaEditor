@@ -11,6 +11,18 @@ export interface PackageInfo {
   files: FileInfo[];
   manifest_generated?: boolean;
   folder_revision?: string;
+  edit_history?: EditCheckpoint;
+  edit_history_warning?: string;
+}
+
+export interface EditCheckpoint {
+  data: string;
+  attachments: string[];
+}
+
+export interface SaveOutcome {
+  folder_revision?: string;
+  edit_history_warning?: string;
 }
 
 export interface FileContent {
@@ -24,6 +36,7 @@ export interface SaveRequest {
   path: string;
   manifest: Record<string, unknown>;
   files: FileContent[];
+  edit_history?: EditCheckpoint;
 }
 
 export interface FolderSaveRequest extends SaveRequest {

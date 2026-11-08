@@ -44,13 +44,11 @@ import {
   applyPathMove,
   deletePath,
   imageMediaType,
-  markSaved,
   movePath,
   pathReferenceCount,
   planPathMove,
   resourceDirectoryForMarkdown,
   setEntrypoint,
-  toSaveRequest,
   updateFileContent,
   updateManifestMetadata,
   validateNewPackagePath,
@@ -62,6 +60,7 @@ import {
   importFolder,
   openPackage,
   openFolder,
+  clearSavedEditHistory,
   savePackage,
   readAttachment,
   readImage,
@@ -135,6 +134,7 @@ import {
 } from "./lib/editorPreferences";
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
+import { captureEditCheckpoint, restoreEditCheckpoint } from "./lib/editCheckpoint";
 import {
   applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, reuseAttachmentPayload, sameSavedContent,
   textHistoryEntry, type HistoryDirection, type EditHistoryEntry, type EditHistoryFocus, type TextEditGroup,
@@ -307,7 +307,7 @@ export default function App() {
     return { ...next, dirty: !saved || !sameSavedContent(next, saved) };
   };
 
-  const replaceDocument = (next: DocumentState) => {
+  const replaceDocument = (next: DocumentState, history = createEditHistory()) => {
     const key = fileTreeStateKey(next.origin);
     const collapsed = key ? treeStatesRef.current.get(key) ?? loadCollapsedPaths(key) : new Set<string>();
     if (key) treeStatesRef.current.set(key, collapsed);
@@ -324,7 +324,7 @@ export default function App() {
     setAiSelection(null);
     setAiSelectionRunning(false);
     setAiDiagramEdit(null);
-    editHistoryRef.current = createEditHistory();
+    editHistoryRef.current = history;
     typingRef.current = null;
     savedDocumentRef.current = next.dirty ? null : next;
     setFolderConflict(false);
@@ -654,7 +654,7 @@ export default function App() {
   const openDocument = async (path: string, kind: RecentDocument["kind"], editOnOpen = false) => {
     const sequence = ++openSequenceRef.current;
     try {
-      const info = await (kind === "package" ? openPackage(path) : openFolder(path));
+      const info = await (kind === "package" ? openPackage(path) : openFolder(path, true));
       if (sequence !== openSequenceRef.current || !await confirmReplaceDirtyDocument()) return;
       if (sequence !== openSequenceRef.current) return;
       if (kind === "folder" && info.manifest_generated) {
@@ -663,7 +663,21 @@ export default function App() {
         setStatus(uiText("Review generated manifest"));
         return;
       }
-      replaceDocument(kind === "folder" ? createFolderDocumentState(info, path) : createDocumentState(info, path));
+      const state = kind === "folder" ? createFolderDocumentState(info, path) : createDocumentState(info, path);
+      if (info.edit_history) {
+        try {
+          const restored = restoreEditCheckpoint(state, info.edit_history);
+          replaceDocument(restored.state, restored.history);
+        } catch (reason) {
+          replaceDocument(state);
+          showNotification(uiText("Could not restore saved edit history."), "warning", { detail: errorDetail(reason) });
+        }
+      } else {
+        replaceDocument(state);
+      }
+      if (info.edit_history_warning) {
+        showNotification(uiText("Could not restore saved edit history."), "warning", { detail: info.edit_history_warning });
+      }
       setSelectedPath(info.entrypoint);
       const editEntrypoint = editOnOpen && info.files.some((file) => file.path === info.entrypoint && file.is_text);
       setMode(editEntrypoint ? "split" : "preview");
@@ -740,7 +754,7 @@ export default function App() {
     }
   };
 
-  const finishSave = (snapshot: DocumentState, saved: DocumentState) => {
+  const finishSave = (snapshot: DocumentState, saved: DocumentState, historyWarning?: string) => {
     const current = documentRef.current;
     if (!current) return;
     const next = current === snapshot ? saved : applySavedBaseline(current, saved);
@@ -748,20 +762,25 @@ export default function App() {
     applyDocumentState(withDocumentDirty(next));
     clearError(uiText("Save"));
     setStatus(`${saved.path} を保存しました`);
+    if (historyWarning) {
+      showNotification(uiText("The document was saved, but its edit history could not be saved."), "warning", { detail: historyWarning });
+    }
   };
 
   const performSaveAs = () => runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
     typingRef.current = null;
+    const history = captureEditCheckpoint(snapshot, editHistoryRef.current);
     const result = await saveDialog({
       filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
     });
     if (typeof result !== "string" || !isCurrentSession()) return;
-    await savePackage({ ...toSaveRequest(snapshot), path: result });
+    let historyWarning;
+    const saved = await saveDocument({
+      ...snapshot, path: result, origin: { kind: "package", path: result }, folderSnapshot: undefined,
+    }, undefined, history, (warning) => { historyWarning = warning; });
     if (isCurrentSession()) {
-      finishSave(snapshot, markSaved({
-        ...snapshot, path: result, origin: { kind: "package", path: result }, folderSnapshot: undefined,
-      }));
+      finishSave(snapshot, saved, historyWarning);
     }
   });
 
@@ -775,14 +794,32 @@ export default function App() {
     await runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
       typingRef.current = null;
       try {
-        const saved = await saveDocument(snapshot);
-        if (isCurrentSession()) finishSave(snapshot, saved);
+        const history = captureEditCheckpoint(snapshot, editHistoryRef.current);
+        let historyWarning;
+        const saved = await saveDocument(snapshot, undefined, history, (warning) => { historyWarning = warning; });
+        if (isCurrentSession()) finishSave(snapshot, saved, historyWarning);
       } catch (reason) {
         if (snapshot.origin.kind === "folder" && isCurrentSession() && blocksFolderSave(reason)) setFolderConflict(true);
         throw reason;
       }
     });
   };
+
+  const handleClearSavedEditHistory = () => runFileTask(uiText("Clear edit history…"), uiText("Clearing edit history…"), async (snapshot, isCurrentSession) => {
+    if (snapshot.origin.kind === "untitled") return;
+    const confirmed = await ask({
+      title: uiText("Clear edit history…"),
+      message: uiText("Delete this document’s saved and current edit history?"),
+      confirmLabel: uiText("Delete"),
+    });
+    if (confirmed === null || !isCurrentSession()) return;
+    await clearSavedEditHistory(snapshot.origin.path, snapshot.origin.kind);
+    if (!isCurrentSession() || !documentRef.current) return;
+    editHistoryRef.current = createEditHistory();
+    typingRef.current = null;
+    applyDocumentState({ ...documentRef.current });
+    setStatus(uiText("Edit history cleared."));
+  });
 
   const handleSave = async () => {
     if (!doc || folderConflictRef.current || fileTaskRef.current) return;
@@ -1893,6 +1930,7 @@ export default function App() {
         onValidatePackage={handleValidatePackage}
         onUndoFileOperation={() => applyEditHistory("undo")}
         onRedoFileOperation={() => applyEditHistory("redo")}
+        onClearEditHistory={handleClearSavedEditHistory}
         canUndoFileOperation={mode !== "table" && editHistoryRef.current.cursor > 0}
         canRedoFileOperation={mode !== "table" && editHistoryRef.current.cursor < editHistoryRef.current.entries.length}
         onEditManifest={() => setManifestEditorOpen(true)}

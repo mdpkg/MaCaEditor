@@ -11,26 +11,31 @@ import type {
   ImportedImage,
   PackageInfo,
   SaveRequest,
+  SaveOutcome,
 } from "../types";
 
 export function openPackage(path: string): Promise<PackageInfo> {
   return invoke("open_package", { path });
 }
 
-export function openFolder(path: string): Promise<PackageInfo> {
-  return invoke("open_folder", { path });
+export function openFolder(path: string, withEditHistory = false): Promise<PackageInfo> {
+  return invoke("open_folder", withEditHistory ? { path, withEditHistory } : { path });
 }
 
 export function createEmptyFolder(path: string): Promise<PackageInfo> {
   return invoke("create_empty_folder", { path });
 }
 
-export function savePackage(request: SaveRequest): Promise<void> {
+export function savePackage(request: SaveRequest): Promise<SaveOutcome> {
   return invoke("save_package", { request });
 }
 
-export function saveFolder(request: FolderSaveRequest): Promise<string> {
+export function saveFolder(request: FolderSaveRequest): Promise<SaveOutcome> {
   return invoke("save_folder", { request });
+}
+
+export function clearSavedEditHistory(path: string, kind: "package" | "folder"): Promise<void> {
+  return invoke("clear_saved_edit_history", { path, kind });
 }
 
 export function exportPackage(request: SaveRequest): Promise<void> {

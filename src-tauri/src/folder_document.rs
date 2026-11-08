@@ -10,7 +10,7 @@ use crate::package_validation::{validate_entrypoint_exists, validate_manifest, v
 use crate::path_validator::validate_package_path;
 
 mod save;
-pub use save::save_folder;
+pub use save::{save_folder, save_folder_with_checkpoint};
 const SAVE_DIRECTORY: &str = ".maca-save";
 
 #[derive(Debug, thiserror::Error)]
@@ -531,6 +531,7 @@ mod tests {
                 }
                 Ok(())
             },
+            |_| {},
         );
         assert!(matches!(result, Err(FolderError::Io(_))));
         assert!(failed_after_publish);
@@ -566,6 +567,7 @@ mod tests {
                 }
                 Ok(())
             },
+            |_| {},
         );
         assert!(matches!(result, Err(FolderError::Recovery(..))));
         assert_eq!(fs::read(dir.join("README.md")).unwrap(), b"External");
