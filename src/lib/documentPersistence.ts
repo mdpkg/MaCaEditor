@@ -1,4 +1,5 @@
 import type { DocumentState } from "./document";
+import type { EditCheckpoint } from "../types";
 import { markSaved, toFolderSaveRequest, toSaveRequest } from "./document";
 import { exportPackage, saveFolder, savePackage } from "./tauri";
 
@@ -13,14 +14,16 @@ const commands: PersistenceCommands = { savePackage, saveFolder, exportPackage }
 export async function saveDocument(
   state: DocumentState,
   persistence: PersistenceCommands = commands,
+  editHistory?: EditCheckpoint,
+  onHistoryWarning?: (warning: string) => void,
 ): Promise<DocumentState> {
   if (state.origin.kind === "untitled") throw new Error("Document needs a destination");
-  if (state.origin.kind === "folder") {
-    const revision = await persistence.saveFolder(toFolderSaveRequest(state));
-    return markSaved(state, revision);
-  }
-  await persistence.savePackage(toSaveRequest(state));
-  return markSaved(state);
+  const history = editHistory ? { edit_history: editHistory } : {};
+  const result = state.origin.kind === "folder"
+    ? await persistence.saveFolder({ ...toFolderSaveRequest(state), ...history })
+    : await persistence.savePackage({ ...toSaveRequest(state), ...history });
+  if (result?.edit_history_warning) onHistoryWarning?.(result.edit_history_warning);
+  return markSaved(state, result?.folder_revision);
 }
 
 /** Retain edits while advancing the baseline to the snapshot actually written. */
