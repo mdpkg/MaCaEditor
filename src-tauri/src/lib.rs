@@ -16,6 +16,8 @@ pub mod path_validator;
 mod print_monitor;
 #[cfg(windows)]
 mod windows_drop;
+#[cfg(windows)]
+mod windows_webview;
 
 #[cfg(all(test, desktop))]
 mod startup_visibility_tests {
@@ -77,6 +79,9 @@ pub fn run() {
                 use tauri::Manager;
                 use tauri_plugin_window_state::WindowExt;
 
+                #[cfg(windows)]
+                windows_webview::create_main(app)?;
+
                 if let Some(window) = app.get_webview_window("main") {
                     window.restore_state(window_state_flags())?;
                     #[cfg(windows)]
@@ -124,7 +129,7 @@ pub fn run() {
         .run({
             let context = tauri::generate_context!();
             #[cfg(windows)]
-            let context = windows_drop::configure(context);
+            let context = windows_webview::configure(context);
             context
         })
         .expect("error while running tauri application");
