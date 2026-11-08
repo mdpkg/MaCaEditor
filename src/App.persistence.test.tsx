@@ -19,6 +19,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   saveFolder: vi.fn(),
   clearSavedEditHistory: vi.fn(),
   listSavedEditHistories: vi.fn(),
+  estimateReclaimableHistoryBytes: vi.fn(),
   deleteSavedEditHistory: vi.fn(),
   deleteMissingSavedEditHistories: vi.fn(),
   exportPackage: vi.fn(),
@@ -650,9 +651,9 @@ describe("App persistence", () => {
 
   test("manages saved histories without opening a document", async () => {
     const rows = [
-      { id: "package:Z:/Removed/Draft.mdpkg", path: "Z:/Removed/Draft.mdpkg", saved_at: 1000, access: "missing" },
-      { id: "folder:A:/Projects/Alpha", path: "A:/Projects/Alpha", saved_at: 3000, access: "unavailable" },
-      { id: "package:C:/Private/Beta.mdpkg", path: "C:/Private/Beta.mdpkg", saved_at: null, access: "denied" },
+      { id: "package:Z:/Removed/Draft.mdpkg", path: "Z:/Removed/Draft.mdpkg", saved_at: 1000, access: "missing", size_bytes: 1024 },
+      { id: "folder:A:/Projects/Alpha", path: "A:/Projects/Alpha", saved_at: 3000, access: "unavailable", size_bytes: 1024 ** 2 },
+      { id: "package:C:/Private/Beta.mdpkg", path: "C:/Private/Beta.mdpkg", saved_at: null, access: "denied", size_bytes: 13 },
     ] as const;
     vi.mocked(tauri.listSavedEditHistories).mockResolvedValueOnce([...rows]).mockResolvedValueOnce([...rows.slice(1)]);
     vi.mocked(tauri.deleteSavedEditHistory).mockResolvedValue(undefined);
@@ -666,6 +667,10 @@ describe("App persistence", () => {
     expect(dialog.textContent).toContain("アクセス権限なし");
     expect(dialog.textContent).toContain("不明");
     expect(tauri.deleteSavedEditHistory).not.toHaveBeenCalled();
+    expect(dialog.textContent).toContain("1 MiB");
+    expect(dialog.textContent).toContain("1 KiB");
+    await click("履歴容量", dialog);
+    expect(paths()).toEqual([rows[2].path, rows[0].path, rows[1].path]);
 
     await click("保存先", dialog);
     expect(paths()).toEqual([rows[1].path, rows[2].path, rows[0].path]);
@@ -679,9 +684,12 @@ describe("App persistence", () => {
     expect(paths()).toEqual([...accessSorted].reverse());
 
     const filter = dialog.querySelector<HTMLInputElement>('input[type="search"]')!;
+    vi.useFakeTimers();
     await inputValue(filter, "projects\\al");
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
     expect(paths()).toEqual([rows[1].path]);
     await inputValue(filter, "DRAFT.MD");
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
     expect(paths()).toEqual([rows[0].path]);
     await click("消去…", dialog);
     expect(dialog.textContent).toContain(rows[0].path);
@@ -692,6 +700,7 @@ describe("App persistence", () => {
     expect(tauri.deleteSavedEditHistory).toHaveBeenCalledTimes(1);
     expect(tauri.deleteSavedEditHistory).toHaveBeenCalledWith(rows[0].id);
     await inputValue(dialog.querySelector<HTMLInputElement>('input[type="search"]')!, "");
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
     expect(paths().sort()).toEqual([rows[1].path, rows[2].path]);
     expect(tauri.openPackage).not.toHaveBeenCalled();
     expect(tauri.openFolder).not.toHaveBeenCalled();
@@ -699,15 +708,16 @@ describe("App persistence", () => {
 
   test("confirms a batch of visible missing histories and reports a skipped location", async () => {
     const rows = [
-      { id: "folder:C:/Drafts/Alpha", path: "C:/Drafts/Alpha", saved_at: 3000, access: "missing" },
-      { id: "package:C:/Drafts/Beta.mdpkg", path: "C:/Drafts/Beta.mdpkg", saved_at: 2000, access: "missing" },
-      { id: "folder:Z:/Offline", path: "Z:/Offline", saved_at: 1000, access: "unavailable" },
-      { id: "package:C:/Private.mdpkg", path: "C:/Private.mdpkg", saved_at: null, access: "denied" },
+      { id: "folder:C:/Drafts/Alpha", path: "C:/Drafts/Alpha", saved_at: 3000, access: "missing", size_bytes: 24 * 1024 ** 2 },
+      { id: "package:C:/Drafts/Beta.mdpkg", path: "C:/Drafts/Beta.mdpkg", saved_at: 2000, access: "missing", size_bytes: 20 * 1024 ** 2 },
+      { id: "folder:Z:/Offline", path: "Z:/Offline", saved_at: 1000, access: "unavailable", size_bytes: 16 * 1024 ** 2 },
+      { id: "package:C:/Private.mdpkg", path: "C:/Private.mdpkg", saved_at: null, access: "denied", size_bytes: 13 },
     ] as const;
     vi.mocked(tauri.listSavedEditHistories).mockResolvedValueOnce([...rows]).mockResolvedValueOnce([
       { ...rows[1], access: "unavailable" }, rows[2], rows[3],
     ]);
     const clearBatch = vi.mocked(tauri.deleteMissingSavedEditHistories).mockResolvedValue([rows[0].id]);
+    const estimate = vi.mocked(tauri.estimateReclaimableHistoryBytes).mockResolvedValueOnce(8 * 1024 ** 2).mockResolvedValueOnce(12 * 1024 ** 2);
 
     await click("ファイル");
     await click("保存済み編集履歴…");
@@ -726,21 +736,37 @@ describe("App persistence", () => {
     expect(dialog.textContent).not.toContain(rows[3].path);
     await act(async () => { checkbox(rows[0].path)!.click(); checkbox(rows[1].path)!.click(); });
     const search = dialog.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const table = dialog.querySelector("table");
+    vi.useFakeTimers();
+    await inputValue(search, "no matches");
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(checkbox(rows[1].path)).toBeDefined();
+    expect(button("選択した履歴を消去…", dialog).disabled).toBe(true);
     await inputValue(search, "alpha");
+    await act(async () => { await vi.advanceTimersByTimeAsync(149); });
+    expect(checkbox(rows[1].path)).toBeDefined();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(dialog.querySelector("table")).toBe(table);
     expect(checkbox(rows[1].path)).toBeUndefined();
+    expect(estimate).not.toHaveBeenCalled();
     await click("選択した履歴を消去…", dialog);
     let confirm = confirmation();
     expect(confirm.textContent).toContain(rows[0].path);
     expect(confirm.textContent).not.toContain(rows[1].path);
+    expect(confirm.textContent).toContain("回収見込み 8 MiB");
+    expect(estimate).toHaveBeenNthCalledWith(1, [rows[0].id]);
     await click("キャンセル", confirm);
     expect(clearBatch).not.toHaveBeenCalled();
 
     await inputValue(search, "");
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
     await act(async () => checkbox(rows[1].path)!.click());
     await click("選択した履歴を消去…", dialog);
     confirm = confirmation();
     expect(confirm.textContent).toContain(rows[0].path);
     expect(confirm.textContent).toContain(rows[1].path);
+    expect(confirm.textContent).toContain("回収見込み 12 MiB");
+    expect(estimate).toHaveBeenNthCalledWith(2, [rows[0].id, rows[1].id]);
     expect(clearBatch).not.toHaveBeenCalled();
     await click("消去", confirm);
 
@@ -748,6 +774,7 @@ describe("App persistence", () => {
     expect(clearBatch).toHaveBeenCalledWith([rows[0].id, rows[1].id]);
     expect(tauri.deleteSavedEditHistory).not.toHaveBeenCalled();
     expect(dialog.textContent).toContain("1 件の履歴を残しました");
+    expect(dialog.querySelector("table")).toBe(table);
     await act(async () => dialog.querySelector<HTMLInputElement>('input[aria-label="「見つかりません」のみ"]')!.click());
     expect(dialog.textContent).not.toContain(rows[0].path);
     expect(dialog.textContent).toContain(rows[1].path);

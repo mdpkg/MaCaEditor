@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { deleteMissingSavedEditHistories, deleteSavedEditHistory, listSavedEditHistories } from "../lib/tauri";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { deleteMissingSavedEditHistories, deleteSavedEditHistory, estimateReclaimableHistoryBytes, listSavedEditHistories } from "../lib/tauri";
 import { uiText } from "../lib/uiText";
 import type { SavedEditHistory } from "../types";
 import { Dialog } from "./Dialog";
@@ -9,6 +9,7 @@ const columns = [
   ["path", "Saved location"],
   ["saved_at", "Last saved"],
   ["access", "Access status"],
+  ["size_bytes", "History size"],
 ] as const;
 type SortKey = typeof columns[number][0];
 type Sort = { key: SortKey; direction: "ascending" | "descending" };
@@ -22,7 +23,19 @@ const accessLabels: Record<SavedEditHistory["access"], string> = {
   wrong_kind: "Unexpected document type",
 };
 const localTime = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "medium" });
+const localSize = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+const sizeUnits = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
 const filterKey = (value: string) => value.normalize("NFKC").replace(/\\/g, "/").toLowerCase();
+const filterDelay = 150;
+
+function formatSize(bytes: number): string {
+  let unit = 0;
+  while (bytes >= 1024 && unit < sizeUnits.length - 1) {
+    bytes /= 1024;
+    unit++;
+  }
+  return `${localSize.format(bytes)} ${sizeUnits[unit]}`;
+}
 
 function compareRows(left: SavedEditHistory, right: SavedEditHistory, sort: Sort): number {
   let difference: number;
@@ -33,6 +46,8 @@ function compareRows(left: SavedEditHistory, right: SavedEditHistory, sort: Sort
     difference = left.saved_at - right.saved_at;
   } else if (sort.key === "access") {
     difference = uiText(accessLabels[left.access]).localeCompare(uiText(accessLabels[right.access]));
+  } else if (sort.key === "size_bytes") {
+    difference = left.size_bytes - right.size_bytes;
   } else {
     difference = left.path.localeCompare(right.path, undefined, { sensitivity: "base", numeric: true });
   }
@@ -47,13 +62,18 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
   const [deleteError, setDeleteError] = useState<string>();
   const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState("");
+  const [query, setQuery] = useState("");
+  const [composing, setComposing] = useState(false);
   const [missingOnly, setMissingOnly] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const [sort, setSort] = useState<Sort>({ key: "saved_at", direction: "descending" });
   const [confirmation, setConfirmation] = useState<Confirmation>();
+  const [estimate, setEstimate] = useState<number | null>();
   const [deleting, setDeleting] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  const draftQuery = filterKey(filter.trim());
+  const filtering = composing || draftQuery !== query;
 
   useEffect(() => {
     let active = true;
@@ -64,16 +84,32 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
     return () => { active = false; };
   }, [request]);
 
+  useEffect(() => {
+    if (composing || draftQuery === query) return;
+    const timer = window.setTimeout(() => {
+      setQuery(draftQuery);
+      setChecked((ids) => ids.size === 0 ? ids : new Set(
+        entries.filter(({ id, path }) => ids.has(id) && filterKey(path).includes(draftQuery)).map(({ id }) => id),
+      ));
+    }, filterDelay);
+    return () => window.clearTimeout(timer);
+  }, [composing, draftQuery, entries, query]);
+
+  useEffect(() => {
+    if (confirmation?.kind !== "batch") return;
+    let active = true;
+    void estimateReclaimableHistoryBytes(confirmation.rows.map(({ id }) => id)).then(
+      (bytes) => { if (active) setEstimate(bytes); },
+      () => { if (active) setEstimate(null); },
+    );
+    return () => { active = false; };
+  }, [confirmation]);
+
   const reload = () => {
     setLoadError(undefined);
     setLoading(true);
     setChecked(new Set());
     setRequest((value) => value + 1);
-  };
-  const changeFilter = (value: string) => {
-    setFilter(value);
-    const query = filterKey(value.trim());
-    setChecked((ids) => new Set(entries.filter(({ id, path }) => ids.has(id) && filterKey(path).includes(query)).map(({ id }) => id)));
   };
   const toggleChecked = (id: string, value: boolean) => {
     setChecked((ids) => {
@@ -85,6 +121,7 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
   };
   const openConfirmation = (target: Confirmation) => {
     setNotice("");
+    setEstimate(undefined);
     setConfirmation(target);
   };
   const dismissConfirmation = () => {
@@ -121,16 +158,19 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
       setDeleting(false);
     }
   };
-  const query = filterKey(filter.trim());
-  const rows = entries.filter(({ path, access }) => (!missingOnly || access === "missing") && filterKey(path).includes(query))
-    .sort((left, right) => compareRows(left, right, sort));
-  const selectedRows = rows.filter(({ id, access }) => access === "missing" && checked.has(id));
+  const rows = useMemo(() => entries
+    .filter(({ path, access }) => (!missingOnly || access === "missing") && filterKey(path).includes(query))
+    .sort((left, right) => compareRows(left, right, sort)), [entries, missingOnly, query, sort]);
+  const selectedRows = useMemo(() => rows.filter(({ id, access }) => access === "missing" && checked.has(id)), [rows, checked]);
+  const unavailableActions = loading || !!loadError || filtering;
 
   return (
     <Dialog title={uiText("Saved edit histories")} className="about-dialog saved-history-dialog" onClose={onClose} initialFocus={search}>
       <label>
         {uiText("Filter by path or file name")}
-        <input ref={search} type="search" value={filter} onChange={(event) => changeFilter(event.target.value)} />
+        <input ref={search} type="search" value={filter} onChange={(event) => setFilter(event.target.value)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={(event) => { setFilter(event.currentTarget.value); setComposing(false); }} />
       </label>
       <div className="saved-history-batch-controls">
         <label className="saved-history-missing-filter">
@@ -138,49 +178,52 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
             onChange={(event) => setMissingOnly(event.target.checked)} />
           {uiText("Not found only")}
         </label>
-        <button type="button" disabled={loading || !!loadError || selectedRows.length === 0}
+        <button type="button" disabled={unavailableActions || selectedRows.length === 0}
           onClick={() => openConfirmation({ kind: "batch", rows: selectedRows })}>
           {uiText("Clear selected histories…")}
         </button>
         {selectedRows.length > 0 && <span>{uiText("{count} selected").replace("{count}", String(selectedRows.length))}</span>}
       </div>
       <p>{uiText("Unavailable locations remain in the list until you clear their history.")}</p>
+      <p>{uiText("History size includes attachments shared with other documents.")}</p>
       {notice && <p role="status">{notice}</p>}
       {loadError && <div role="alert">{uiText("Could not list saved edit histories.")}<ErrorDetails detail={loadError} /></div>}
-      {loading && <p role="status">{uiText("Loading…")}</p>}
-      {!loading && !loadError && rows.length === 0 && <p>{uiText(query || missingOnly ? "No matching saved edit histories." : "No saved edit histories.")}</p>}
-      {rows.length > 0 && (
-        <div className="saved-history-table-scroll">
-          <table className="saved-history-table">
-            <thead><tr>
-              {columns.map(([key, label]) => (
-                <th key={key} scope="col" aria-sort={sort.key === key ? sort.direction : undefined}>
-                  <button type="button" onClick={() => setSort({
-                    key, direction: sort.key === key && sort.direction === "ascending" ? "descending" : "ascending",
-                  })}>{uiText(label)}</button>
-                </th>
-              ))}
-              <th scope="col" aria-label={uiText("Select")} />
-              <th scope="col" aria-label={uiText("Clear")} />
-            </tr></thead>
-            <tbody>{rows.map((row) => (
+      <div className="saved-history-table-scroll" aria-busy={loading}>
+        <table className="saved-history-table">
+          <thead><tr>
+            {columns.map(([key, label]) => (
+              <th key={key} scope="col" aria-sort={sort.key === key ? sort.direction : undefined}>
+                <button type="button" onClick={() => setSort({
+                  key, direction: sort.key === key && sort.direction === "ascending" ? "descending" : "ascending",
+                })}>{uiText(label)}</button>
+              </th>
+            ))}
+            <th scope="col" aria-label={uiText("Select")} />
+            <th scope="col" aria-label={uiText("Clear")} />
+          </tr></thead>
+          <tbody>
+            {rows.length === 0 && !loadError && <tr><td colSpan={columns.length + 2}>
+              {uiText(loading ? "Loading…" : query || missingOnly ? "No matching saved edit histories." : "No saved edit histories.")}
+            </td></tr>}
+            {rows.map((row) => (
               <tr key={row.id}>
                 <td>{row.path}</td>
                 <td>{row.saved_at === null ? uiText("Unknown") : (
                   <time dateTime={new Date(row.saved_at).toISOString()}>{localTime.format(row.saved_at)}</time>
                 )}</td>
                 <td>{uiText(accessLabels[row.access])}</td>
+                <td title={`${row.size_bytes} B`}>{formatSize(row.size_bytes)}</td>
                 <td>{row.access === "missing" && (
                   <input type="checkbox" aria-label={uiText("Select") + " " + row.path} checked={checked.has(row.id)}
-                    disabled={loading || !!loadError} onChange={(event) => toggleChecked(row.id, event.target.checked)} />
+                    disabled={unavailableActions} onChange={(event) => toggleChecked(row.id, event.target.checked)} />
                 )}</td>
-                <td><button type="button" aria-label={uiText("Clear…") + " " + row.path}
+                <td><button type="button" disabled={unavailableActions} aria-label={uiText("Clear…") + " " + row.path}
                   onClick={() => openConfirmation({ kind: "single", row })}>{uiText("Clear…")}</button></td>
               </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="about-dialog-actions">
         <button type="button" disabled={loading} onClick={reload}>{uiText("Refresh")}</button>
         <button type="button" onClick={onClose}>{uiText("Close")}</button>
@@ -194,6 +237,12 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
               <ul className="saved-history-confirm-path saved-history-confirm-list">
                 {confirmation.rows.map(({ id, path }) => <li key={id}>{path}</li>)}
               </ul>
+              <p role="status" className="saved-history-estimate">
+                {estimate === undefined ? uiText("Estimating recoverable space…") : estimate === null
+                  ? uiText("Recoverable space could not be estimated.")
+                  : uiText("Estimated recoverable space {size}").replace("{size}", formatSize(estimate))}
+              </p>
+              <p>{uiText("The estimate excludes attachments kept by other documents. Actual recovery depends on SQLite page usage and which histories are cleared.")}</p>
             </>
           ) : (
             <>
@@ -204,7 +253,8 @@ export function SavedEditHistoriesDialog({ onClose }: { onClose: () => void }) {
           {deleteError && <div role="alert">{uiText("Could not clear saved edit history.")}<ErrorDetails detail={deleteError} /></div>}
           <div className="about-dialog-actions">
             <button ref={cancel} type="button" disabled={deleting} onClick={dismissConfirmation}>{uiText("Cancel")}</button>
-            <button type="button" disabled={deleting} onClick={() => void confirmDelete()}>
+            <button type="button" disabled={deleting || (confirmation.kind === "batch" && estimate === undefined)}
+              onClick={() => void confirmDelete()}>
               {uiText(deleting ? "Clearing edit history…" : "Clear")}
             </button>
           </div>

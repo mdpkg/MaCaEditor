@@ -23,6 +23,7 @@ pub struct SavedEditHistory {
     path: String,
     saved_at: Option<i64>,
     access: Access,
+    size_bytes: i64,
 }
 
 fn access_status(
@@ -104,16 +105,27 @@ fn list_with_metadata(
     let rows = {
         let db = connect(database)?;
         let mut query = db.prepare(
-            "SELECT document, max(saved_at) FILTER (WHERE committed = 1)
-             FROM checkpoint GROUP BY document",
+            "WITH document_payloads AS (
+                SELECT DISTINCT c.document, cp.digest
+                FROM checkpoint c JOIN checkpoint_payload cp ON cp.checkpoint = c.id
+             ), attachment_sizes AS (
+                SELECT document, sum(octet_length(p.data)) AS bytes
+                FROM document_payloads JOIN payload p USING(digest) GROUP BY document
+             )
+             SELECT c.document, max(c.saved_at) FILTER (WHERE c.committed = 1),
+                    sum(octet_length(c.data)) + coalesce(max(a.bytes), 0)
+             FROM checkpoint c LEFT JOIN attachment_sizes a USING(document)
+             GROUP BY c.document",
         )?;
-        let rows = query.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get(1)?)))?;
-        rows.collect::<rusqlite::Result<Vec<(String, Option<i64>)>>>()?
+        let rows = query.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
     // File-system probes can be slow on network drives. Release SQLite before probing.
     Ok(rows
         .into_iter()
-        .filter_map(|(id, saved_at)| {
+        .filter_map(|(id, saved_at, size_bytes)| {
             let (kind, path) = id.split_once(':')?;
             let access = access_status(kind, Path::new(path), &metadata);
             let path = display_path(path);
@@ -122,9 +134,40 @@ fn list_with_metadata(
                 path,
                 saved_at,
                 access,
+                size_bytes,
             })
         })
         .collect())
+}
+
+pub fn estimate_reclaimable_history_bytes(database: &Path, ids: &[String]) -> Result<i64> {
+    if ids.is_empty() || !database.try_exists()? {
+        return Ok(0);
+    }
+    let db = connect(database)?;
+    let ids = serde_json::to_string(ids).map_err(io::Error::other)?;
+    // Count a payload once, and keep it if any checkpoint outside the selection refers to it.
+    Ok(db.query_row(
+        "WITH selected AS (
+            SELECT DISTINCT value AS document FROM json_each(?1)
+         ), checkpoints AS (
+            SELECT c.id, octet_length(c.data) AS bytes FROM selected JOIN checkpoint c USING(document)
+         ), selected_payloads AS (
+            SELECT DISTINCT cp.digest FROM checkpoints c JOIN checkpoint_payload cp ON cp.checkpoint = c.id
+         )
+         SELECT coalesce((SELECT sum(bytes) FROM checkpoints), 0) +
+                coalesce((
+                    SELECT sum(octet_length(p.data)) FROM selected_payloads JOIN payload p USING(digest)
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM checkpoint_payload cp JOIN checkpoint c ON c.id = cp.checkpoint
+                        WHERE cp.digest = p.digest AND NOT EXISTS (
+                            SELECT 1 FROM selected WHERE document = c.document
+                        )
+                    )
+                ), 0)",
+        [ids],
+        |row| row.get(0),
+    )?)
 }
 
 pub fn delete_saved_edit_history(database: &Path, document_id: &str) -> Result<()> {
@@ -216,6 +259,103 @@ mod tests {
         let path = std::env::temp_dir().join("unavailable.mdpkg");
         let status = access_status("package", &path, &|_| Err(ErrorKind::NotFound.into()));
         assert_eq!(status, Access::Unavailable);
+    }
+
+    #[test]
+    fn measures_distinct_document_payloads_and_estimates_only_bytes_exclusive_to_the_batch() {
+        const MIB: i64 = 1024 * 1024;
+        let root =
+            std::env::temp_dir().join(format!("maca-history-capacity-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let database = root.join("history.sqlite3");
+        let folder = format!("folder:{}", root.join("Removed folder").display());
+        let package = format!("package:{}", root.join("Removed.mdpkg").display());
+        let retained = format!("package:{}", root.join("Retained.mdpkg").display());
+        let save = |id: &str, revision: &str, text: &str, payloads: &[(u8, i64)]| {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                id.into(),
+                revision,
+                true,
+                text.into(),
+                payloads
+                    .iter()
+                    .map(|&(byte, mib)| Ok(vec![byte; (mib * MIB) as usize])),
+            )
+            .unwrap()
+        };
+        let shared_with_retained = (0xab, 16);
+        let shared_in_batch = (0xbc, 4);
+        let unique_folder = (0xcd, 8);
+        let unique_package = (0xde, 6);
+        let folder_text = "履歴";
+        let package_text = "📎";
+        save(
+            &folder,
+            "saved",
+            folder_text,
+            &[
+                unique_folder,
+                shared_in_batch,
+                shared_with_retained,
+                shared_with_retained,
+            ],
+        )
+        .complete("saved")
+        .unwrap();
+        save(&folder, "pending", "pending", &[unique_folder]);
+        save(
+            &package,
+            "saved",
+            package_text,
+            &[unique_package, shared_in_batch, shared_with_retained],
+        )
+        .complete("saved")
+        .unwrap();
+        // A recoverable checkpoint in another document still protects its attachment.
+        save(&retained, "pending", "retained", &[shared_with_retained]);
+
+        let rows = list_saved_edit_histories(&database).unwrap();
+        let size = |id: &str| rows.iter().find(|row| row.id == id).unwrap().size_bytes;
+        let folder_bytes = (folder_text.len() + "pending".len()) as i64;
+        let package_bytes = package_text.len() as i64;
+        assert_eq!(size(&folder), 28 * MIB + folder_bytes);
+        assert_eq!(size(&package), 26 * MIB + package_bytes);
+        assert_eq!(size(&retained), 16 * MIB + "retained".len() as i64);
+        assert_eq!(
+            estimate_reclaimable_history_bytes(&database, &[folder.clone()]).unwrap(),
+            8 * MIB + folder_bytes
+        );
+        assert_eq!(
+            estimate_reclaimable_history_bytes(&database, &["unknown".into()]).unwrap(),
+            0
+        );
+        let selected = [folder.clone(), package.clone(), folder.clone()];
+        let estimated = estimate_reclaimable_history_bytes(&database, &selected).unwrap();
+        assert_eq!(estimated, 18 * MIB + folder_bytes + package_bytes);
+
+        let before = fs::metadata(&database).unwrap().len();
+        assert_eq!(
+            delete_missing_saved_edit_histories(&database, &selected).unwrap(),
+            [folder, package]
+        );
+        reclaim_pending(&database, || false).unwrap();
+        let actual = before - fs::metadata(&database).unwrap().len();
+        assert!(
+            actual.abs_diff(estimated as u64) < 256 * 1024,
+            "estimate {estimated}, actual {actual}"
+        );
+        let kept = load(&database, &retained, "pending")
+            .unwrap()
+            .unwrap()
+            .download
+            .unwrap();
+        assert_eq!(kept.sizes, [16 * MIB as usize]);
+        assert_eq!(
+            read_chunk(&database, kept.id, 0, 0, 1).unwrap(),
+            [shared_with_retained.0]
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

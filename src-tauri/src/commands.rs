@@ -363,6 +363,20 @@ pub async fn list_saved_edit_histories(app: AppHandle) -> Result<Vec<saved_histo
 }
 
 #[tauri::command]
+pub async fn estimate_reclaimable_history_bytes(
+    app: AppHandle,
+    document_ids: Vec<String>,
+) -> Result<i64, String> {
+    let database = history_database(&app)?;
+    tokio::task::spawn_blocking(move || {
+        saved_history::estimate_reclaimable_history_bytes(&database, &document_ids)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("edit history size estimate task failed: {error}"))?
+}
+
+#[tauri::command]
 pub async fn delete_saved_edit_history(app: AppHandle, document_id: String) -> Result<(), String> {
     let database = history_database(&app)?;
     let write = prioritize_history_save(&app);
