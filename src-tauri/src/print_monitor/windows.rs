@@ -242,6 +242,7 @@ struct Job {
     printer: String,
     owner: String,
     bytes: u32,
+    recent_spool_sizes: HashMap<u32, Instant>,
     status: u32,
     status_text: String,
     status_since: Instant,
@@ -255,11 +256,33 @@ impl Job {
             printer: String::new(),
             owner: String::new(),
             bytes: 0,
+            recent_spool_sizes: HashMap::new(),
             status: 0,
             status_text: String::new(),
             status_since: now,
             ended: None,
         }
+    }
+
+    fn observe_spool_size(&mut self, bytes: u32, now: Instant) {
+        if self.bytes == bytes {
+            return;
+        }
+        // A driver can report failure while more bytes are still being spooled.
+        self.recent_spool_sizes
+            .retain(|_, replaced| now.duration_since(*replaced) < EVENT_GRACE);
+        if self.bytes != 0 {
+            self.recent_spool_sizes.insert(self.bytes, now);
+        }
+        self.bytes = bytes;
+    }
+
+    fn has_spool_size(&self, bytes: u32, now: Instant) -> bool {
+        self.bytes == bytes
+            || self
+                .recent_spool_sizes
+                .get(&bytes)
+                .is_some_and(|replaced| now.duration_since(*replaced) < EVENT_GRACE)
     }
 
     fn awaiting_failure_event(&self, now: Instant) -> bool {
@@ -298,7 +321,7 @@ impl Failure {
         let mut candidates = jobs.values().filter(|job| {
             job.printer.eq_ignore_ascii_case(&self.printer)
                 && job.owner.eq_ignore_ascii_case(&self.owner)
-                && job.bytes == self.bytes
+                && job.has_spool_size(self.bytes, now)
                 && job.status & (JOB_STATUS_PRINTED | JOB_STATUS_COMPLETE) == 0
                 && job
                     .ended
@@ -434,7 +457,9 @@ impl Queue {
                         JOB_NOTIFY_FIELD_PRINTER_NAME => job.printer = queue_string(entry),
                         JOB_NOTIFY_FIELD_USER_NAME => job.owner = queue_string(entry),
                         JOB_NOTIFY_FIELD_STATUS_STRING => job.status_text = queue_string(entry),
-                        JOB_NOTIFY_FIELD_TOTAL_BYTES => job.bytes = entry.NotifyData.adwData[0],
+                        JOB_NOTIFY_FIELD_TOTAL_BYTES => {
+                            job.observe_spool_size(entry.NotifyData.adwData[0], now);
+                        }
                         JOB_NOTIFY_FIELD_STATUS => {
                             let status = entry.NotifyData.adwData[0];
                             if job.status != status {
@@ -806,7 +831,9 @@ mod tests {
         job.bytes = failure.bytes;
         let mut jobs = HashMap::from([(1, job)]);
         assert_eq!(failure.pending_title(&pending, &jobs, now), None);
-        jobs.get_mut(&1).unwrap().status = JOB_STATUS_DELETED;
+        let job = jobs.get_mut(&1).unwrap();
+        job.status = JOB_STATUS_DELETED;
+        job.observe_spool_size(failure.bytes + 844, now);
         assert_eq!(failure.pending_title(&pending, &jobs, now), Some(TITLE));
         assert_eq!(
             failure.detail(),
@@ -820,6 +847,10 @@ mod tests {
         other.bytes = failure.bytes;
         jobs.insert(2, other);
         assert_eq!(failure.pending_title(&pending, &jobs, now), None);
+        jobs.remove(&2);
+        let later = now + EVENT_GRACE;
+        jobs.get_mut(&1).unwrap().status_since = later;
+        assert_eq!(failure.pending_title(&pending, &jobs, later), None);
         jobs.remove(&1);
         assert_eq!(failure.pending_title(&pending, &jobs, now), None);
     }
