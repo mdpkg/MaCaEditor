@@ -149,18 +149,19 @@ fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
         "PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL;",
     )?;
     let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if matches!(version, 0..=3) {
+    if matches!(version, 0..=4) {
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         // Another connection may have finished the migration while this one waited.
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version == 4 {
+        if version == 5 {
             tx.commit()?;
             return Ok(db);
         }
-        if !(0..=3).contains(&version) {
+        if !(0..=4).contains(&version) {
             return Err(HistoryError::Schema(version));
         }
-        tx.execute_batch(
+        if version < 4 {
+            tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS checkpoint (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, document TEXT NOT NULL, revision TEXT NOT NULL,
                 data TEXT NOT NULL, committed INTEGER NOT NULL, recoverable INTEGER NOT NULL
@@ -181,14 +182,31 @@ fn connect_sqlite(path: &Path, timeout: Duration) -> Result<Connection> {
                 BEFORE INSERT ON checkpoint_payload
                 WHEN EXISTS (SELECT 1 FROM payload_reclaim WHERE digest = NEW.digest)
                 BEGIN SELECT RAISE(ABORT, 'attachment is being reclaimed'); END;
-             ALTER TABLE checkpoint ADD COLUMN saved_at INTEGER;
-             PRAGMA user_version = 4;",
+             ALTER TABLE checkpoint ADD COLUMN saved_at INTEGER;",
+            )?;
+        }
+        tx.execute_batch(
+            "CREATE TABLE history_generation (
+                singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                token BLOB NOT NULL CHECK(length(token) = 16)
+             );
+             INSERT INTO history_generation VALUES(1, randomblob(16));
+             PRAGMA user_version = 5;",
         )?;
         tx.commit()?;
-    } else if version != 4 {
+    } else if version != 5 {
         return Err(HistoryError::Schema(version));
     }
     Ok(db)
+}
+
+fn begin_history_write(db: &mut Connection) -> Result<Transaction<'_>> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute(
+        "UPDATE history_generation SET token = randomblob(16) WHERE singleton = 1",
+        [],
+    )?;
+    Ok(tx)
 }
 
 fn prune(tx: &Transaction<'_>) -> Result<()> {
@@ -284,6 +302,7 @@ pub(crate) fn reclaim_pending(
     if !database.try_exists()? {
         return Ok(ReclaimAttempt::Idle);
     }
+    let _lease = compaction::reclaim_guard(database)?;
     let mut db = connect_with_timeout(database, Duration::ZERO)?;
     let has_requests_table = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'reclaim_request')",
@@ -302,7 +321,9 @@ pub(crate) fn reclaim_pending(
     let candidates = {
         let mut query = db.prepare(
             "SELECT digest FROM payload
-             WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest)",
+             WHERE NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = payload.digest)
+               AND NOT EXISTS (SELECT 1 FROM payload_reclaim
+                               WHERE digest = payload.digest AND next_offset = octet_length(payload.data))",
         )?;
         let rows = query.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -314,7 +335,7 @@ pub(crate) fn reclaim_pending(
                 if should_yield() {
                     return Ok(ReclaimAttempt::Yielded);
                 }
-                let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let tx = begin_history_write(&mut db)?;
                 if should_yield() {
                     return Ok(ReclaimAttempt::Yielded);
                 }
@@ -346,7 +367,7 @@ impl PendingCheckpoint {
         attachments: impl IntoIterator<Item = Result<Vec<u8>>>,
     ) -> Result<Self> {
         let mut db = connect(&database)?;
-        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = begin_history_write(&mut db)?;
         tx.execute("INSERT INTO checkpoint(document, revision, data, committed, recoverable) VALUES(?1, ?2, ?3, 0, ?4)",
             params![document, revision, data, recoverable])?;
         let id = tx.last_insert_rowid();
@@ -390,7 +411,7 @@ impl PendingCheckpoint {
 
     pub fn complete(self, revision: &str) -> Result<()> {
         let mut db = connect(&self.database)?;
-        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = begin_history_write(&mut db)?;
         let saved_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .ok()
@@ -412,7 +433,7 @@ impl PendingCheckpoint {
 
     pub fn discard(self) -> Result<()> {
         let mut db = connect(&self.database)?;
-        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = begin_history_write(&mut db)?;
         tx.execute("DELETE FROM checkpoint WHERE id = ?1", [self.id])?;
         request_reclaim(&tx)?;
         tx.commit()?;
@@ -494,7 +515,7 @@ pub fn clear(database: &Path, document: &str) -> Result<ClearOutcome> {
         return Ok(ClearOutcome::default());
     }
     let mut db = connect(database)?;
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let tx = begin_history_write(&mut db)?;
     tx.execute("DELETE FROM checkpoint WHERE document = ?1", [document])?;
     prune(&tx)?;
     tx.commit()?;
@@ -604,6 +625,89 @@ mod tests {
     }
 
     #[test]
+    fn compaction_resumes_the_same_scratch_database_mid_attachment() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+        let database = test_database();
+        let retired = "package:/retired";
+        let kept = "folder:/retained";
+        let mib = 1024 * 1024;
+        for (document, revision, attachments) in [
+            (retired, "old", vec![Ok(vec![0xcd; 32 * mib])]),
+            (kept, "keep", vec![Ok(vec![0xab; 24 * mib])]),
+            (retired, "latest", vec![]),
+        ] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                document.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+        let scratch = compaction::sidecar(&database, ".reclaim");
+        fn copied(path: &Path) -> Option<u32> {
+            let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .ok()?;
+            db.busy_timeout(Duration::ZERO).ok()?;
+            db.query_row(
+                "SELECT blob_offset FROM reclaim_copy WHERE stage = 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
+        }
+        let observed = scratch.clone();
+        assert!(matches!(
+            reclaim_pending(&database, move || copied(&observed)
+                .is_some_and(|offset| offset > 0))
+            .unwrap(),
+            ReclaimAttempt::Yielded
+        ));
+        let offset = copied(&scratch)
+            .expect("the interrupted compaction must retain its scratch DB and cursor");
+        assert!(offset > 0 && offset < 24 * mib as u32);
+        let before = fs::metadata(&database).unwrap().len();
+        let allocated_before = compaction::allocated_bytes(&database).unwrap();
+        let observed = scratch.clone();
+        let restarted_from_zero = Arc::new(AtomicBool::new(false));
+        let reset = restarted_from_zero.clone();
+        let result = reclaim_pending(&database, move || {
+            if copied(&observed).is_some_and(|current| current < offset) {
+                reset.store(true, Ordering::Relaxed);
+            }
+            false
+        })
+        .unwrap();
+        assert!(!restarted_from_zero.load(Ordering::Relaxed));
+        let ReclaimAttempt::Published { released_bytes, .. } = result else {
+            panic!("resumed compaction did not publish");
+        };
+        assert_eq!(
+            released_bytes,
+            Some(allocated_before - compaction::allocated_bytes(&database).unwrap())
+        );
+        assert!(before - fs::metadata(&database).unwrap().len() >= 31 * mib as u64);
+        let download = load(&database, kept, "keep")
+            .unwrap()
+            .unwrap()
+            .download
+            .unwrap();
+        assert_eq!(download.sizes, [24 * mib]);
+        assert_eq!(
+            read_chunk(&database, download.id, 0, 24 * mib - 1, 1).unwrap(),
+            [0xab]
+        );
+        remove_test_database(&database);
+    }
+
+    #[test]
     fn stale_or_busy_compaction_never_replaces_the_current_database() {
         use std::sync::{
             atomic::{AtomicBool, Ordering},
@@ -640,21 +744,22 @@ mod tests {
         let live = database.clone();
         let scratch = compaction::sidecar(&database, ".reclaim");
         let observed_scratch = scratch.clone();
-        let copied = Arc::new(AtomicBool::new(false));
         let saved = Arc::new(AtomicBool::new(false));
         let did_save = saved.clone();
         let result = reclaim_pending(&database, move || {
             // Start a new save after the copy has been compacted, but before publication.
-            let size = fs::metadata(&observed_scratch)
-                .map(|info| info.len())
-                .unwrap_or(0);
-            if size >= 9 * 1024 * 1024 {
-                copied.store(true, Ordering::Relaxed);
-            }
-            if copied.load(Ordering::Relaxed)
-                && (4096..128 * 1024).contains(&size)
-                && !did_save.swap(true, Ordering::Relaxed)
-            {
+            let complete = Connection::open_with_flags(
+                &observed_scratch,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .and_then(|db| {
+                db.busy_timeout(Duration::ZERO)?;
+                db.query_row("SELECT stage = 7 FROM reclaim_copy", [], |row| {
+                    row.get::<_, bool>(0)
+                })
+            })
+            .unwrap_or(false);
+            if complete && !did_save.swap(true, Ordering::Relaxed) {
                 PendingCheckpoint::prepare(
                     live.clone(),
                     other.into(),
@@ -821,7 +926,7 @@ mod tests {
         let version: i64 = db
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let legacy_saved_at: Option<i64> = db
             .query_row(
                 "SELECT saved_at FROM checkpoint WHERE document = 'package:/legacy'",

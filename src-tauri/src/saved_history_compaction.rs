@@ -5,14 +5,13 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rusqlite::backup::{Backup, StepResult};
-use rusqlite::{Connection, ErrorCode};
+use rusqlite::Connection;
 
-use super::{
-    connect_sqlite, reclaim_batch, reclaim_free_pages, HistoryError, ReclaimAttempt, Result,
-};
+use super::{connect_sqlite, reclaim_batch, HistoryError, ReclaimAttempt, Result};
 
-const COPY_PAGES: i32 = 128;
+#[path = "saved_history_compaction_copy.rs"]
+mod copy;
+
 const SQLITE_SIDECARS: [&str; 3] = ["-journal", "-wal", "-shm"];
 
 pub(super) fn sidecar(database: &Path, suffix: &str) -> PathBuf {
@@ -37,6 +36,10 @@ fn exclusive_guard(database: &Path, suffix: &str) -> Result<File> {
         Err(TryLockError::WouldBlock) => Err(HistoryError::Busy),
         Err(TryLockError::Error(error)) => Err(error.into()),
     }
+}
+
+pub(super) fn reclaim_guard(database: &Path) -> Result<File> {
+    exclusive_guard(database, ".reclaim-lock")
 }
 
 pub(super) fn read_guard(database: &Path, timeout: Duration) -> Result<File> {
@@ -69,24 +72,18 @@ impl Scratch {
     }
 }
 
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = self.clean();
-    }
-}
-
 fn data_version(db: &Connection) -> rusqlite::Result<i64> {
     db.pragma_query_value(None, "data_version", |row| row.get(0))
 }
 
 #[cfg(unix)]
-fn allocated_bytes(path: &Path) -> Option<u64> {
+pub(super) fn allocated_bytes(path: &Path) -> Option<u64> {
     use std::os::unix::fs::MetadataExt;
     Some(fs::metadata(path).ok()?.blocks() * 512)
 }
 
 #[cfg(windows)]
-fn allocated_bytes(path: &Path) -> Option<u64> {
+pub(super) fn allocated_bytes(path: &Path) -> Option<u64> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         FileStandardInfo, GetFileInformationByHandleEx, FILE_STANDARD_INFO,
@@ -117,72 +114,47 @@ pub(super) fn rebuild(
         return Ok(ReclaimAttempt::Yielded);
     }
 
-    // Only this lease holder can replace the live file. Keep the source connection open
-    // until publication so both data_version reads refer to the same database.
-    let _lease = exclusive_guard(database, ".reclaim-lock")?;
+    // Keep the source connection open under the worker's reclaim lease so both
+    // data_version reads refer to the same live database.
     let source = connect_sqlite(database, Duration::ZERO)?;
     let journal_mode: String = source.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
     if journal_mode != "delete" {
         return Err(io::Error::other("history compaction requires DELETE journal mode").into());
     }
     let version = data_version(&source)?;
+    let generation = copy::generation(&source)?;
     let scratch = Scratch(sidecar(database, ".reclaim"));
-    scratch.clean()?;
-    let mut copy = Connection::open(&scratch.0)?;
-    {
-        let backup = Backup::new(&source, &mut copy)?;
-        loop {
-            if should_yield() {
-                return Ok(ReclaimAttempt::Yielded);
-            }
-            if data_version(&source)? != version {
-                return Err(HistoryError::Busy);
-            }
-            // SQLite releases the source read lock between steps. The copy has its own
-            // journal and can be modified without holding a live database write lock.
-            match backup.step(COPY_PAGES)? {
-                StepResult::Done => break,
-                StepResult::More => thread::yield_now(),
-                _ => return Err(HistoryError::Busy),
-            }
+    let (mut copy, mut cursor) = copy::open(&source, &scratch, generation, last_request)?;
+    while !cursor.done() {
+        if should_yield() {
+            return Ok(ReclaimAttempt::Yielded);
         }
+        if data_version(&source)? != version {
+            drop(copy);
+            scratch.clean()?;
+            return Err(HistoryError::Busy);
+        }
+        cursor = copy::step(&source, &mut copy, cursor, last_request)?;
     }
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
     }
 
-    copy.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = FAST;")?;
-    let tx = copy.transaction()?;
-    tx.execute(
-        "DELETE FROM payload WHERE digest IN (
-            SELECT digest FROM payload JOIN payload_reclaim USING(digest)
-            WHERE next_offset = length(data)
-        )",
-        [],
-    )?;
-    let first_request_id: Option<i64> = tx.query_row(
-        "SELECT min(id) FROM reclaim_request WHERE id <= ?1",
+    let (first_request_id, request_count): (Option<i64>, u32) = source.query_row(
+        "SELECT min(id), count(*) FROM reclaim_request WHERE id <= ?1",
         [last_request],
-        |row| row.get(0),
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     let Some(first_request_id) = first_request_id else {
         return Err(HistoryError::Busy);
     };
-    let request_count = tx.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
+    let request_count = request_count as usize;
+    let tx = copy.transaction()?;
     let has_receipt =
         reclaim_batch::mark_published(&tx, first_request_id, last_request, request_count)?;
     tx.commit()?;
-    if should_yield() {
-        return Ok(ReclaimAttempt::Yielded);
-    }
-    copy.progress_handler(100, Some(should_yield.clone()))?;
-    if let Err(error) = reclaim_free_pages(&copy) {
-        if error.sqlite_error_code() == Some(ErrorCode::OperationInterrupted) && should_yield() {
-            return Ok(ReclaimAttempt::Yielded);
-        }
-        return Err(error.into());
-    }
-    copy.progress_handler(0, None::<fn() -> bool>)?;
+    // Closing SQLite releases any file space it preallocated while growing the scratch DB.
+    copy.close().map_err(|(_, error)| error)?;
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
     }
@@ -198,18 +170,17 @@ pub(super) fn rebuild(
     if has_receipt {
         // Patch the reserved bytes without changing SQLite's layout. Physical allocation may
         // still change on a compressed or copy-on-write file system.
-        reclaim_batch::write_measurement(&mut copy, released_bytes)?;
+        reclaim_batch::write_measurement(&scratch.0, released_bytes)?;
         let observed = measure();
         if observed != released_bytes {
-            reclaim_batch::write_measurement(&mut copy, observed)?;
+            reclaim_batch::write_measurement(&scratch.0, observed)?;
             released_bytes = observed;
             if measure() != released_bytes {
                 released_bytes = None;
-                reclaim_batch::write_measurement(&mut copy, None)?;
+                reclaim_batch::write_measurement(&scratch.0, None)?;
             }
         }
     }
-    copy.close().map_err(|(_, error)| error)?;
     OpenOptions::new()
         .write(true)
         .open(&scratch.0)?
@@ -222,7 +193,8 @@ pub(super) fn rebuild(
     if should_yield() {
         return Ok(ReclaimAttempt::Yielded);
     }
-    if data_version(&source)? != version {
+    if data_version(&source)? != version || copy::generation(&source)? != generation {
+        scratch.clean()?;
         return Err(HistoryError::Busy);
     }
     source.close().map_err(|(_, error)| error)?;

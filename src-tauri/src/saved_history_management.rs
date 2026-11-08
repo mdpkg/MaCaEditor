@@ -3,9 +3,7 @@ use std::fs::{self, Metadata};
 use std::io::{self, ErrorKind};
 use std::path::Path;
 
-use rusqlite::TransactionBehavior;
-
-use super::{connect, enqueue_reclaim, reclaim_batch::record_batch, Result};
+use super::{begin_history_write, connect, enqueue_reclaim, reclaim_batch::record_batch, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -175,7 +173,7 @@ pub fn delete_saved_edit_history(database: &Path, document_id: &str) -> Result<(
         return Ok(());
     }
     let mut db = connect(database)?;
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let tx = begin_history_write(&mut db)?;
     // Use the stored identity. Resolving the path would fail for missing or offline documents.
     let deleted = tx.execute("DELETE FROM checkpoint WHERE document = ?1", [document_id])?;
     if deleted > 0 {
@@ -240,7 +238,7 @@ fn delete_missing_with_metadata(
         return Ok(BulkDeletion::default());
     }
     let mut db = connect(database)?;
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let tx = begin_history_write(&mut db)?;
     let mut deleted = Vec::new();
     {
         let mut snapshot = tx.prepare(snapshot_sql)?;
