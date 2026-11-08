@@ -21,3 +21,10 @@ export function isDocumentSearchShortcut(event: ShortcutEvent): boolean {
 function isSearchKey(event: ShortcutEvent): boolean {
   return (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f";
 }
+
+export function historyShortcut(event: ShortcutEvent): "undo" | "redo" | undefined {
+  if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
+  const key = event.key.toLowerCase();
+  if (key === "z") return event.shiftKey ? "redo" : "undo";
+  if (key === "y" && !event.shiftKey) return "redo";
+}

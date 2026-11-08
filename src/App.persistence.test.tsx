@@ -7,6 +7,7 @@ import * as diagnostics from "./lib/packageDiagnostics";
 import { saveEditorPreferences } from "./lib/editorPreferences";
 import * as tauri from "./lib/tauri";
 import type { PackageInfo } from "./types";
+import type { TextEditGroup } from "./lib/packageHistory";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
 vi.mock("./lib/tauri", async (importOriginal) => ({
@@ -46,7 +47,7 @@ vi.mock("./components/MarkdownPreview", () => ({
 vi.mock("./components/MarkdownEditor", () => ({
   MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange, navigation }: {
     value: string;
-    onChange: (value: string) => void;
+    onChange: (value: string, group?: TextEditGroup) => void;
     initialCursorPosition?: number;
     initialScrollTop?: number;
     navigation?: { offset: number; length?: number };
@@ -55,7 +56,7 @@ vi.mock("./components/MarkdownEditor", () => ({
   }) => <textarea value={value} data-cursor={initialCursorPosition} data-scroll={initialScrollTop} data-navigation={JSON.stringify(navigation)}
     onClick={(event) => onCursorChange(event.currentTarget.selectionStart)}
     onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}
-    onChange={(event) => onChange(event.currentTarget.value)} />,
+    onChange={(event) => onChange(event.currentTarget.value, (event.nativeEvent as CustomEvent<TextEditGroup>).detail)} />,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -112,17 +113,23 @@ describe("App persistence", () => {
     await act(async () => button(label, scope).click());
   }
 
-  async function edit(value: string) {
+  async function edit(value: string, group?: TextEditGroup) {
     const editor = container.querySelector("textarea");
     if (!editor) throw new Error("Missing editor");
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor, value);
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      editor.dispatchEvent(new CustomEvent("input", { bubbles: true, detail: group }));
     });
   }
 
   function saveShortcut() {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, cancelable: true }));
+  }
+
+  async function historyShortcut(key: string) {
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, cancelable: true }));
+    });
   }
 
   test("opens package search only for an unhandled shifted shortcut and returns focus on Escape", async () => {
@@ -550,50 +557,93 @@ describe("App persistence", () => {
     await click("編集"); await edit("Later edit");
     await click("元に戻す", container.querySelector(".notification-banner")!);
     expect(container.querySelector(".document-area")?.textContent).toContain("Later edit");
-    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
   });
 
-  test("undoes and redoes a move from the file menu without reverting subsequent edits", async () => {
+  test("undoes and redoes Markdown and a linked file move in order across saving", async () => {
     const info = documentInfo("[Guide](docs/guide.md)");
     info.files.push({ path: "docs/guide.md", content: "[Home](../index.md)", is_text: true, base64: null });
     vi.mocked(tauri.openPackage).mockResolvedValue(info);
     await act(async () => nativeDrop(["original.mdpkg"]));
+    await click("編集");
+    await edit("[Guide](docs/guide.md)\n\nEntry edit");
+
     const drop = new Event("drop", { bubbles: true, cancelable: true });
     Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "docs/guide.md" } });
     await act(async () => container.querySelector(".file-tree")!.dispatchEvent(drop));
     await click("移動", container.querySelector('[role="dialog"]')!);
+    await act(async () => saveShortcut());
+    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
+      files: [
+        expect.objectContaining({ path: "index.md", content: "[Guide](guide.md)\n\nEntry edit" }),
+        expect.objectContaining({ path: "guide.md", content: "[Home](index.md)" }),
+      ],
+    }));
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
 
-    await click("編集");
-    await edit("[Guide](guide.md)\n\nEntry edit");
     await act(async () => container.querySelector<HTMLElement>('[data-path="guide.md"]')!.click());
-    await click("編集");
-    await edit("[Home](index.md)\n\nMoved file edit");
-    await click("ファイル");
-    await click("ファイル操作を元に戻す");
+    await historyShortcut("z");
     expect(container.querySelector('[data-path="guide.md"]')).toBeNull();
     expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+    await act(async () => container.querySelector<HTMLElement>('[data-path="docs/guide.md"]')!.click());
+    expect(container.querySelector(".document-area")?.textContent).toContain("[Home](../index.md)");
     await click("ファイル");
-    await click("保存");
-    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
-      files: [
-        expect.objectContaining({ path: "index.md", content: "[Guide](docs/guide.md)\n\nEntry edit" }),
-        expect.objectContaining({ path: "docs/guide.md", content: "[Home](../index.md)\n\nMoved file edit" }),
-      ],
-    }));
-
-    await click("編集");
-    await edit("[Guide](docs/guide.md)\n\nEntry edit\n\nEdit after undo");
-    await click("ファイル");
-    await click("ファイル操作をやり直す");
+    await click("元に戻す", container.querySelector('[role="menu"]')!);
+    expect(container.querySelector(".document-area")?.textContent).toContain("[Guide](docs/guide.md)");
+    expect(container.querySelector(".document-area")?.textContent).not.toContain("Entry edit");
+    await historyShortcut("y");
+    expect(container.querySelector(".document-area")?.textContent).toContain("Entry edit");
+    await historyShortcut("y");
     expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+    expect(tauri.savePackage).toHaveBeenCalledTimes(1);
+    vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    await act(async () => nativeDrop(["original.mdpkg"]));
     await click("ファイル");
-    await click("保存");
-    expect(tauri.savePackage).toHaveBeenLastCalledWith(expect.objectContaining({
-      files: [
-        expect.objectContaining({ path: "index.md", content: "[Guide](guide.md)\n\nEntry edit\n\nEdit after undo" }),
-        expect.objectContaining({ path: "guide.md", content: "[Home](index.md)\n\nMoved file edit" }),
-      ],
-    }));
+    expect(button("元に戻す", container.querySelector('[role="menu"]')!).disabled).toBe(true);
+  });
+
+  test("groups continuous typing, splits it at save, and clears redo only for a new edit", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    await click("編集");
+    const group = {};
+    await edit("Disk a", group);
+    await edit("Disk ab", group);
+    await historyShortcut("z");
+    expect(container.querySelector("textarea")?.value).toBe("Disk");
+    await edit("Disk");
+    await historyShortcut("y");
+    expect(container.querySelector("textarea")?.value).toBe("Disk ab");
+
+    await edit("Disk abc", group);
+    await act(async () => saveShortcut());
+    await edit("Disk abcd", group);
+    await historyShortcut("z");
+    expect(container.querySelector("textarea")?.value).toBe("Disk abc");
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+    await edit("Disk abc!");
+    await historyShortcut("y");
+    expect(container.querySelector("textarea")?.value).toBe("Disk abc!");
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+  });
+
+  test("keeps the written version as the baseline when undo happens during a save", async () => {
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
+    await act(async () => nativeDrop(["original.mdpkg"]));
+    await click("編集");
+    await edit("Written");
+    const write = deferred();
+    vi.mocked(tauri.savePackage).mockReturnValueOnce(write.promise);
+    await act(async () => saveShortcut());
+    await historyShortcut("z");
+    expect(container.querySelector("textarea")?.value).toBe("Disk");
+    await act(async () => write.resolve());
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+    await historyShortcut("y");
+    expect(container.querySelector("textarea")?.value).toBe("Written");
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
   });
 
   test("keeps diagnostics open, navigates to the source line, and refreshes after editing", async () => {
