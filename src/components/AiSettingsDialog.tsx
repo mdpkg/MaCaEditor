@@ -63,7 +63,7 @@ export function AiSettingsDialog({ onClose }: Props) {
   const handleRefreshModels = async () => {
     setBusy(true);
     try {
-      const list = await listAiModels(config.base_url, config.api_key);
+      const list = await listAiModels(config.base_url, config.api_key, config.connect_timeout_seconds);
       setModels(list);
       setStatus("models-loaded");
     } catch (reason) {
@@ -78,7 +78,7 @@ export function AiSettingsDialog({ onClose }: Props) {
     setBusy(true);
     setStatus("testing");
     try {
-      await testAiConnection(config.base_url, config.api_key, config.model);
+      await testAiConnection(config.base_url, config.api_key, config.model, config.connect_timeout_seconds);
       setStatus("connected");
     } catch (reason) {
       setStatus("connection-error");
@@ -158,7 +158,7 @@ export function AiSettingsDialog({ onClose }: Props) {
           max={3600}
           value={config.connect_timeout_seconds ?? ""}
           onChange={(event) =>
-            update({ connect_timeout_seconds: Number(event.target.value) })
+            update({ connect_timeout_seconds: event.target.value === "" ? null : Number(event.target.value) })
           }
         />
       </label>

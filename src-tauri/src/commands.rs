@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
@@ -360,16 +361,23 @@ pub fn has_ai_configuration() -> Result<bool, String> {
     crate::ai::storage::has_ai_configuration()
 }
 
+fn ai_settings_timeout(seconds: Option<u64>) -> Result<Duration, AiError> {
+    let seconds = seconds.unwrap_or(crate::ai::streaming::DEFAULT_CONNECT_TIMEOUT_SECONDS);
+    crate::ai::config::validate_timeout(seconds)
+        .map_err(|error| AiError::InvalidConfiguration(error.to_string()))?;
+    Ok(Duration::from_secs(seconds))
+}
+
 /// Model 一覧を取得する Tauri コマンド。
 #[tauri::command]
 pub async fn list_ai_models(
     base_url: String,
     api_key: Option<String>,
+    connect_timeout_seconds: Option<u64>,
 ) -> Result<Vec<String>, AiError> {
+    let timeout = ai_settings_timeout(connect_timeout_seconds)?;
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
-    provider
-        .list_models()
-        .await
+    provider.list_models(timeout).await
 }
 
 /// 接続テストを実行する Tauri コマンド。
@@ -378,11 +386,11 @@ pub async fn test_ai_connection(
     base_url: String,
     api_key: Option<String>,
     model: String,
+    connect_timeout_seconds: Option<u64>,
 ) -> Result<(), AiError> {
+    let timeout = ai_settings_timeout(connect_timeout_seconds)?;
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref());
-    provider
-        .test_connection(&model)
-        .await
+    provider.test_connection(&model, timeout).await
 }
 
 /// AI ストリーミングを開始する Tauri コマンド。
