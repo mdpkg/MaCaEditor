@@ -14,8 +14,8 @@ use windows_sys::{
     core::w,
     Win32::{
         Foundation::{
-            CloseHandle, ERROR_INVALID_OPERATION, ERROR_NO_MORE_ITEMS, ERROR_TIMEOUT, HANDLE,
-            INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+            CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_OPERATION, ERROR_NO_MORE_ITEMS,
+            ERROR_TIMEOUT, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         Graphics::Printing::*,
         System::{
@@ -142,7 +142,7 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
         }
         let now = Instant::now();
         if let Some(reader) = &events {
-            if let Err(error) = reader.read_into(&mut failures, now) {
+            if let Err(error) = reader.read_into(&mut failures, now, &mut event_error) {
                 // Keep monitoring queue status if the event log is unavailable.
                 events = None;
                 event_error = Some(error);
@@ -484,7 +484,12 @@ impl FailureEvents {
         Ok(events)
     }
 
-    fn read_into(&self, failures: &mut Vec<(Instant, Failure)>, now: Instant) -> io::Result<()> {
+    fn read_into(
+        &self,
+        failures: &mut Vec<(Instant, Failure)>,
+        now: Instant,
+        event_error: &mut Option<io::Error>,
+    ) -> io::Result<()> {
         loop {
             let mut event = 0;
             let mut count = 0;
@@ -493,16 +498,20 @@ impl FailureEvents {
             }
             let failure = self.render(event);
             unsafe { EvtClose(event) };
-            if let Some(failure) = failure {
-                failures.push((now, failure));
+            match failure {
+                Ok(failure) => failures.push((now, failure)),
+                Err(error) => {
+                    // A bad record does not invalidate the subscription.
+                    event_error.get_or_insert(error);
+                }
             }
         }
     }
 
-    fn render(&self, event: EVT_HANDLE) -> Option<Failure> {
+    fn render(&self, event: EVT_HANDLE) -> io::Result<Failure> {
         let mut bytes = 0;
         let mut count = 0;
-        unsafe {
+        if unsafe {
             EvtRender(
                 self.context,
                 event,
@@ -512,9 +521,12 @@ impl FailureEvents {
                 &mut bytes,
                 &mut count,
             )
-        };
-        if bytes == 0 {
-            return None;
+        } == 0
+        {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(ERROR_INSUFFICIENT_BUFFER as i32) {
+                return Err(error);
+            }
         }
         // Keep the buffer aligned for EVT_VARIANT and for the strings it references.
         let mut buffer =
@@ -530,9 +542,14 @@ impl FailureEvents {
                 &mut count,
             )
         } == 0
-            || count < 11
         {
-            return None;
+            return Err(io::Error::last_os_error());
+        }
+        if count < 11 || count as usize > buffer.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid property count in PrintService event 372: {count}"),
+            ));
         }
         let value = |index: usize| {
             let variant = &buffer[index];
@@ -550,7 +567,7 @@ impl FailureEvents {
         };
         // Event 372's template stores the document, owner, printer, spool size,
         // Win32 error code and original system message in these fields.
-        Some(Failure {
+        Ok(Failure {
             document: value(0),
             owner: value(1),
             printer: value(2),
