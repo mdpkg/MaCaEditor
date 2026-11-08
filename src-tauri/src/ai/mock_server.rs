@@ -322,6 +322,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reports_the_status_of_a_server_error_with_no_detail_body() {
+        for (status, body, detail) in [
+            (503, "", "HTTP 503"),
+            (504, "  ", "HTTP 504"),
+            (502, "Upstream unavailable", "Upstream unavailable"),
+        ] {
+            let server = MockOpenAiServer::start(Scenario::HttpBody(status, "text/plain", body)).await;
+            let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+            let expected = AiError::ServerError(detail.to_owned());
+
+            assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+            assert!(matches!(
+                provider.stream(sample_request()).await,
+                Err(error) if error == expected
+            ));
+        }
+    }
+
+    #[tokio::test]
     async fn maps_500_to_server_error() {
         let server = MockOpenAiServer::start(Scenario::HttpError(500, "mock")).await;
         let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
