@@ -101,9 +101,8 @@ fn monitor_prints(requests: mpsc::Receiver<Request>) {
 }
 
 fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Result<()> {
-    let (queue, events) = match Queue::open().and_then(|queue| Ok((queue, FailureEvents::open()?)))
-    {
-        Ok(sources) => sources,
+    let queue = match Queue::open() {
+        Ok(queue) => queue,
         Err(error) => {
             let _ = first.ready.send(Err(error.to_string()));
             return Err(error);
@@ -116,10 +115,14 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
         let _ = first.ready.send(Err(error.to_string()));
         return Err(error);
     }
-    let mut events = Some(events);
+    // The event log adds failure details, but the queue is sufficient to track jobs.
+    let (mut events, mut startup_event_error) = match FailureEvents::open() {
+        Ok(reader) => (Some(reader), None),
+        Err(error) => (None, Some(error)),
+    };
     add_request(&mut pending, first);
     while !pending.is_empty() {
-        let mut event_error = None;
+        let mut event_error = startup_event_error.take();
         for request in requests.try_iter() {
             add_request(&mut pending, request);
             if events.is_none() && event_error.is_none() {
