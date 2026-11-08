@@ -270,23 +270,13 @@ async fn execute_http_request(
         let last_error = last_error.clone();
         async move {
             let response = transport.oneshot(request).await?;
-            if let Some(last_error) = last_error {
-                return remember_retryable_error(response, &last_error).await;
-            }
-            Ok(response)
+            prepare_retryable_response(response, last_error.as_ref()).await
         }
     });
     let response = OpenAIRetryLayer::default()
         .layer(service)
         .oneshot(request)
-        .await;
-    let response = match response {
-        // The retry layer deserializes only 429 responses and drops their status if parsing fails.
-        Err(OpenAIError::JSONDeserialize(_, body)) => {
-            return Err(unstructured_http_error(StatusCode::TOO_MANY_REQUESTS, &body));
-        }
-        other => other?,
-    };
+        .await?;
 
     let status = response.status();
     if !matches!(
@@ -305,14 +295,16 @@ async fn execute_http_request(
     }
 }
 
-// Keep the last HTTP failure available if the connect deadline expires in the retry layer.
-async fn remember_retryable_error(
+// Handle quota failures before the SDK retries and keep error details across the deadline.
+async fn prepare_retryable_response(
     response: reqwest::Response,
-    last_error: &RetryError,
+    last_error: Option<&RetryError>,
 ) -> Result<reqwest::Response, OpenAIError> {
     let status = response.status();
-    if status != StatusCode::TOO_MANY_REQUESTS && !status.is_server_error() {
-        *last_error.lock().unwrap() = None;
+    if status != StatusCode::TOO_MANY_REQUESTS && !(status.is_server_error() && last_error.is_some()) {
+        if let Some(last_error) = last_error {
+            *last_error.lock().unwrap() = None;
+        }
         return Ok(response);
     }
 
@@ -321,7 +313,9 @@ async fn remember_retryable_error(
         status.as_u16(),
         &format!("HTTP {}", status.as_u16()),
     )));
-    *last_error.lock().unwrap() = Some(diagnostic.clone());
+    if let Some(last_error) = last_error {
+        *last_error.lock().unwrap() = Some(diagnostic.clone());
+    }
     let headers = response.headers().clone();
     let version = response.version();
     let body = if status.is_server_error() {
@@ -340,15 +334,17 @@ async fn remember_retryable_error(
                 .map_err(std::io::Error::other)
         }))
     } else {
-        // The SDK also reads 429 bodies before retrying to check for exhausted quota.
         let bytes = response.bytes().await.map_err(OpenAIError::Reqwest)?;
-        *diagnostic.lock().unwrap() = match serde_json::from_slice::<WrappedError>(&bytes) {
-            Ok(wrapped) => map_api_error(status, wrapped.error),
-            Err(_) => map_openai_error(unstructured_http_error(
-                status,
-                &String::from_utf8_lossy(&bytes),
-            )),
-        };
+        let wrapped = serde_json::from_slice::<WrappedError>(&bytes)
+            .map_err(|_| unstructured_http_error(status, &String::from_utf8_lossy(&bytes)))?;
+        // The SDK stops on insufficient_quota in error.type. Newer codes can arrive without it.
+        if is_quota_error(&wrapped.error) {
+            return Err(OpenAIError::ApiError(ApiErrorResponse {
+                status_code: status,
+                api_error: wrapped.error,
+            }));
+        }
+        *diagnostic.lock().unwrap() = map_api_error(status, wrapped.error);
         reqwest::Body::from(bytes)
     };
 
@@ -485,6 +481,7 @@ fn invalid_response(error: serde_json::Error, body: &str) -> AiError {
 
 fn map_api_error(status: reqwest::StatusCode, error: ApiError) -> AiError {
     let code = error.code.as_deref().filter(|code| !code.is_empty());
+    let quota_exceeded = status == StatusCode::TOO_MANY_REQUESTS && is_quota_error(&error);
     let detail = match code {
         Some(code) => format!("{}\n\ncode: {code}", error.message),
         None => error.message,
@@ -492,15 +489,17 @@ fn map_api_error(status: reqwest::StatusCode, error: ApiError) -> AiError {
     if code == Some("invalid_project") {
         return AiError::InvalidProject(detail);
     }
-    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        let quota_exceeded = code.is_some_and(is_quota_code)
-            || (code.and_then(api_error_kind).is_none()
-                && error.r#type.as_deref().is_some_and(is_quota_code));
-        if quota_exceeded {
-            return AiError::QuotaExceeded(detail);
-        }
+    if quota_exceeded {
+        return AiError::QuotaExceeded(detail);
     }
     classify_http_status(status.as_u16(), &detail)
+}
+
+fn is_quota_error(error: &ApiError) -> bool {
+    let code = error.code.as_deref();
+    code.is_some_and(is_quota_code)
+        || (code.and_then(api_error_kind).is_none()
+            && error.r#type.as_deref().is_some_and(is_quota_code))
 }
 
 fn map_openai_error(error: OpenAIError) -> AiError {
