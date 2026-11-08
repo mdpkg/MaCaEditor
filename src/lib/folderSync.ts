@@ -29,7 +29,7 @@ function fingerprint(manifest: Record<string, unknown>, entrypoint: string, file
 }
 
 export function folderInfoFingerprint(info: PackageInfo): string {
-  return fingerprint(info.manifest, info.entrypoint, info.files);
+  return info.folder_revision ?? fingerprint(info.manifest, info.entrypoint, info.files);
 }
 
 export function folderDocumentFingerprint(state: DocumentState): string {
@@ -38,8 +38,13 @@ export function folderDocumentFingerprint(state: DocumentState): string {
 
 export type ExternalFolderAction = "unchanged" | "reload" | "conflict";
 
-export function externalFolderAction(state: DocumentState, info: PackageInfo): ExternalFolderAction {
+export function externalFolderAction(state: DocumentState, info: PackageInfo, hasHistory = false): ExternalFolderAction {
   const baseline = state.folderSnapshot ?? folderDocumentFingerprint(state);
   if (folderInfoFingerprint(info) === baseline) return "unchanged";
-  return state.dirty ? "conflict" : "reload";
+  return state.dirty || hasHistory ? "conflict" : "reload";
+}
+
+export function blocksFolderSave(reason: unknown): boolean {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return message.startsWith("folder changed on disk") || message.startsWith("folder save requires recovery");
 }

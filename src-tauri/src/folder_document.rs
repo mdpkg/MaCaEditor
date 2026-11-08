@@ -1,12 +1,17 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use sha2::{Digest, Sha256};
 
 use crate::atomic_save::atomic_save;
 use crate::manifest::Manifest;
 use crate::package_file::PackageFile;
 use crate::package_validation::{validate_entrypoint_exists, validate_manifest, validate_paths};
 use crate::path_validator::validate_package_path;
+
+mod save;
+pub use save::save_folder;
+const SAVE_DIRECTORY: &str = ".maca-save";
 
 #[derive(Debug, thiserror::Error)]
 pub enum FolderError {
@@ -20,6 +25,10 @@ pub enum FolderError {
     Outside(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("folder changed on disk")]
+    Conflict,
+    #[error("folder save requires recovery at {path}: {1}", path = .0.display())]
+    Recovery(PathBuf, String),
 }
 
 pub struct FolderDocument {
@@ -27,6 +36,8 @@ pub struct FolderDocument {
     pub manifest: Manifest,
     pub files: Vec<PackageFile>,
     pub manifest_was_generated: bool,
+    pub revision: String,
+    manifest_bytes: Option<Vec<u8>>,
 }
 
 pub fn create_empty_folder(path: &Path) -> Result<FolderDocument, FolderError> {
@@ -90,21 +101,48 @@ fn validate_folder_name(name: &str) -> Result<(), FolderError> {
 }
 
 pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
+    load_folder_inner(path, false)
+}
+
+fn load_folder_inner(path: &Path, own_save_directory: bool) -> Result<FolderDocument, FolderError> {
     reject_link(path)?;
     let root = fs::canonicalize(path)?;
     if !root.is_dir() {
         return Err(FolderError::Invalid("selected path is not a folder".into()));
     }
+    let save_path = root.join(SAVE_DIRECTORY);
+    if !own_save_directory {
+        match fs::symlink_metadata(&save_path) {
+            Ok(_) => {
+                return Err(FolderError::Recovery(
+                    save_path,
+                    "backup data is still present".into(),
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
     let manifest_path = root.join("manifest.json");
-    let manifest_exists = manifest_path.is_file();
-    let mut files = Vec::new();
-    collect(&root, &root, &mut files, !manifest_exists)?;
-    let (manifest, manifest_was_generated) = if manifest_exists {
+    let manifest_bytes = if manifest_path.is_file() {
         reject_link(&manifest_path)?;
-        let manifest_text = fs::read_to_string(&manifest_path)
+        Some(fs::read(&manifest_path)?)
+    } else {
+        None
+    };
+    let mut files = Vec::new();
+    collect(
+        &root,
+        &root,
+        &mut files,
+        manifest_bytes.is_none(),
+        &save_path,
+    )?;
+    let (manifest, manifest_was_generated) = if let Some(bytes) = &manifest_bytes {
+        let manifest_text = std::str::from_utf8(bytes)
             .map_err(|e| FolderError::Invalid(format!("manifest.json cannot be read: {e}")))?;
         (
-            Manifest::parse(&manifest_text).map_err(|e| FolderError::Invalid(e.to_string()))?,
+            Manifest::parse(manifest_text).map_err(|e| FolderError::Invalid(e.to_string()))?,
             false,
         )
     } else {
@@ -121,7 +159,11 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
         let entrypoint = markdown_paths
             .iter()
             .find(|path| path.as_str() == "index.md")
-            .or_else(|| markdown_paths.iter().find(|path| path.as_str() == "README.md"))
+            .or_else(|| {
+                markdown_paths
+                    .iter()
+                    .find(|path| path.as_str() == "README.md")
+            })
             .or_else(|| markdown_paths.first())
             .ok_or(FolderError::MissingManifest)?;
         let json = serde_json::json!({
@@ -140,15 +182,54 @@ pub fn load_folder(path: &Path) -> Result<FolderDocument, FolderError> {
     Ok(FolderDocument {
         root,
         manifest,
+        revision: folder_revision(
+            manifest_bytes.as_deref(),
+            files
+                .iter()
+                .map(|file| (file.path.as_str(), file.content.as_slice())),
+        ),
         files,
         manifest_was_generated,
+        manifest_bytes,
     })
+}
+
+fn folder_revision<'a>(
+    manifest: Option<&[u8]>,
+    files: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+) -> String {
+    let mut files: Vec<_> = files.into_iter().collect();
+    files.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    let mut digest = Sha256::new();
+    digest.update([u8::from(manifest.is_some())]);
+    let mut field = |bytes: &[u8]| {
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    };
+    if let Some(manifest) = manifest {
+        field(manifest);
+    }
+    for (path, bytes) in files {
+        field(path.as_bytes());
+        field(bytes);
+    }
+    format!("{:x}", digest.finalize())
 }
 
 fn ignored_inference_directory(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|name| name.to_str()),
-        Some(".git" | ".hg" | ".svn" | ".next" | "node_modules" | "target" | "dist" | "build" | "coverage")
+        Some(
+            ".git"
+                | ".hg"
+                | ".svn"
+                | ".next"
+                | "node_modules"
+                | "target"
+                | "dist"
+                | "build"
+                | "coverage"
+        )
     )
 }
 
@@ -157,19 +238,23 @@ fn collect(
     dir: &Path,
     files: &mut Vec<PackageFile>,
     ignore_generated_directories: bool,
+    save_path: &Path,
 ) -> Result<(), FolderError> {
     reject_link(dir)?;
     ensure_inside(root, dir)?;
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
+        if path == save_path {
+            continue;
+        }
         reject_link(&path)?;
         ensure_inside(root, &path)?;
         if entry.file_type()?.is_dir() {
             if ignore_generated_directories && ignored_inference_directory(&path) {
                 continue;
             }
-            collect(root, &path, files, ignore_generated_directories)?;
+            collect(root, &path, files, ignore_generated_directories, save_path)?;
         } else if entry.file_type()?.is_file() {
             let rel = path
                 .strip_prefix(root)
@@ -194,43 +279,6 @@ fn collect(
     Ok(())
 }
 
-pub fn save_folder(
-    path: &Path,
-    manifest: &Manifest,
-    files: &[PackageFile],
-    original: &[String],
-) -> Result<(), FolderError> {
-    let loaded = load_folder(path)?;
-    let root = loaded.root;
-    validate_document(manifest, files)?;
-    let next = files
-        .iter()
-        .map(|f| f.path.replace('\\', "/"))
-        .collect::<HashSet<_>>();
-    for old in original {
-        let old = old.replace('\\', "/");
-        validate_package_path(&old).map_err(|_| FolderError::Outside(old.clone()))?;
-        if old == "manifest.json" || next.contains(&old) {
-            continue;
-        }
-        let target = safe_target(&root, &old, false)?;
-        if target.exists() {
-            reject_link(&target)?;
-            fs::remove_file(target)?;
-        }
-    }
-    for file in files {
-        let rel = file.path.replace('\\', "/");
-        let target = safe_target(&root, &rel, true)?;
-        atomic_save(&target, &file.content).map_err(|e| FolderError::Invalid(e.to_string()))?;
-    }
-    let manifest_json =
-        serde_json::to_vec_pretty(manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
-    atomic_save(&root.join("manifest.json"), &manifest_json)
-        .map_err(|e| FolderError::Invalid(e.to_string()))?;
-    Ok(())
-}
-
 pub fn validate_document(manifest: &Manifest, files: &[PackageFile]) -> Result<(), FolderError> {
     validate_manifest(manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
     validate_paths(manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
@@ -241,52 +289,6 @@ pub fn validate_document(manifest: &Manifest, files: &[PackageFile]) -> Result<(
     validate_entrypoint_exists(manifest, &paths)
         .map_err(|e| FolderError::Invalid(e.to_string()))?;
     Ok(())
-}
-
-fn safe_target(root: &Path, rel: &str, create_parents: bool) -> Result<PathBuf, FolderError> {
-    validate_package_path(rel).map_err(|_| FolderError::Outside(rel.into()))?;
-    let target = root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let parent = target
-        .parent()
-        .ok_or_else(|| FolderError::Outside(rel.into()))?;
-    if create_parents {
-        create_safe_parents(root, parent)?;
-    }
-    reject_chain(root, parent)?;
-    if target.exists() {
-        reject_link(&target)?;
-        ensure_inside(root, &target)?;
-    }
-    Ok(target)
-}
-
-fn create_safe_parents(root: &Path, parent: &Path) -> Result<(), FolderError> {
-    let rel = parent
-        .strip_prefix(root)
-        .map_err(|_| FolderError::Outside(parent.display().to_string()))?;
-    let mut current = root.to_path_buf();
-    for part in rel.components() {
-        current.push(part);
-        if current.exists() {
-            reject_link(&current)?;
-            ensure_inside(root, &current)?;
-        } else {
-            fs::create_dir(&current)?;
-        }
-    }
-    Ok(())
-}
-
-fn reject_chain(root: &Path, path: &Path) -> Result<(), FolderError> {
-    let mut current = PathBuf::from(root);
-    let rel = path
-        .strip_prefix(root)
-        .map_err(|_| FolderError::Outside(path.display().to_string()))?;
-    for part in rel.components() {
-        current.push(part);
-        reject_link(&current)?;
-    }
-    ensure_inside(root, path)
 }
 
 fn ensure_inside(root: &Path, path: &Path) -> Result<(), FolderError> {
@@ -370,7 +372,11 @@ mod tests {
         let dir = temp("manifest-inference-ignored-directories");
         fs::write(dir.join("index.md"), "# Index").unwrap();
         fs::create_dir_all(dir.join("node_modules/dependency")).unwrap();
-        fs::write(dir.join("node_modules/dependency/README.md"), "# Dependency").unwrap();
+        fs::write(
+            dir.join("node_modules/dependency/README.md"),
+            "# Dependency",
+        )
+        .unwrap();
         fs::create_dir_all(dir.join("target/debug")).unwrap();
         fs::write(dir.join("target/debug/output.bin"), [0_u8; 64]).unwrap();
 
@@ -443,11 +449,12 @@ mod tests {
             "# Updated".into(),
         ));
         files.push(PackageFile::new_text("renamed.txt".into(), "new".into()));
-        save_folder(
+        let revision = save_folder(
             &dir,
             &loaded.manifest,
             &files,
             &["README.md".into(), "old.txt".into()],
+            &loaded.revision,
         )
         .unwrap();
         assert_eq!(
@@ -456,6 +463,199 @@ mod tests {
         );
         assert!(!dir.join("old.txt").exists());
         assert_eq!(fs::read_to_string(dir.join("renamed.txt")).unwrap(), "new");
+        assert_eq!(load_folder(&dir).unwrap().revision, revision);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_folder_save_preserves_original_files_and_manifest() {
+        let dir = valid_folder("failed-save");
+        fs::write(dir.join("old.txt"), b"original attachment").unwrap();
+        fs::write(dir.join("blocker"), b"original file").unwrap();
+        let original_manifest = fs::read(dir.join("manifest.json")).unwrap();
+        let loaded = load_folder(&dir).unwrap();
+        let files = [
+            PackageFile::new_text("README.md".into(), "new link".into()),
+            PackageFile::new_text("blocker/guide.md".into(), "new file".into()),
+        ];
+
+        assert!(save_folder(
+            &dir,
+            &loaded.manifest,
+            &files,
+            &["old.txt".into()],
+            &loaded.revision
+        )
+        .is_err());
+        assert_eq!(
+            fs::read(dir.join("old.txt")).unwrap(),
+            b"original attachment"
+        );
+        assert_eq!(fs::read(dir.join("README.md")).unwrap(), b"# Hello");
+        assert_eq!(fs::read(dir.join("blocker")).unwrap(), b"original file");
+        assert_eq!(
+            fs::read(dir.join("manifest.json")).unwrap(),
+            original_manifest
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn restores_overwrites_and_deletions_when_manifest_publication_fails() {
+        let dir = valid_folder("rollback");
+        let manifest_before = fs::read(dir.join("manifest.json")).unwrap();
+        fs::write(dir.join("old.bin"), [0, 0xff]).unwrap();
+        let loaded = load_folder(&dir).unwrap();
+        let files = [
+            PackageFile::new_text("README.md".into(), "[Moved](new/moved.bin)".into()),
+            PackageFile::new_binary("new/moved.bin".into(), vec![0, 0xff]),
+        ];
+        let original = ["README.md".into(), "old.bin".into()];
+        let mut failed_after_publish = false;
+        let result = save::save_folder_with(
+            &dir,
+            &loaded.manifest,
+            &files,
+            &original,
+            &loaded.revision,
+            |target| {
+                if target.ends_with("manifest.json") {
+                    let root = target.parent().unwrap();
+                    assert!(root.join("new/moved.bin").is_file());
+                    assert!(!root.join("old.bin").exists());
+                    assert_ne!(fs::read(root.join("README.md")).unwrap(), b"# Hello");
+                    failed_after_publish = true;
+                    return Err(std::io::Error::other(
+                        "injected manifest publication failure",
+                    ));
+                }
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(FolderError::Io(_))));
+        assert!(failed_after_publish);
+        assert_eq!(fs::read(dir.join("README.md")).unwrap(), b"# Hello");
+        assert_eq!(fs::read(dir.join("old.bin")).unwrap(), [0, 0xff]);
+        assert_eq!(
+            fs::read(dir.join("manifest.json")).unwrap(),
+            manifest_before
+        );
+        assert!(!dir.join("new").exists());
+        assert!(!dir.join(SAVE_DIRECTORY).exists());
+        assert_eq!(load_folder(&dir).unwrap().revision, loaded.revision);
+        assert!(save_folder(&dir, &loaded.manifest, &files, &original, &loaded.revision).is_ok());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn preserves_backups_and_blocks_saves_when_an_external_file_prevents_rollback() {
+        let dir = valid_folder("recovery");
+        let loaded = load_folder(&dir).unwrap();
+        let files = [PackageFile::new_text("README.md".into(), "New".into())];
+        let original = ["README.md".into()];
+        let result = save::save_folder_with(
+            &dir,
+            &loaded.manifest,
+            &files,
+            &original,
+            &loaded.revision,
+            |target| {
+                if target.ends_with("manifest.json") {
+                    fs::write(target.parent().unwrap().join("README.md"), b"External")?;
+                    return Err(std::io::Error::other("injected failure with external edit"));
+                }
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(FolderError::Recovery(..))));
+        assert_eq!(fs::read(dir.join("README.md")).unwrap(), b"External");
+        assert_eq!(
+            fs::read(dir.join(SAVE_DIRECTORY).join("backup/README.md")).unwrap(),
+            b"# Hello"
+        );
+        assert!(matches!(
+            save_folder(&dir, &loaded.manifest, &files, &original, &loaded.revision),
+            Err(FolderError::Recovery(..))
+        ));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn first_manifest_save_returns_a_revision_that_includes_preexisting_files() {
+        let dir = temp("first-save");
+        fs::write(dir.join("index.md"), b"# Index").unwrap();
+        fs::create_dir(dir.join("build")).unwrap();
+        fs::write(dir.join("build/previous.bin"), b"untouched").unwrap();
+        let loaded = load_folder(&dir).unwrap();
+        assert_eq!(loaded.files.len(), 1);
+        let revision = save_folder(
+            &dir,
+            &loaded.manifest,
+            &loaded.files,
+            &["index.md".into()],
+            &loaded.revision,
+        )
+        .unwrap();
+        let reopened = load_folder(&dir).unwrap();
+        assert_eq!(reopened.revision, revision);
+        assert_eq!(
+            fs::read(dir.join("build/previous.bin")).unwrap(),
+            b"untouched"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn saves_a_file_and_directory_trading_places() {
+        let dir = valid_folder("shape-change");
+        fs::create_dir_all(dir.join("asset/nested")).unwrap();
+        fs::write(dir.join("asset/nested/old.bin"), [42]).unwrap();
+        let loaded = load_folder(&dir).unwrap();
+        let files = [
+            PackageFile::new_text("README.md".into(), "# Hello".into()),
+            PackageFile::new_binary("asset".into(), vec![42]),
+        ];
+        let revision = save_folder(
+            &dir,
+            &loaded.manifest,
+            &files,
+            &["README.md".into(), "asset/nested/old.bin".into()],
+            &loaded.revision,
+        )
+        .unwrap();
+        assert_eq!(fs::read(dir.join("asset")).unwrap(), [42]);
+        save_folder(
+            &dir,
+            &loaded.manifest,
+            &loaded.files,
+            &["README.md".into(), "asset".into()],
+            &revision,
+        )
+        .unwrap();
+        assert_eq!(fs::read(dir.join("asset/nested/old.bin")).unwrap(), [42]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_a_stale_disk_revision_before_deleting_or_overwriting() {
+        let dir = valid_folder("external");
+        fs::write(dir.join("old.bin"), b"old").unwrap();
+        let loaded = load_folder(&dir).unwrap();
+        fs::write(dir.join("README.md"), b"External").unwrap();
+        let files = [PackageFile::new_text("README.md".into(), "Local".into())];
+        assert!(matches!(
+            save_folder(
+                &dir,
+                &loaded.manifest,
+                &files,
+                &["README.md".into(), "old.bin".into()],
+                &loaded.revision
+            ),
+            Err(FolderError::Conflict)
+        ));
+        assert_eq!(fs::read(dir.join("README.md")).unwrap(), b"External");
+        assert_eq!(fs::read(dir.join("old.bin")).unwrap(), b"old");
+        assert!(!dir.join(SAVE_DIRECTORY).exists());
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -464,7 +664,7 @@ mod tests {
         let dir = valid_folder("outside");
         let loaded = load_folder(&dir).unwrap();
         let files = vec![PackageFile::new_text("../outside.txt".into(), "bad".into())];
-        assert!(save_folder(&dir, &loaded.manifest, &files, &[]).is_err());
+        assert!(save_folder(&dir, &loaded.manifest, &files, &[], &loaded.revision).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
 

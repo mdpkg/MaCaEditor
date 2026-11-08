@@ -98,7 +98,7 @@ describe("Toolbar menus", () => {
     press("ArrowDown");
     expect(document.activeElement?.textContent).toBe("開く");
     press("End");
-    expect(document.activeElement?.textContent).toBe("ファイル操作をやり直す");
+    expect(document.activeElement?.textContent).toBe("やり直し");
     press("Home");
     expect(document.activeElement?.textContent).toBe("新規作成");
     press("Escape");
@@ -106,7 +106,7 @@ describe("Toolbar menus", () => {
     expect(document.activeElement).toBe(fileButton);
     act(() => fileButton.click());
     expect(Array.from(container.querySelectorAll(".toolbar-menu-items button")).map((button) => button.textContent))
-      .toEqual(["新規作成", "開く", "フォルダを開く...", "新しい空のフォルダで開始", "保存", "名前を付けて保存", "印刷", "Markdown を追加...", "フォルダを追加...", "フォルダから取り込み", "フォルダへ書き出し", "パッケージに書き出し...", "パッケージを診断...", "manifest を編集...", "パッケージを検索...", "ファイル操作を元に戻す", "ファイル操作をやり直す"]);
+      .toEqual(["新規作成", "開く", "フォルダを開く...", "新しい空のフォルダで開始", "保存", "名前を付けて保存", "印刷", "Markdown を追加...", "フォルダを追加...", "フォルダから取り込み", "フォルダへ書き出し", "パッケージに書き出し...", "パッケージを診断...", "manifest を編集...", "パッケージを検索...", "元に戻す", "やり直し"]);
     const printButton = Array.from(container.querySelectorAll(".toolbar-menu-items button"))
       .find((button) => button.textContent === "印刷") as HTMLButtonElement;
     act(() => printButton.click());

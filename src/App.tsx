@@ -33,7 +33,7 @@ import {
   type NotificationTone,
 } from "./components/NotificationBanners";
 import { NotificationHistoryDialog, type NotificationHistoryEntry } from "./components/NotificationHistoryDialog";
-import type { DocumentState, PathMove } from "./lib/document";
+import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
   createFolderDocumentState,
@@ -49,7 +49,6 @@ import {
   pathReferenceCount,
   planPathMove,
   resourceDirectoryForMarkdown,
-  reversePathMove,
   setEntrypoint,
   toSaveRequest,
   updateFileContent,
@@ -137,10 +136,10 @@ import {
 import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import {
-  applyPackageHistoryEntry, createPackageHistory, fileHistoryEntry, recordPackageEdit, samePackageContent,
-  textHistoryEntry, type HistoryDirection, type PackageHistoryEntry, type TextEditGroup,
-} from "./lib/packageHistory";
-import { externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
+  applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, sameSavedContent,
+  textHistoryEntry, type HistoryDirection, type EditHistoryEntry, type TextEditGroup,
+} from "./lib/editHistory";
+import { blocksFolderSave, externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { supportsPrintPageMargins } from "./lib/printPageMargins";
 import { diagnosePackage, diagnoseRelatedMarkdown, type PackageDiagnostic } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
@@ -194,10 +193,6 @@ interface PendingInferredFolder {
   inference: ManifestInference;
   destination?: string;
 }
-
-type FileOperation =
-  | { kind: "snapshot"; state: DocumentState; label: string }
-  | { kind: "move"; move: PathMove; label: string };
 
 export default function App() {
   const [doc, setDocumentState] = useState<DocumentState | null>(null);
@@ -255,12 +250,9 @@ export default function App() {
   const [v1MigrationOpen, setV1MigrationOpen] = useState(false);
   const [packageSearchOpen, setPackageSearchOpen] = useState(false);
   const [pendingInferredFolder, setPendingInferredFolder] = useState<PendingInferredFolder | null>(null);
-  const operationUndoRef = useRef<FileOperation[]>([]);
-  const operationRedoRef = useRef<FileOperation[]>([]);
-  const packageHistoryRef = useRef(createPackageHistory());
-  const savedPackageRef = useRef<DocumentState | null>(null);
-  const packageTypingRef = useRef<{ group: TextEditGroup; path: string; before: string; stale: string[] | undefined } | null>(null);
-  const [operationHistoryRevision, setOperationHistoryRevision] = useState(0);
+  const editHistoryRef = useRef(createEditHistory());
+  const savedDocumentRef = useRef<DocumentState | null>(null);
+  const typingRef = useRef<{ group: TextEditGroup; path: string; before: string; stale: string[] | undefined } | null>(null);
   const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
   const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
@@ -291,17 +283,17 @@ export default function App() {
 
   const setDoc = (update: DocumentState | ((current: DocumentState | null) => DocumentState | null)) => {
     const next = typeof update === "function" ? update(documentRef.current) : update;
-    if (next?.origin.kind === "package" && next !== documentRef.current) {
-      // Editors outside package history can replace files independently of the recorded edits.
-      packageHistoryRef.current = createPackageHistory();
-      packageTypingRef.current = null;
+    if (next && next !== documentRef.current) {
+      // Editors outside the shared history can replace files independently of the recorded edits.
+      editHistoryRef.current = createEditHistory();
+      typingRef.current = null;
     }
     applyDocumentState(next);
   };
 
-  const withPackageDirty = (next: DocumentState) => {
-    const saved = savedPackageRef.current;
-    return { ...next, dirty: !saved || !samePackageContent(next, saved) };
+  const withDocumentDirty = (next: DocumentState) => {
+    const saved = savedDocumentRef.current;
+    return { ...next, dirty: !saved || !sameSavedContent(next, saved) };
   };
 
   const replaceDocument = (next: DocumentState) => {
@@ -317,11 +309,9 @@ export default function App() {
     setLiveDiagnostics(null);
     setPackageDiagnostics(null);
     setNavigationTarget(null);
-    operationUndoRef.current = [];
-    operationRedoRef.current = [];
-    packageHistoryRef.current = createPackageHistory();
-    packageTypingRef.current = null;
-    savedPackageRef.current = next.origin.kind === "package" ? next : null;
+    editHistoryRef.current = createEditHistory();
+    typingRef.current = null;
+    savedDocumentRef.current = next.dirty ? null : next;
     setFolderConflict(false);
     setError(null);
     setNotifications((current) => current.filter((notice) => !notice.action));
@@ -375,74 +365,37 @@ export default function App() {
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
   );
-  const recordDocumentOperation = (next: DocumentState, label: string, move?: PathMove) => {
+  const recordDocumentOperation = (next: DocumentState, label: string) => {
     if (!doc) return;
-    if (doc.origin.kind === "package") {
-      const entry = fileHistoryEntry(doc, next, label);
-      if (!entry) return;
-      packageTypingRef.current = null;
-      recordPackageEdit(packageHistoryRef.current, entry);
-      applyDocumentState(withPackageDirty(next));
-      return entry;
-    }
-    const entry: FileOperation = move ? { kind: "move", move, label } : { kind: "snapshot", state: doc, label };
-    operationUndoRef.current.push(entry);
-    operationRedoRef.current = [];
-    setDoc(next);
-    setOperationHistoryRevision((revision) => revision + 1);
+    const entry = fileHistoryEntry(doc, next, label);
+    if (!entry) return;
+    typingRef.current = null;
+    recordEdit(editHistoryRef.current, entry);
+    applyDocumentState(withDocumentDirty(next));
     return entry;
   };
-  const applyFileOperationHistory = (direction: HistoryDirection, expectedEntry?: FileOperation | PackageHistoryEntry) => {
+  const applyEditHistory = (direction: HistoryDirection, expectedEntry?: EditHistoryEntry) => {
     const current = documentRef.current;
     if (!current) return;
     const undo = direction === "undo";
-    if (current.origin.kind === "package") {
-      const history = packageHistoryRef.current;
-      const index = undo ? history.cursor - 1 : history.cursor;
-      const entry = history.entries[index];
-      if (expectedEntry && entry !== expectedEntry) {
-        showNotification(uiText("Only the latest edit can be undone from this notification."), "warning");
-        return;
-      }
-      if (!entry) return;
-      const operation = uiText(undo ? "Undo" : "Redo");
-      try {
-        const next = withPackageDirty(applyPackageHistoryEntry(current, entry, direction));
-        packageTypingRef.current = null;
-        history.cursor += undo ? -1 : 1;
-        applyDocumentState(next);
-        setSelectedFolder(null);
-        setSelectedPath(entry.kind === "text" ? entry.path : next.entrypoint);
-        if (entry.kind === "files") setMode("preview");
-        clearError(operation);
-        setStatus(`${entry.label}を${undo ? "元に戻しました" : "やり直しました"}`);
-      } catch (reason) {
-        reportError(operation, reason);
-      }
-      return;
-    }
-    const source = undo ? operationUndoRef.current : operationRedoRef.current;
-    const destination = undo ? operationRedoRef.current : operationUndoRef.current;
-    const entry = source[source.length - 1];
-    if (expectedEntry && expectedEntry !== entry) {
-      showNotification("この移動の後に別のファイル操作が行われたため、通知から取り消せません。", "warning");
+    const history = editHistoryRef.current;
+    const entry = history.entries[undo ? history.cursor - 1 : history.cursor];
+    if (expectedEntry && entry !== expectedEntry) {
+      showNotification(uiText("Only the latest edit can be undone from this notification."), "warning");
       return;
     }
     if (!entry) return;
-    const operation = uiText(undo ? "Undo File Operation" : "Redo File Operation");
+    const operation = uiText(undo ? "Undo" : "Redo");
     try {
-      const next = entry.kind === "move"
-        ? applyPathMove(current, undo ? reversePathMove(entry.move) : entry.move)
-        : entry.state;
-      source.pop();
-      destination.push(entry.kind === "move" ? entry : { ...entry, state: current });
-      setDoc(next);
+      const next = withDocumentDirty(applyEditHistoryEntry(current, entry, direction));
+      typingRef.current = null;
+      history.cursor += undo ? -1 : 1;
+      applyDocumentState(next);
       setSelectedFolder(null);
-      setSelectedPath(next.entrypoint);
-      setMode("preview");
+      setSelectedPath(entry.kind === "text" ? entry.path : next.entrypoint);
+      if (entry.kind === "files") setMode("preview");
       clearError(operation);
       setStatus(`${entry.label}を${undo ? "元に戻しました" : "やり直しました"}`);
-      setOperationHistoryRevision((revision) => revision + 1);
     } catch (reason) {
       reportError(operation, reason);
     }
@@ -578,8 +531,8 @@ export default function App() {
       }
       checking = true;
       const session = documentSessionRef.current;
+      const baseline = documentRef.current?.folderSnapshot;
       try {
-        const baseline = documentRef.current?.folderSnapshot;
         const info = await openFolder(folderPath);
         const current = documentRef.current;
         if (!active || session !== documentSessionRef.current ||
@@ -589,7 +542,7 @@ export default function App() {
           return;
         }
         lastError = null;
-        const action = externalFolderAction(current, info);
+        const action = externalFolderAction(current, info, editHistoryRef.current.entries.length > 0);
         setFolderConflict(action === "conflict");
         if (action === "reload") {
           const reloaded = createFolderDocumentState(info, folderPath);
@@ -603,8 +556,14 @@ export default function App() {
           showNotification("外部エディタによる変更を反映しました。", "info");
         }
       } catch (e) {
+        if (active && session === documentSessionRef.current &&
+            (fileTaskRef.current || documentRef.current?.folderSnapshot !== baseline)) {
+          scheduleCheck();
+          return;
+        }
         if (active && session === documentSessionRef.current && lastError !== String(e)) {
           lastError = String(e);
+          if (blocksFolderSave(e)) setFolderConflict(true);
           showNotification("フォルダを再読込できませんでした。", "error", { detail: lastError });
         }
       } finally {
@@ -753,21 +712,14 @@ export default function App() {
     const current = documentRef.current;
     if (!current) return;
     const next = current === snapshot ? saved : applySavedBaseline(current, saved);
-    if (saved.origin.kind === "package") {
-      savedPackageRef.current = saved;
-      applyDocumentState(withPackageDirty(next));
-    } else {
-      setDoc(next);
-    }
-    for (const entry of [...operationUndoRef.current, ...operationRedoRef.current]) {
-      if (entry.kind === "snapshot") entry.state = applySavedBaseline(entry.state, saved);
-    }
+    savedDocumentRef.current = saved;
+    applyDocumentState(withDocumentDirty(next));
     clearError(uiText("Save"));
     setStatus(`${saved.path} を保存しました`);
   };
 
   const performSaveAs = () => runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
-    packageTypingRef.current = null;
+    typingRef.current = null;
     const result = await saveDialog({
       filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
       defaultPath: "document.mdpkg",
@@ -789,9 +741,14 @@ export default function App() {
       return;
     }
     await runFileTask(uiText("Save"), uiText("Saving…"), async (snapshot, isCurrentSession) => {
-      packageTypingRef.current = null;
-      const saved = await saveDocument(snapshot);
-      if (isCurrentSession()) finishSave(snapshot, saved);
+      typingRef.current = null;
+      try {
+        const saved = await saveDocument(snapshot);
+        if (isCurrentSession()) finishSave(snapshot, saved);
+      } catch (reason) {
+        if (snapshot.origin.kind === "folder" && isCurrentSession() && blocksFolderSave(reason)) setFolderConflict(true);
+        throw reason;
+      }
     });
   };
 
@@ -805,8 +762,17 @@ export default function App() {
   };
 
   const handleReloadFolder = () => runFileTask(uiText("Reload folder"), uiText("Reloading folder…"), async (snapshot, isCurrentSession) => {
-    if (snapshot.origin.kind !== "folder" ||
-        !await confirmReplaceDirtyDocument(uiText("Discard unsaved changes and reload this folder?"))) return;
+    if (snapshot.origin.kind !== "folder") return;
+    if (snapshot.dirty) {
+      if (!await confirmReplaceDirtyDocument(uiText("Discard unsaved changes and reload this folder?"))) return;
+    } else if (editHistoryRef.current.entries.length > 0) {
+      const response = await ask({
+        title: uiText("Reload Folder..."),
+        message: uiText("Discard edit history and reload this folder?"),
+        confirmLabel: uiText("Discard and continue"),
+      });
+      if (response === null || documentRef.current !== snapshot) return;
+    }
     const path = snapshot.origin.path;
     const info = await openFolder(path);
     if (!isCurrentSession()) return;
@@ -1052,16 +1018,16 @@ export default function App() {
     const file = current.files.find((candidate) => candidate.path === path);
     if (!file?.is_text || file.content === content) return;
     const next = updateFileContent(current, path, content);
-    if (current.origin.kind === "package" && file.content != null) {
-      const history = packageHistoryRef.current;
-      const typing = packageTypingRef.current;
+    if (file.content != null) {
+      const history = editHistoryRef.current;
+      const typing = typingRef.current;
       if (typing && typing.group === group && typing.path === path) {
         history.entries[history.cursor - 1] = textHistoryEntry(path, typing.before, content, typing.stale, next.staleResources);
       } else {
-        packageTypingRef.current = group ? { group, path, before: file.content, stale: current.staleResources } : null;
-        recordPackageEdit(history, textHistoryEntry(path, file.content, content, current.staleResources, next.staleResources));
+        typingRef.current = group ? { group, path, before: file.content, stale: current.staleResources } : null;
+        recordEdit(history, textHistoryEntry(path, file.content, content, current.staleResources, next.staleResources));
       }
-      applyDocumentState(withPackageDirty(next));
+      applyDocumentState(withDocumentDirty(next));
     } else {
       setDoc(next);
     }
@@ -1474,7 +1440,7 @@ export default function App() {
       const mapPath = (current: string | null) => current === path
         ? destination
         : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
-      const entry = recordDocumentOperation(moved, `${path} の移動`, move);
+      const entry = recordDocumentOperation(moved, `${path} の移動`);
       setSelectedFolder((current) => mapPath(current));
       setSelectedPath((current) => mapPath(current));
       setDrawingPath((current) => mapPath(current));
@@ -1486,7 +1452,7 @@ export default function App() {
         action: {
           label: "元に戻す",
           onClick: () => {
-            if (entry) applyFileOperationHistory("undo", entry);
+            if (entry) applyEditHistory("undo", entry);
           },
         },
       });
@@ -1725,11 +1691,11 @@ export default function App() {
       if (event.defaultPrevented || event.isComposing) return;
       const direction = historyShortcut(event);
       const target = event.target instanceof Element ? event.target : null;
-      if (direction && doc?.origin.kind === "package" && (mode === "preview" || mode === "split") &&
+      if (direction && doc && (mode === "preview" || mode === "split") &&
           !target?.closest("input, textarea, select, [contenteditable], [role=dialog]") &&
           !document.querySelector('[role="dialog"][aria-modal="true"]')) {
         event.preventDefault();
-        applyFileOperationHistory(direction);
+        applyEditHistory(direction);
         return;
       }
       if (isPackageSearchShortcut(event) && doc) {
@@ -1856,12 +1822,10 @@ export default function App() {
         onExport={handleExport}
         onExportPackage={handleExportPackage}
         onValidatePackage={handleValidatePackage}
-        onUndoFileOperation={() => applyFileOperationHistory("undo")}
-        onRedoFileOperation={() => applyFileOperationHistory("redo")}
-        canUndoFileOperation={doc?.origin.kind === "package" ? packageHistoryRef.current.cursor > 0
-          : operationHistoryRevision >= 0 && operationUndoRef.current.length > 0}
-        canRedoFileOperation={doc?.origin.kind === "package" ? packageHistoryRef.current.cursor < packageHistoryRef.current.entries.length
-          : operationHistoryRevision >= 0 && operationRedoRef.current.length > 0}
+        onUndoFileOperation={() => applyEditHistory("undo")}
+        onRedoFileOperation={() => applyEditHistory("redo")}
+        canUndoFileOperation={editHistoryRef.current.cursor > 0}
+        canRedoFileOperation={editHistoryRef.current.cursor < editHistoryRef.current.entries.length}
         onEditManifest={() => setManifestEditorOpen(true)}
         onSearchPackage={() => { setPackageDiagnostics(null); setPackageSearchOpen(true); }}
         onAddMarkdown={() => void handleAdd("markdown")}
@@ -1895,7 +1859,7 @@ export default function App() {
       />
       {folderConflict && (
         <div className="folder-conflict">
-          <span role="alert">{uiText("External changes conflict with unsaved edits. Saving to this folder is blocked.")}</span>
+          <span role="alert">{uiText("The folder changed on disk or needs recovery. Saving to this folder is blocked.")}</span>
           <button type="button" disabled={fileTask !== null} onClick={handleExportPackage}>{uiText("Export Package...")}</button>
           <button type="button" disabled={fileTask !== null} onClick={handleReloadFolder}>{uiText("Reload Folder...")}</button>
         </div>
@@ -2076,7 +2040,7 @@ export default function App() {
                     key={`${editorSession}:${displayFile.path}`}
                     value={displayContent}
                     onChange={(content, group) => handleContentChange(displayFile.path, editorSession, content, group)}
-                    onHistory={doc.origin.kind === "package" ? applyFileOperationHistory : undefined}
+                    onHistory={applyEditHistory}
                     onCursorChange={(position) => {
                       if (editorSession === documentSessionRef.current) editorCursorsRef.current.set(displayFile.path, position);
                     }}

@@ -7,7 +7,7 @@ import * as diagnostics from "./lib/packageDiagnostics";
 import { saveEditorPreferences } from "./lib/editorPreferences";
 import * as tauri from "./lib/tauri";
 import type { PackageInfo } from "./types";
-import type { TextEditGroup } from "./lib/packageHistory";
+import type { TextEditGroup } from "./lib/editHistory";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
 vi.mock("./lib/tauri", async (importOriginal) => ({
@@ -627,6 +627,88 @@ describe("App persistence", () => {
     await historyShortcut("y");
     expect(container.querySelector("textarea")?.value).toBe("Disk abc!");
     expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+  });
+
+  test("undoes folder edits across saves using the last written paths for deletions", async () => {
+    const info = { ...documentInfo("[Guide](docs/guide.md)"), folder_revision: "before" };
+    info.files.push({ path: "docs/guide.md", content: "[Home](../index.md)", is_text: true, base64: null });
+    vi.mocked(tauri.openFolder).mockResolvedValue(info);
+    vi.mocked(tauri.saveFolder).mockResolvedValueOnce("after-move").mockResolvedValueOnce("after-undo");
+    await act(async () => nativeDrop([folderPath], "folder"));
+    await click("編集");
+    await edit("[Guide](docs/guide.md)\n\nLocal");
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "docs/guide.md" } });
+    await act(async () => container.querySelector(".file-tree")!.dispatchEvent(drop));
+    await click("移動", container.querySelector('[role="dialog"]')!);
+    await act(async () => saveShortcut());
+    expect(tauri.saveFolder).toHaveBeenLastCalledWith(expect.objectContaining({
+      original_paths: ["index.md", "docs/guide.md"],
+      expected_revision: "before",
+      files: [
+        expect.objectContaining({ path: "index.md", content: "[Guide](guide.md)\n\nLocal" }),
+        expect.objectContaining({ path: "guide.md", content: "[Home](index.md)" }),
+      ],
+    }));
+
+    await historyShortcut("z");
+    expect(container.querySelector('[data-path="docs/guide.md"]')).not.toBeNull();
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+    expect(tauri.saveFolder).toHaveBeenCalledTimes(1);
+    await historyShortcut("z");
+    expect(container.querySelector(".document-area")?.textContent).not.toContain("Local");
+    await historyShortcut("y");
+    await act(async () => saveShortcut());
+    expect(tauri.saveFolder).toHaveBeenLastCalledWith(expect.objectContaining({
+      original_paths: ["index.md", "guide.md"],
+      expected_revision: "after-move",
+      files: [
+        expect.objectContaining({ path: "index.md", content: "[Guide](docs/guide.md)\n\nLocal" }),
+        expect.objectContaining({ path: "docs/guide.md", content: "[Home](../index.md)" }),
+      ],
+    }));
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+    await historyShortcut("y");
+    expect(container.querySelector('[data-path="guide.md"]')).not.toBeNull();
+    expect(container.querySelector(".dirty-indicator")).not.toBeNull();
+  });
+
+  test("preserves a clean folder's redo history when a disk revision changes", async () => {
+    vi.mocked(tauri.openFolder).mockResolvedValue({ ...documentInfo("Original"), folder_revision: "before" });
+    await act(async () => nativeDrop([folderPath], "folder"));
+    await click("編集");
+    await edit("Local");
+    await historyShortcut("z");
+    expect(container.querySelector(".dirty-indicator")).toBeNull();
+
+    vi.mocked(tauri.openFolder).mockResolvedValue({ ...documentInfo("External"), folder_revision: "external" });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await act(async () => {
+      folderChanged(folderPath);
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    const banner = container.querySelector(".folder-conflict")!;
+    expect(banner).not.toBeNull();
+    expect(container.querySelector("textarea")?.value).toBe("Original");
+    await click("フォルダを再読込...", banner);
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("編集履歴を破棄");
+    await click("キャンセル", container.querySelector('[role="dialog"]')!);
+    await historyShortcut("y");
+    expect(container.querySelector("textarea")?.value).toBe("Local");
+  });
+
+  test("blocks another folder save after the backend reports recovery is required", async () => {
+    vi.mocked(tauri.openFolder).mockResolvedValue({ ...documentInfo("Original"), folder_revision: "before" });
+    vi.mocked(tauri.saveFolder).mockRejectedValueOnce("folder save requires recovery at backup: rollback failed");
+    await act(async () => nativeDrop([folderPath], "folder"));
+    await click("編集");
+    await edit("Local");
+    await act(async () => saveShortcut());
+    expect(container.querySelector(".folder-conflict")).not.toBeNull();
+    await act(async () => saveShortcut());
+    expect(tauri.saveFolder).toHaveBeenCalledTimes(1);
+    await historyShortcut("z");
+    expect(container.querySelector("textarea")?.value).toBe("Original");
   });
 
   test("keeps the written version as the baseline when undo happens during a save", async () => {

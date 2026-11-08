@@ -598,15 +598,18 @@ export function toSaveRequest(state: DocumentState): {
 
 export function toFolderSaveRequest(state: DocumentState): FolderSaveRequest {
   if (state.origin.kind !== "folder") throw new Error("Document is not in Folder mode");
-  return { ...toSaveRequest(state), path: state.origin.path, original_paths: state.originalPaths };
+  return {
+    ...toSaveRequest(state), path: state.origin.path, original_paths: state.originalPaths,
+    expected_revision: state.folderSnapshot ?? folderDocumentFingerprint(state),
+  };
 }
 
-export function markSaved(state: DocumentState): DocumentState {
+export function markSaved(state: DocumentState, folderRevision?: string): DocumentState {
   const savedState = { ...state, manifest: { ...state.manifest, version: "2.0" } };
   return {
     ...savedState,
     dirty: false,
     originalPaths: state.files.map((file) => file.path),
-    folderSnapshot: state.origin.kind === "folder" ? folderDocumentFingerprint(savedState) : state.folderSnapshot,
+    folderSnapshot: state.origin.kind === "folder" ? folderRevision ?? folderDocumentFingerprint(savedState) : state.folderSnapshot,
   };
 }

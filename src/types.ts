@@ -10,6 +10,7 @@ export interface PackageInfo {
   entrypoint: string;
   files: FileInfo[];
   manifest_generated?: boolean;
+  folder_revision?: string;
 }
 
 export interface FileContent {
@@ -27,6 +28,7 @@ export interface SaveRequest {
 
 export interface FolderSaveRequest extends SaveRequest {
   original_paths: string[];
+  expected_revision: string;
 }
 
 export interface ImportedFile {

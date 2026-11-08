@@ -15,8 +15,11 @@ export async function saveDocument(
   persistence: PersistenceCommands = commands,
 ): Promise<DocumentState> {
   if (state.origin.kind === "untitled") throw new Error("Document needs a destination");
-  if (state.origin.kind === "folder") await persistence.saveFolder(toFolderSaveRequest(state));
-  else await persistence.savePackage(toSaveRequest(state));
+  if (state.origin.kind === "folder") {
+    const revision = await persistence.saveFolder(toFolderSaveRequest(state));
+    return markSaved(state, revision);
+  }
+  await persistence.savePackage(toSaveRequest(state));
   return markSaved(state);
 }
 

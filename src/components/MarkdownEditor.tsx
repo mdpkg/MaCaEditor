@@ -1,6 +1,6 @@
 import { CodeEditor } from "./CodeEditor";
 import type { AiTaskKind } from "../lib/aiSelection";
-import type { HistoryDirection, TextEditGroup } from "../lib/packageHistory";
+import type { HistoryDirection, TextEditGroup } from "../lib/editHistory";
 
 interface Props {
   value: string;
