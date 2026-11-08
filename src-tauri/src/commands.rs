@@ -352,6 +352,29 @@ pub async fn clear_saved_edit_history(
     .map_err(|error| format!("edit history clear task failed: {error}"))?
 }
 
+#[tauri::command]
+pub async fn list_saved_edit_histories(app: AppHandle) -> Result<Vec<saved_history::SavedEditHistory>, String> {
+    let database = history_database(&app)?;
+    tokio::task::spawn_blocking(move || {
+        saved_history::list_saved_edit_histories(&database).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("edit history listing task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn delete_saved_edit_history(app: AppHandle, document_id: String) -> Result<(), String> {
+    let database = history_database(&app)?;
+    let write = prioritize_history_save(&app);
+    tokio::task::spawn_blocking(move || {
+        let _write = write;
+        saved_history::delete_saved_edit_history(&database, &document_id)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("edit history deletion task failed: {error}"))?
+}
+
 pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_local_data_dir()

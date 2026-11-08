@@ -12,6 +12,7 @@ import type {
   ImportedFile,
   ImportedImage,
   PackageInfo,
+  SavedEditHistory,
   SaveRequest,
   SaveOutcome,
 } from "../types";
@@ -40,6 +41,14 @@ export function saveFolder(request: FolderSaveRequest): Promise<SaveOutcome> {
 
 export function clearSavedEditHistory(path: string, kind: "package" | "folder"): Promise<ClearEditHistoryOutcome> {
   return invoke("clear_saved_edit_history", { path, kind });
+}
+
+export function listSavedEditHistories(): Promise<SavedEditHistory[]> {
+  return invoke("list_saved_edit_histories");
+}
+
+export function deleteSavedEditHistory(documentId: string): Promise<void> {
+  return invoke("delete_saved_edit_history", { documentId });
 }
 
 export function exportPackage(request: SaveRequest): Promise<void> {

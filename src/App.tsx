@@ -33,6 +33,7 @@ import {
   type NotificationTone,
 } from "./components/NotificationBanners";
 import { NotificationHistoryDialog, type NotificationHistoryEntry } from "./components/NotificationHistoryDialog";
+import { SavedEditHistoriesDialog } from "./components/SavedEditHistoriesDialog";
 import type { DocumentState } from "./lib/document";
 import {
   createDocumentState,
@@ -242,6 +243,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<BannerNotice[]>([]);
   const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryEntry[]>([]);
   const [notificationHistoryOpen, setNotificationHistoryOpen] = useState(false);
+  const [savedEditHistoriesOpen, setSavedEditHistoriesOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [thirdPartyLicensesOpen, setThirdPartyLicensesOpen] = useState(false);
@@ -1936,6 +1938,7 @@ export default function App() {
         onUndoFileOperation={() => applyEditHistory("undo")}
         onRedoFileOperation={() => applyEditHistory("redo")}
         onClearEditHistory={handleClearSavedEditHistory}
+        onShowSavedEditHistories={() => setSavedEditHistoriesOpen(true)}
         canUndoFileOperation={mode !== "table" && editHistoryRef.current.cursor > 0}
         canRedoFileOperation={mode !== "table" && editHistoryRef.current.cursor < editHistoryRef.current.entries.length}
         onEditManifest={() => setManifestEditorOpen(true)}
@@ -2351,6 +2354,7 @@ export default function App() {
       {notificationHistoryOpen && (
         <NotificationHistoryDialog entries={notificationHistory} onClose={() => setNotificationHistoryOpen(false)} />
       )}
+      {savedEditHistoriesOpen && <SavedEditHistoriesDialog onClose={() => setSavedEditHistoriesOpen(false)} />}
       {error?.presentation === "details" && (
         <Dialog title={uiText("Error details")} onClose={dismissError}>
           <p>{error.summary}</p>

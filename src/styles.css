@@ -1381,6 +1381,51 @@ body {
   margin-top: 24px;
 }
 
+.saved-history-dialog {
+  width: min(920px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.saved-history-table-scroll {
+  overflow-x: auto;
+}
+
+.saved-history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.saved-history-table th,
+.saved-history-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.saved-history-table th button,
+.saved-history-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.saved-history-table th[aria-sort="ascending"] button::after {
+  content: " ▲";
+}
+
+.saved-history-table th[aria-sort="descending"] button::after {
+  content: " ▼";
+}
+
+.saved-history-table td:first-child,
+.saved-history-confirm-path {
+  overflow-wrap: anywhere;
+}
+
+.saved-history-dialog .about-dialog-actions {
+  gap: 8px;
+}
+
 .package-diagnostics-dialog {
   width: min(680px, calc(100vw - 32px));
   max-height: min(720px, calc(100vh - 32px));
