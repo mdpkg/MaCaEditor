@@ -68,23 +68,16 @@ impl<P: AiProvider> AiStreamCoordinator<P> {
         let connect_timeout = connect_timeout_seconds.unwrap_or(DEFAULT_CONNECT_TIMEOUT_SECONDS);
         let request_timeout = request_timeout_seconds.unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECONDS);
 
-        // Connect Timeout: 接続開始までに timeout したら Timeout エラー
-        let source = tokio::time::timeout(
-            std::time::Duration::from_secs(connect_timeout),
-            self.provider.stream(request),
-        )
-        .await;
-
-        let inner = match source {
-            Err(_) => {
+        let inner = match self
+            .provider
+            .stream_with_connect_timeout(request, std::time::Duration::from_secs(connect_timeout))
+            .await
+        {
+            Ok(stream) => stream,
+            Err(error) => {
                 self.registry.unregister(&request_id);
-                return Err(AiError::Timeout("connect timeout".to_string()));
+                return Err(error);
             }
-            Ok(Err(e)) => {
-                self.registry.unregister(&request_id);
-                return Err(e);
-            }
-            Ok(Ok(inner)) => inner,
         };
 
         let started = AiStreamEvent::Started {
