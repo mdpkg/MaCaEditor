@@ -48,6 +48,8 @@ pub enum HistoryError {
 
 type Result<T> = std::result::Result<T, HistoryError>;
 
+const RECLAIM_CHUNK_BYTES: usize = 4 * 1024 * 1024;
+
 pub fn identity(kind: &str, path: &Path) -> Result<String> {
     let canonical =
         if kind == "folder" || fs::symlink_metadata(path).is_ok_and(|info| !info.is_symlink()) {
@@ -95,7 +97,7 @@ fn connect_with_timeout(path: &Path, timeout: Duration) -> Result<Connection> {
         "PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL;",
     )?;
     let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version == 0 {
+    if matches!(version, 0 | 1) {
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS checkpoint (
@@ -110,10 +112,18 @@ fn connect_with_timeout(path: &Path, timeout: Duration) -> Result<Connection> {
                 PRIMARY KEY(checkpoint, position)
              );
              CREATE INDEX IF NOT EXISTS referenced_payload ON checkpoint_payload(digest);
-             PRAGMA user_version = 1;",
+             CREATE TABLE IF NOT EXISTS payload_reclaim (
+                digest TEXT PRIMARY KEY REFERENCES payload(digest) ON DELETE CASCADE,
+                next_offset INTEGER NOT NULL CHECK(next_offset >= 0)
+             );
+             CREATE TRIGGER IF NOT EXISTS checkpoint_reject_reclaiming_payload
+                BEFORE INSERT ON checkpoint_payload
+                WHEN EXISTS (SELECT 1 FROM payload_reclaim WHERE digest = NEW.digest)
+                BEGIN SELECT RAISE(ABORT, 'attachment is being reclaimed'); END;
+             PRAGMA user_version = 2;",
         )?;
         tx.commit()?;
-    } else if version != 1 {
+    } else if version != 2 {
         return Err(HistoryError::Schema(version));
     }
     Ok(db)
@@ -131,13 +141,66 @@ fn request_reclaim(tx: &Transaction<'_>) -> Result<()> {
         |row| row.get::<_, bool>(0),
     )?;
     if has_unreferenced_payload {
-        // This optional table leaves the existing checkpoint schema readable by older versions.
         tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS reclaim_request (id INTEGER PRIMARY KEY AUTOINCREMENT);
              INSERT INTO reclaim_request DEFAULT VALUES;",
         )?;
     }
     Ok(())
+}
+
+fn reclaim_payload_chunk(tx: &Transaction<'_>, key: &str, zeroes: &[u8]) -> Result<bool> {
+    // Retire the key before overwriting any bytes. The write lock keeps the orphan check,
+    // retirement, and first overwrite atomic with respect to saves.
+    tx.execute(
+        "INSERT OR IGNORE INTO payload_reclaim(digest, next_offset)
+         SELECT digest, 0 FROM payload WHERE digest = ?1
+         AND NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = ?1)",
+        [key],
+    )?;
+    let pending = tx
+        .query_row(
+            "SELECT payload.rowid, length(payload.data), next_offset
+         FROM payload JOIN payload_reclaim USING(digest) WHERE digest = ?1",
+            [key],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, u32>(1)? as usize,
+                    row.get::<_, u32>(2)? as usize,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((rowid, size, offset)) = pending else {
+        return Ok(true);
+    };
+    if offset > size {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid attachment reclaim offset",
+        )
+        .into());
+    }
+    if offset < size {
+        let count = zeroes.len().min(size - offset);
+        let mut blob = tx.blob_open("main", "payload", "data", rowid, false)?;
+        blob.write_at(&zeroes[..count], offset)?;
+        blob.close()?;
+        tx.execute(
+            "UPDATE payload_reclaim SET next_offset = ?2 WHERE digest = ?1",
+            params![key, (offset + count) as u32],
+        )?;
+        return Ok(false);
+    }
+
+    // The payload bytes have already been zeroed in committed batches. Free its overflow
+    // pages without rewriting the entire chain with zeros a second time.
+    tx.pragma_update(None, "secure_delete", "FAST")?;
+    let removed = tx.execute("DELETE FROM payload WHERE digest = ?1", [key]);
+    tx.pragma_update(None, "secure_delete", "ON")?;
+    removed?;
+    Ok(true)
 }
 
 pub(crate) fn reclaim_pending(
@@ -170,22 +233,24 @@ pub(crate) fn reclaim_pending(
         let rows = query.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
-    for digest in candidates {
-        if should_yield() {
-            return Ok(());
+    if !candidates.is_empty() {
+        let zeroes = vec![0; RECLAIM_CHUNK_BYTES];
+        for key in candidates {
+            loop {
+                if should_yield() {
+                    return Ok(());
+                }
+                let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                if should_yield() {
+                    return Ok(());
+                }
+                let finished = reclaim_payload_chunk(&tx, &key, &zeroes)?;
+                tx.commit()?;
+                if finished {
+                    break;
+                }
+            }
         }
-        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if should_yield() {
-            return Ok(());
-        }
-        // Release the write lock between BLOBs. Committing each deletion avoids redoing
-        // large rollback-journal writes when a save arrives during a BLOB operation.
-        tx.execute(
-            "DELETE FROM payload WHERE digest = ?1
-             AND NOT EXISTS (SELECT 1 FROM checkpoint_payload WHERE digest = ?1)",
-            [digest],
-        )?;
-        tx.commit()?;
     }
     if should_yield() {
         return Ok(());
@@ -230,21 +295,31 @@ impl PendingCheckpoint {
         for (position, bytes) in (0i64..).zip(attachments) {
             let bytes = bytes?;
             let digest = self::revision(&bytes);
-            // Avoid binding and copying an entire BLOB when a prior checkpoint already owns it.
-            let exists = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM payload WHERE digest = ?1)",
-                [&digest],
-                |row| row.get::<_, bool>(0),
-            )?;
-            if !exists {
-                tx.execute(
-                    "INSERT INTO payload(digest, data) VALUES(?1, ?2)",
-                    params![digest, bytes],
-                )?;
-            }
+            // Older payloads use the hash itself. New keys have a unique suffix so that
+            // a save can store identical bytes even while a previous copy is being erased.
+            let live_key: Option<String> = tx
+                .query_row(
+                    "SELECT digest FROM payload WHERE digest >= ?1 AND digest < ?2
+                 AND NOT EXISTS (SELECT 1 FROM payload_reclaim WHERE digest = payload.digest)
+                 ORDER BY digest LIMIT 1",
+                    params![digest, format!("{digest};")],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let key = match live_key {
+                Some(key) => key,
+                None => {
+                    let key = format!("{digest}:{id}:{position}");
+                    tx.execute(
+                        "INSERT INTO payload(digest, data) VALUES(?1, ?2)",
+                        params![key, bytes],
+                    )?;
+                    key
+                }
+            };
             tx.execute(
                 "INSERT INTO checkpoint_payload(checkpoint, position, digest) VALUES(?1, ?2, ?3)",
-                params![id, position, digest],
+                params![id, position, key],
             )?;
         }
         tx.commit()?;
@@ -277,7 +352,7 @@ impl PendingCheckpoint {
         let mut db = connect(&self.database)?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute("DELETE FROM checkpoint WHERE id = ?1", [self.id])?;
-        prune(&tx)?;
+        request_reclaim(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -388,6 +463,149 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn a_single_attachment_can_pause_after_its_first_reclaim_batch() {
+        let database = test_database();
+        let document = "package:/branch";
+        let size = 9 * 1024 * 1024;
+        for (revision, attachments) in [("old", vec![Ok(vec![0xcd; size])]), ("branch", vec![])] {
+            PendingCheckpoint::prepare(
+                database.clone(),
+                document.into(),
+                revision,
+                true,
+                revision.into(),
+                attachments,
+            )
+            .unwrap()
+            .complete(revision)
+            .unwrap();
+        }
+
+        fn edges(path: &Path) -> Option<[u8; 2]> {
+            let db = Connection::open(path).unwrap();
+            let id = db
+                .query_row("SELECT rowid FROM payload", [], |row| row.get(0))
+                .optional()
+                .unwrap()?;
+            let blob = db.blob_open("main", "payload", "data", id, true).unwrap();
+            let mut result = [0; 2];
+            blob.read_at_exact(&mut result[..1], 0).unwrap();
+            blob.read_at_exact(&mut result[1..], blob.len() - 1)
+                .unwrap();
+            Some(result)
+        }
+        let observe = database.clone();
+        reclaim_pending(&database, move || {
+            edges(&observe).is_none_or(|bytes| bytes[0] == 0)
+        })
+        .unwrap();
+        assert_eq!(
+            edges(&database),
+            Some([0, 0xcd]),
+            "a save must be able to pause inside one large attachment"
+        );
+        let db = connect(&database).unwrap();
+        let offset: usize = db
+            .query_row("SELECT next_offset FROM payload_reclaim", [], |row| {
+                row.get::<_, u32>(0)
+            })
+            .unwrap() as usize;
+        assert_eq!(offset, RECLAIM_CHUNK_BYTES);
+        drop(db);
+
+        let other = "folder:/keep";
+        PendingCheckpoint::prepare(
+            database.clone(),
+            other.into(),
+            "keep",
+            true,
+            "saved redo".into(),
+            [Ok(vec![0xcd; size])],
+        )
+        .unwrap()
+        .complete("keep")
+        .unwrap();
+        let db = connect(&database).unwrap();
+        let count: u32 = db
+            .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 2,
+            "a new save must not reuse the partially erased bytes"
+        );
+        drop(db);
+
+        let before = fs::metadata(&database).unwrap().len();
+        reclaim_pending(&database, || false).unwrap();
+        assert!(before.saturating_sub(fs::metadata(&database).unwrap().len()) >= size as u64);
+        let recovered = load(&database, other, "keep").unwrap().unwrap().checkpoint;
+        assert_eq!(recovered.data, "saved redo");
+        let bytes = STANDARD.decode(&recovered.attachments[0]).unwrap();
+        assert_eq!(bytes.len(), size);
+        assert!(bytes.iter().all(|&byte| byte == 0xcd));
+        fs::remove_file(&database).unwrap();
+    }
+
+    #[test]
+    fn upgrades_existing_checkpoints_and_reuses_legacy_payload_keys() {
+        let database = test_database();
+        let db = Connection::open(&database).unwrap();
+        db.execute_batch(
+            "CREATE TABLE checkpoint (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, document TEXT NOT NULL, revision TEXT NOT NULL,
+                data TEXT NOT NULL, committed INTEGER NOT NULL, recoverable INTEGER NOT NULL
+             );
+             CREATE TABLE payload (digest TEXT PRIMARY KEY, data BLOB NOT NULL);
+             CREATE TABLE checkpoint_payload (
+                checkpoint INTEGER NOT NULL REFERENCES checkpoint(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL, digest TEXT NOT NULL REFERENCES payload(digest),
+                PRIMARY KEY(checkpoint, position)
+             );
+             PRAGMA user_version = 1;
+             INSERT INTO checkpoint VALUES (1, 'package:/legacy', 'rev', 'old cursor', 1, 1);"
+        ).unwrap();
+        let data = vec![1, 2, 3];
+        let digest = revision(&data);
+        db.execute("INSERT INTO payload VALUES (?1, ?2)", params![digest, data])
+            .unwrap();
+        db.execute(
+            "INSERT INTO checkpoint_payload VALUES (1, 0, ?1)",
+            [&digest],
+        )
+        .unwrap();
+        drop(db);
+
+        PendingCheckpoint::prepare(
+            database.clone(),
+            "folder:/other".into(),
+            "rev",
+            true,
+            "new cursor".into(),
+            [Ok(data)],
+        )
+        .unwrap()
+        .complete("rev")
+        .unwrap();
+        let db = connect(&database).unwrap();
+        let version: i64 = db
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        let count: u32 = db
+            .query_row("SELECT count(*) FROM payload", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        drop(db);
+        let legacy = load(&database, "package:/legacy", "rev")
+            .unwrap()
+            .unwrap()
+            .checkpoint;
+        assert_eq!(legacy.data, "old cursor");
+        assert_eq!(legacy.attachments, ["AQID"]);
+        fs::remove_file(&database).unwrap();
     }
 
     #[test]
