@@ -1,7 +1,8 @@
 /// OpenAI Compatible Provider。
 /// `async-openai` はこの実装内部に閉じ込め、
 /// アプリケーション層へは MaCa Editor 独自型のみを公開する。
-use async_openai::config::Config;
+use async_openai::config::{Config, OpenAIConfig};
+use async_openai::Client;
 use async_openai::error::{ApiError, ApiErrorResponse, OpenAIError, WrappedError};
 use async_openai::middleware::{retry::OpenAIRetryLayer, HttpRequestFactory, ReqwestService};
 use async_openai::types::chat::{
@@ -25,7 +26,7 @@ use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
 
 /// OpenAI Compatible API へ接続する Provider。
 pub struct OpenAiCompatibleProvider {
-    client: async_openai::Client<async_openai::config::OpenAIConfig>,
+    config: OpenAIConfig,
     http: reqwest::Client,
     model: String,
 }
@@ -39,14 +40,19 @@ impl OpenAiCompatibleProvider {
                 config = config.with_api_key(key);
             }
         }
-        let http = reqwest::Client::new();
-        let transport = http.clone();
-        let service = service_fn(move |request| execute_http_request(transport.clone(), request, None));
         Self {
-            client: async_openai::Client::build(http.clone(), config).with_http_service(service),
-            http,
+            config,
+            http: reqwest::Client::new(),
             model: "default".to_string(),
         }
+    }
+
+    fn client(&self, last_error: Option<RetryError>) -> Client<OpenAIConfig> {
+        let http = self.http.clone();
+        let service = service_fn(move |request| {
+            execute_http_request(http.clone(), request, last_error.clone())
+        });
+        Client::build(self.http.clone(), self.config.clone()).with_http_service(service)
     }
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
@@ -120,14 +126,10 @@ fn from_openai_response(
 
 impl OpenAiCompatibleProvider {
     /// Model 一覧を取得する。
-    /// Models API が未実装・非互換でも致命的エラーにしない。
-    pub async fn list_models(&self) -> Result<Vec<String>, AiError> {
-        let models = self
-            .client
-            .models()
-            .list()
-            .await
-            .map_err(map_openai_error)?;
+    pub async fn list_models(&self, timeout: Duration) -> Result<Vec<String>, AiError> {
+        let models = with_connect_timeout(timeout, |last_error| async move {
+            self.client(Some(last_error)).models().list().await.map_err(map_openai_error)
+        }).await?;
         let mut names = models
             .data
             .into_iter()
@@ -138,14 +140,12 @@ impl OpenAiCompatibleProvider {
     }
 
     /// 最小の Chat Completion を送信して接続を確認する。
-    pub async fn test_connection(&self, model: &str) -> Result<(), AiError> {
+    pub async fn test_connection(&self, model: &str, timeout: Duration) -> Result<(), AiError> {
         let request = AiRequest::new(vec![AiMessage::new(AiRole::User, "ping")]);
         let openai_request = self.to_openai_request(model, &request, false)?;
-        self.client
-            .chat()
-            .create(openai_request)
-            .await
-            .map_err(map_openai_error)?;
+        with_connect_timeout(timeout, |last_error| async move {
+            self.client(Some(last_error)).chat().create(openai_request).await.map_err(map_openai_error)
+        }).await?;
         Ok(())
     }
 }
@@ -181,7 +181,7 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
     ) -> Result<AiResponse, AiError> {
         let openai_request = self.to_openai_request(&self.model, &request, false)?;
         let response = self
-            .client
+            .client(None)
             .chat()
             .create(openai_request)
             .await
@@ -198,20 +198,30 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
         request: AiRequest,
         timeout: Duration,
     ) -> Result<AiEventStream, AiError> {
-        let last_error = RetryError::default();
-        match tokio::time::timeout(timeout, self.open_stream(request, Some(last_error.clone()))).await {
-            Ok(result) => result,
-            Err(_) => Err(last_error
-                .lock()
-                .unwrap()
-                .take()
-                .map(|error| error.lock().unwrap().clone())
-                .unwrap_or_else(|| AiError::Timeout("connect timeout".to_owned()))),
-        }
+        with_connect_timeout(timeout, |last_error| self.open_stream(request, Some(last_error))).await
     }
 }
 
 type RetryError = Arc<Mutex<Option<Arc<Mutex<AiError>>>>>;
+
+async fn with_connect_timeout<T, F>(
+    timeout: Duration,
+    operation: impl FnOnce(RetryError) -> F,
+) -> Result<T, AiError>
+where
+    F: std::future::Future<Output = Result<T, AiError>>,
+{
+    let last_error = RetryError::default();
+    match tokio::time::timeout(timeout, operation(last_error.clone())).await {
+        Ok(result) => result,
+        Err(_) => Err(last_error
+            .lock()
+            .unwrap()
+            .take()
+            .map(|error| error.lock().unwrap().clone())
+            .unwrap_or_else(|| AiError::Timeout("connect timeout".to_owned()))),
+    }
+}
 
 impl OpenAiCompatibleProvider {
     async fn open_stream(
@@ -220,7 +230,7 @@ impl OpenAiCompatibleProvider {
         last_error: Option<RetryError>,
     ) -> Result<AiEventStream, AiError> {
         let request = self.to_openai_request(&self.model, &request, true)?;
-        let config = self.client.config().clone();
+        let config = self.config.clone();
         let http = self.http.clone();
         let factory = HttpRequestFactory::new(move || {
             let request = http

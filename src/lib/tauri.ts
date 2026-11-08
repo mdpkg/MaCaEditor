@@ -102,16 +102,18 @@ export function hasAiConfiguration(): Promise<boolean> {
 export function listAiModels(
   baseUrl: string,
   apiKey: string | null,
+  connectTimeoutSeconds?: number | null,
 ): Promise<string[]> {
-  return invoke("list_ai_models", { baseUrl, apiKey });
+  return invoke("list_ai_models", { baseUrl, apiKey, connectTimeoutSeconds });
 }
 
 export function testAiConnection(
   baseUrl: string,
   apiKey: string | null,
   model: string,
+  connectTimeoutSeconds?: number | null,
 ): Promise<void> {
-  return invoke("test_ai_connection", { baseUrl, apiKey, model });
+  return invoke("test_ai_connection", { baseUrl, apiKey, model, connectTimeoutSeconds });
 }
 
 export function startAiStream(

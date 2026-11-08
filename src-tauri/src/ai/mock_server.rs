@@ -197,6 +197,9 @@ mod tests {
     use crate::ai::provider::AiProvider;
     use crate::ai::types::{AiMessage, AiRequest, AiRole};
     use futures::StreamExt;
+    use std::time::Duration;
+
+    const SETTINGS_TIMEOUT: Duration = Duration::from_secs(10);
 
     fn sample_request() -> AiRequest {
         AiRequest::new(vec![AiMessage::new(AiRole::User, "hi")])
@@ -313,7 +316,7 @@ mod tests {
         ] {
             let server = MockOpenAiServer::start(Scenario::HttpError(401, code)).await;
             let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
-            assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+            assert_eq!(provider.test_connection("mock", SETTINGS_TIMEOUT).await, Err(expected.clone()));
             assert!(matches!(
                 provider.stream(sample_request()).await,
                 Err(error) if error == expected
@@ -338,8 +341,8 @@ mod tests {
                 format!("HTTP {status}\n\n{body}")
             };
             let expected = error_kind(detail);
-            assert_eq!(provider.list_models().await, Err(expected.clone()));
-            assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+            assert_eq!(provider.list_models(SETTINGS_TIMEOUT).await, Err(expected.clone()));
+            assert_eq!(provider.test_connection("mock", SETTINGS_TIMEOUT).await, Err(expected.clone()));
             assert!(matches!(provider.stream(sample_request()).await, Err(error) if error == expected));
         }
     }
@@ -350,7 +353,7 @@ mod tests {
         let server = MockOpenAiServer::start(Scenario::HttpBody(400, "text/html", body)).await;
         let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
 
-        assert!(matches!(provider.list_models().await, Err(AiError::InvalidResponse(detail)) if detail.ends_with(body)));
+        assert!(matches!(provider.list_models(SETTINGS_TIMEOUT).await, Err(AiError::InvalidResponse(detail)) if detail.ends_with(body)));
         assert!(matches!(provider.stream(sample_request()).await, Err(AiError::InvalidResponse(detail)) if detail.ends_with(body)));
     }
 
@@ -363,9 +366,9 @@ mod tests {
             "Budget reached\n\ncode: project_spend_limit_exceeded".to_owned(),
         );
 
-        assert_eq!(provider.list_models().await, Err(expected.clone()));
+        assert_eq!(provider.list_models(SETTINGS_TIMEOUT).await, Err(expected.clone()));
         assert_eq!(server.request_count(), 1);
-        assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+        assert_eq!(provider.test_connection("mock", SETTINGS_TIMEOUT).await, Err(expected.clone()));
         assert_eq!(server.request_count(), 2);
         assert_eq!(provider.stream(sample_request()).await.err(), Some(expected));
         assert_eq!(server.request_count(), 3);
@@ -394,12 +397,49 @@ mod tests {
             let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
             let expected = AiError::ServerError(detail.to_owned());
 
-            assert_eq!(provider.test_connection("mock").await, Err(expected.clone()));
+            assert_eq!(provider.test_connection("mock", SETTINGS_TIMEOUT).await, Err(expected.clone()));
             assert!(matches!(
                 provider.stream(sample_request()).await,
                 Err(error) if error == expected
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn settings_commands_report_timeout_when_the_server_never_responds() {
+        let server = MockOpenAiServer::start(Scenario::Hang).await;
+        let expected = AiError::Timeout("connect timeout".to_owned());
+
+        assert_eq!(
+            crate::commands::list_ai_models(server.base_url(), None, Some(1)).await,
+            Err(expected.clone())
+        );
+        assert_eq!(
+            crate::commands::test_ai_connection(server.base_url(), None, "mock".to_owned(), Some(1)).await,
+            Err(expected)
+        );
+        assert_eq!(server.request_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn settings_commands_preserve_http_errors_when_retry_wait_exceeds_the_deadline() {
+        let rate_limit = MockOpenAiServer::start(Scenario::RetryAfter(
+            429,
+            60,
+            r#"{"error":{"message":"Slow down","code":"rate_limit_exceeded"}}"#,
+        )).await;
+        let unavailable = MockOpenAiServer::start(Scenario::RetryAfter(503, 60, "Service unavailable")).await;
+
+        assert_eq!(
+            crate::commands::list_ai_models(rate_limit.base_url(), None, Some(1)).await,
+            Err(AiError::RateLimited("Slow down\n\ncode: rate_limit_exceeded".to_owned()))
+        );
+        assert_eq!(
+            crate::commands::test_ai_connection(unavailable.base_url(), None, "mock".to_owned(), Some(1)).await,
+            Err(AiError::ServerError("Service unavailable".to_owned()))
+        );
+        assert_eq!(rate_limit.request_count(), 1);
+        assert_eq!(unavailable.request_count(), 1);
     }
 
     #[tokio::test]

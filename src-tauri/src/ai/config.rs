@@ -83,12 +83,17 @@ pub fn validate_config(config: &AiConfig) -> Result<(), ConfigError> {
         .into_iter()
         .flatten()
     {
-        if timeout == 0 {
-            return Err(ConfigError::InvalidTimeout);
-        }
-        if timeout > MAX_TIMEOUT_SECONDS {
-            return Err(ConfigError::TimeoutTooLarge);
-        }
+        validate_timeout(timeout)?;
+    }
+    Ok(())
+}
+
+pub fn validate_timeout(seconds: u64) -> Result<(), ConfigError> {
+    if seconds == 0 {
+        return Err(ConfigError::InvalidTimeout);
+    }
+    if seconds > MAX_TIMEOUT_SECONDS {
+        return Err(ConfigError::TimeoutTooLarge);
     }
     Ok(())
 }
