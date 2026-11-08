@@ -205,12 +205,12 @@ fn request_reclaim(tx: &Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
-fn enqueue_reclaim(tx: &Transaction<'_>) -> Result<()> {
+fn enqueue_reclaim(tx: &Transaction<'_>) -> Result<i64> {
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS reclaim_request (id INTEGER PRIMARY KEY AUTOINCREMENT);
          INSERT INTO reclaim_request DEFAULT VALUES;",
     )?;
-    Ok(())
+    Ok(tx.last_insert_rowid())
 }
 
 fn reclaim_payload_chunk(tx: &Transaction<'_>, key: &str, zeroes: &[u8]) -> Result<bool> {
@@ -260,12 +260,26 @@ fn reclaim_payload_chunk(tx: &Transaction<'_>, key: &str, zeroes: &[u8]) -> Resu
     Ok(true)
 }
 
+pub(crate) enum ReclaimAttempt {
+    Idle,
+    Yielded,
+    Published {
+        first_request_id: i64,
+        through_request_id: i64,
+        released_bytes: Option<u64>,
+        request_count: usize,
+    },
+}
+
 pub(crate) fn reclaim_pending(
     database: &Path,
     should_yield: impl Fn() -> bool + Clone + Send + 'static,
-) -> Result<()> {
-    if should_yield() || !database.try_exists()? {
-        return Ok(());
+) -> Result<ReclaimAttempt> {
+    if should_yield() {
+        return Ok(ReclaimAttempt::Yielded);
+    }
+    if !database.try_exists()? {
+        return Ok(ReclaimAttempt::Idle);
     }
     let mut db = connect_with_timeout(database, Duration::ZERO)?;
     let has_requests_table = db.query_row(
@@ -274,12 +288,12 @@ pub(crate) fn reclaim_pending(
         |row| row.get::<_, bool>(0),
     )?;
     if !has_requests_table {
-        return Ok(());
+        return Ok(ReclaimAttempt::Idle);
     }
     let last_request: Option<i64> =
         db.query_row("SELECT max(id) FROM reclaim_request", [], |row| row.get(0))?;
     let Some(last_request) = last_request else {
-        return Ok(());
+        return Ok(ReclaimAttempt::Idle);
     };
 
     let candidates = {
@@ -295,11 +309,11 @@ pub(crate) fn reclaim_pending(
         for key in candidates {
             loop {
                 if should_yield() {
-                    return Ok(());
+                    return Ok(ReclaimAttempt::Yielded);
                 }
                 let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 if should_yield() {
-                    return Ok(());
+                    return Ok(ReclaimAttempt::Yielded);
                 }
                 let finished = reclaim_payload_chunk(&tx, &key, &zeroes)?;
                 tx.commit()?;

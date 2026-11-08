@@ -379,7 +379,8 @@ pub async fn estimate_reclaimable_history_bytes(
 #[tauri::command]
 pub async fn delete_saved_edit_history(app: AppHandle, document_id: String) -> Result<(), String> {
     let database = history_database(&app)?;
-    let write = prioritize_history_save(&app);
+    let write = app.try_state::<crate::history_maintenance::HistoryMaintenance>()
+        .map(|maintenance| maintenance.begin_write());
     tokio::task::spawn_blocking(move || {
         let _write = write;
         saved_history::delete_saved_edit_history(&database, &document_id)
@@ -393,16 +394,30 @@ pub async fn delete_saved_edit_history(app: AppHandle, document_id: String) -> R
 pub async fn delete_missing_saved_edit_histories(
     app: AppHandle,
     document_ids: Vec<String>,
+    estimated_bytes: Option<i64>,
 ) -> Result<Vec<String>, String> {
     let database = history_database(&app)?;
-    let write = prioritize_history_save(&app);
+    let write = app.try_state::<crate::history_maintenance::HistoryMaintenance>()
+        .map(|maintenance| maintenance.begin_write());
     tokio::task::spawn_blocking(move || {
         let _write = write;
-        saved_history::delete_missing_saved_edit_histories(&database, &document_ids)
-            .map_err(|error| error.to_string())
+        let deletion = saved_history::delete_missing_saved_edit_histories(&database, &document_ids)
+            .map_err(|error| error.to_string())?;
+        if let Some(request_id) = deletion.request_id {
+            if let Some(maintenance) = app.try_state::<crate::history_maintenance::HistoryMaintenance>() {
+                maintenance.track_batch(request_id, estimated_bytes);
+            }
+        }
+        Ok(deletion.deleted_ids)
     })
     .await
     .map_err(|error| format!("edit history bulk deletion task failed: {error}"))?
+}
+
+#[tauri::command]
+pub fn get_history_reclaim_status(app: AppHandle) -> Option<crate::history_maintenance::ReclaimStatus> {
+    app.try_state::<crate::history_maintenance::HistoryMaintenance>()
+        .and_then(|maintenance| maintenance.status())
 }
 
 pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {

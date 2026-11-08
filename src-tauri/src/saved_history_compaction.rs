@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use rusqlite::backup::{Backup, StepResult};
 use rusqlite::{Connection, ErrorCode};
 
-use super::{connect_sqlite, reclaim_free_pages, HistoryError, Result};
+use super::{connect_sqlite, reclaim_free_pages, HistoryError, ReclaimAttempt, Result};
 
 const COPY_PAGES: i32 = 128;
 const SQLITE_SIDECARS: [&str; 3] = ["-journal", "-wal", "-shm"];
@@ -77,13 +77,42 @@ fn data_version(db: &Connection) -> rusqlite::Result<i64> {
     db.pragma_query_value(None, "data_version", |row| row.get(0))
 }
 
+#[cfg(unix)]
+fn allocated_bytes(path: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    Some(fs::metadata(path).ok()?.blocks() * 512)
+}
+
+#[cfg(windows)]
+fn allocated_bytes(path: &Path) -> Option<u64> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileStandardInfo, GetFileInformationByHandleEx, FILE_STANDARD_INFO,
+    };
+
+    let file = File::open(path).ok()?;
+    let mut info = FILE_STANDARD_INFO::default();
+    // The handle remains open and the output buffer matches the requested information class.
+    let read = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileStandardInfo,
+            (&mut info as *mut FILE_STANDARD_INFO).cast(),
+            std::mem::size_of::<FILE_STANDARD_INFO>() as u32,
+        )
+    };
+    (read != 0)
+        .then(|| u64::try_from(info.AllocationSize).ok())
+        .flatten()
+}
+
 pub(super) fn rebuild(
     database: &Path,
     last_request: i64,
     should_yield: impl Fn() -> bool + Clone + Send + 'static,
-) -> Result<()> {
+) -> Result<ReclaimAttempt> {
     if should_yield() {
-        return Ok(());
+        return Ok(ReclaimAttempt::Yielded);
     }
 
     // Only this lease holder can replace the live file. Keep the source connection open
@@ -102,7 +131,7 @@ pub(super) fn rebuild(
         let backup = Backup::new(&source, &mut copy)?;
         loop {
             if should_yield() {
-                return Ok(());
+                return Ok(ReclaimAttempt::Yielded);
             }
             if data_version(&source)? != version {
                 return Err(HistoryError::Busy);
@@ -117,7 +146,7 @@ pub(super) fn rebuild(
         }
     }
     if should_yield() {
-        return Ok(());
+        return Ok(ReclaimAttempt::Yielded);
     }
 
     copy.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = FAST;")?;
@@ -129,15 +158,23 @@ pub(super) fn rebuild(
         )",
         [],
     )?;
-    tx.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
+    let first_request_id: Option<i64> = tx.query_row(
+        "SELECT min(id) FROM reclaim_request WHERE id <= ?1",
+        [last_request],
+        |row| row.get(0),
+    )?;
+    let Some(first_request_id) = first_request_id else {
+        return Err(HistoryError::Busy);
+    };
+    let request_count = tx.execute("DELETE FROM reclaim_request WHERE id <= ?1", [last_request])?;
     tx.commit()?;
     if should_yield() {
-        return Ok(());
+        return Ok(ReclaimAttempt::Yielded);
     }
     copy.progress_handler(100, Some(should_yield.clone()))?;
     if let Err(error) = reclaim_free_pages(&copy) {
         if error.sqlite_error_code() == Some(ErrorCode::OperationInterrupted) && should_yield() {
-            return Ok(());
+            return Ok(ReclaimAttempt::Yielded);
         }
         return Err(error.into());
     }
@@ -147,13 +184,14 @@ pub(super) fn rebuild(
         .open(&scratch.0)?
         .sync_all()?;
     if should_yield() {
-        return Ok(());
+        return Ok(ReclaimAttempt::Yielded);
     }
+    let compacted_allocation = allocated_bytes(&scratch.0);
 
     // Only the final version check and atomic rename run while ordinary opens are excluded.
     let publication = exclusive_guard(database, ".publish-lock")?;
     if should_yield() {
-        return Ok(());
+        return Ok(ReclaimAttempt::Yielded);
     }
     if data_version(&source)? != version {
         return Err(HistoryError::Busy);
@@ -164,8 +202,10 @@ pub(super) fn rebuild(
             return Err(HistoryError::Busy);
         }
     }
+    let released_bytes = compacted_allocation
+        .and_then(|after| allocated_bytes(database).map(|before| before.saturating_sub(after)));
     if should_yield() {
-        return Ok(());
+        return Ok(ReclaimAttempt::Yielded);
     }
     fs::rename(&scratch.0, database)?;
     drop(publication);
@@ -176,5 +216,10 @@ pub(super) fn rebuild(
     {
         File::open(parent)?.sync_all()?;
     }
-    Ok(())
+    Ok(ReclaimAttempt::Published {
+        first_request_id,
+        through_request_id: last_request,
+        released_bytes,
+        request_count,
+    })
 }
