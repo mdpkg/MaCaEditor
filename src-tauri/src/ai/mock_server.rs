@@ -59,6 +59,8 @@ pub enum Scenario {
     Streaming,
     /// 完了マーカーを送らずに接続を閉じる。
     StopMidStream,
+    /// 最初の断片の後に指定の SSE イベントを送る。
+    StreamEvent(String),
     /// 接続は確立するが応答を返さない（Timeout 相当）。
     Hang,
     /// 指定ステータスの HTTP エラー。
@@ -101,7 +103,7 @@ async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
             // 応答を返さず、接続を保持する。
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
-        Scenario::Streaming | Scenario::StopMidStream => {
+        Scenario::Streaming | Scenario::StopMidStream | Scenario::StreamEvent(_) => {
             let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
             let _ = stream.write_all(headers.as_bytes()).await;
             let _ = stream.flush().await;
@@ -113,6 +115,9 @@ async fn handle_connection(mut stream: TcpStream, scenario: Scenario) {
             ];
             for (i, chunk) in chunks.iter().enumerate() {
                 let _ = stream.write_all(format!("data: {}\n\n", chunk).as_bytes()).await;
+                if let (0, Scenario::StreamEvent(event)) = (i, &scenario) {
+                    let _ = stream.write_all(event.as_bytes()).await;
+                }
                 let _ = stream.flush().await;
                 if matches!(scenario, Scenario::StopMidStream) && i == 1 {
                     // 途中で接続を切る
@@ -159,6 +164,66 @@ mod tests {
             }
         }
         assert_eq!(contents, vec!["hello", " ", "world"]);
+    }
+
+    #[tokio::test]
+    async fn classifies_service_errors_during_streaming_and_preserves_the_payload() {
+        let cases: &[(&str, &str, fn(String) -> AiError)] = &[
+            (
+                "data: ",
+                r#"{"error":{"message":"Too many requests","type":"invalid_request_error","code":"rate_limit_exceeded"}}"#,
+                AiError::RateLimited,
+            ),
+            (
+                "event: error\ndata: ",
+                r#"{"message":"Temporary overload","code":"server_is_overloaded"}"#,
+                AiError::ServerError,
+            ),
+            (
+                "data: ",
+                r#"{"error":{"message":"Invalid credentials","code":"invalid_api_key"}}"#,
+                AiError::AuthenticationFailed,
+            ),
+            (
+                "event: error\ndata: ",
+                r#"{"message":"Request timed out","type":"request_timeout"}"#,
+                AiError::Timeout,
+            ),
+            (
+                "data: ",
+                r#"{"error":{"message":"Service rejected the request","code":"vendor_code"}}"#,
+                AiError::Unknown,
+            ),
+        ];
+        for (prefix, payload, kind) in cases {
+            let server =
+                MockOpenAiServer::start(Scenario::StreamEvent(format!("{prefix}{payload}\n\n")))
+                    .await;
+            let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+            let mut stream = provider.stream(sample_request()).await.unwrap();
+            assert!(matches!(
+                stream.next().await,
+                Some(Ok(crate::ai::types::AiStreamEvent::Delta { .. }))
+            ));
+            assert_eq!(stream.next().await, Some(Err(kind(payload.to_string()))));
+            assert!(stream.next().await.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn keeps_malformed_events_as_invalid_responses() {
+        for event in ["data: {broken\n\n", "event: error\ndata: [DONE]\n\n"] {
+            let server = MockOpenAiServer::start(Scenario::StreamEvent(event.to_owned())).await;
+            let provider = OpenAiCompatibleProvider::new(&server.base_url(), None);
+            let mut stream = provider.stream(sample_request()).await.unwrap();
+            assert!(stream.next().await.unwrap().is_ok());
+            let payload = event.trim_end().rsplit_once("data: ").unwrap().1;
+            assert!(matches!(
+                stream.next().await,
+                Some(Err(AiError::InvalidResponse(detail))) if detail.ends_with(payload)
+            ));
+            assert!(stream.next().await.is_none());
+        }
     }
 
     #[tokio::test]
