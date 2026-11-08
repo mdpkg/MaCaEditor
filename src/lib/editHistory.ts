@@ -215,5 +215,12 @@ export function applyEditHistoryEntry(current: DocumentState, entry: EditHistory
   if ([...placed.keys()].some((position) => position >= count)) throw conflict();
   let index = 0;
   const files = Array.from({ length: count }, (_, position) => placed.get(position) ?? remaining[index++]);
-  return { ...current, ...replacement, files, manifest: { ...replacement.manifest, version: current.manifest.version } };
+  return {
+    ...current,
+    entrypoint: replacement.entrypoint,
+    directories: replacement.directories,
+    staleResources: replacement.staleResources,
+    files,
+    manifest: { ...replacement.manifest, version: current.manifest.version },
+  };
 }

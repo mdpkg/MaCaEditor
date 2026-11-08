@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { addAttachment, createDocumentState, movePath, updateFileContent } from "./document";
+import { addAttachment, createDocumentState, deletePath, movePath, updateFileContent } from "./document";
+import { captureEditCheckpoint, restoreEditCheckpoint } from "./editCheckpoint";
 import { applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, reuseAttachmentPayload, textHistoryEntry } from "./editHistory";
 
 test("rejects an occupied original path without partially undoing a move or its link edits", () => {
@@ -31,6 +32,26 @@ function documentWithText(content: string) {
     files: [{ path: "index.md", content, is_text: true, base64: null }],
   }, "book.mdpkg");
 }
+
+test("replays an attachment deletion after restarting with a pending text redo", () => {
+  const initial = documentWithText("Original");
+  const added = addAttachment(initial, "shared.bin", "AQID");
+  const deleted = deletePath(added.state, added.path);
+  const edited = updateFileContent(deleted, initial.entrypoint, "Edited");
+  const history = createEditHistory();
+  recordEdit(history, fileHistoryEntry(initial, added.state, "Add attachment")!);
+  recordEdit(history, fileHistoryEntry(added.state, deleted, "Delete attachment")!);
+  recordEdit(history, textHistoryEntry(initial.entrypoint, "Original", "Edited", deleted.staleResources, edited.staleResources));
+  history.cursor--;
+
+  const restored = restoreEditCheckpoint(deleted, captureEditCheckpoint(deleted, history));
+  const deletion = restored.history.entries[restored.history.cursor - 1];
+  const undo = applyEditHistoryEntry(restored.state, deletion, "undo");
+  expect(undo.files.find(({ path }) => path === added.path)?.base64).toBe("AQID");
+  const redo = applyEditHistoryEntry(undo, deletion, "redo");
+  expect(redo.files).toEqual(deleted.files);
+  expect(applyEditHistoryEntry(redo, restored.history.entries[restored.history.cursor], "redo").files).toEqual(edited.files);
+});
 
 test("small history patches preserve the exact UTF-16 code units", () => {
   const prefix = "x".repeat(5000);
