@@ -14,9 +14,12 @@ use async_openai::types::chat::{
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::StreamExt;
 use reqwest::StatusCode;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tower::{service_fn, Layer, ServiceExt};
 
 use crate::ai::error::{classify_http_status, AiError};
+use crate::ai::provider::AiEventStream;
 use crate::ai::types::{AiMessage, AiRequest, AiResponse, AiRole, AiStreamEvent};
 
 /// OpenAI Compatible API へ接続する Provider。
@@ -37,7 +40,7 @@ impl OpenAiCompatibleProvider {
         }
         let http = reqwest::Client::new();
         let transport = http.clone();
-        let service = service_fn(move |request| execute_http_request(transport.clone(), request));
+        let service = service_fn(move |request| execute_http_request(transport.clone(), request, None));
         Self {
             client: async_openai::Client::build(http.clone(), config).with_http_service(service),
             http,
@@ -185,10 +188,35 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
         from_openai_response(response)
     }
 
-    async fn stream(
+    async fn stream(&self, request: AiRequest) -> Result<AiEventStream, AiError> {
+        self.open_stream(request, None).await
+    }
+
+    async fn stream_with_connect_timeout(
         &self,
         request: AiRequest,
-    ) -> Result<Box<dyn futures::Stream<Item = Result<AiStreamEvent, AiError>> + Send + Unpin>, AiError> {
+        timeout: Duration,
+    ) -> Result<AiEventStream, AiError> {
+        let last_error = RetryError::default();
+        match tokio::time::timeout(timeout, self.open_stream(request, Some(last_error.clone()))).await {
+            Ok(result) => result,
+            Err(_) => Err(last_error
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| AiError::Timeout("connect timeout".to_owned()))),
+        }
+    }
+}
+
+type RetryError = Arc<Mutex<Option<AiError>>>;
+
+impl OpenAiCompatibleProvider {
+    async fn open_stream(
+        &self,
+        request: AiRequest,
+        last_error: Option<RetryError>,
+    ) -> Result<AiEventStream, AiError> {
         let request = self.to_openai_request(&self.model, &request, true)?;
         let config = self.client.config().clone();
         let http = self.http.clone();
@@ -202,7 +230,7 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
                 .build();
             async { request.map_err(OpenAIError::Reqwest) }
         });
-        let response = execute_http_request(self.http.clone(), factory)
+        let response = execute_http_request(self.http.clone(), factory, last_error)
             .await
             .map_err(map_openai_error)?;
         let status = response.status();
@@ -233,9 +261,21 @@ impl crate::ai::provider::AiProvider for OpenAiCompatibleProvider {
 async fn execute_http_request(
     http: reqwest::Client,
     request: HttpRequestFactory,
+    last_error: Option<RetryError>,
 ) -> Result<reqwest::Response, OpenAIError> {
+    let service = service_fn(move |request| {
+        let transport = ReqwestService::new(http.clone());
+        let last_error = last_error.clone();
+        async move {
+            let response = transport.oneshot(request).await?;
+            if let Some(last_error) = last_error {
+                return remember_retryable_error(response, &last_error).await;
+            }
+            Ok(response)
+        }
+    });
     let response = OpenAIRetryLayer::default()
-        .layer(ReqwestService::new(http))
+        .layer(service)
         .oneshot(request)
         .await;
     let response = match response {
@@ -261,6 +301,43 @@ async fn execute_http_request(
         })),
         Err(_) => Err(unstructured_http_error(status, &String::from_utf8_lossy(&bytes))),
     }
+}
+
+// Keep the last HTTP failure available if the connect deadline expires in the retry layer.
+async fn remember_retryable_error(
+    response: reqwest::Response,
+    last_error: &RetryError,
+) -> Result<reqwest::Response, OpenAIError> {
+    let status = response.status();
+    if status != StatusCode::TOO_MANY_REQUESTS && !status.is_server_error() {
+        *last_error.lock().unwrap() = None;
+        return Ok(response);
+    }
+
+    *last_error.lock().unwrap() = Some(classify_http_status(
+        status.as_u16(),
+        &format!("HTTP {}", status.as_u16()),
+    ));
+    let headers = response.headers().clone();
+    let version = response.version();
+    let bytes = response.bytes().await.map_err(OpenAIError::Reqwest)?;
+    let body = String::from_utf8_lossy(&bytes);
+    let error = if status.is_server_error() {
+        classify_http_status(status.as_u16(), &body)
+    } else {
+        match serde_json::from_slice::<WrappedError>(&bytes) {
+            Ok(wrapped) => map_api_error(status, wrapped.error),
+            Err(_) => map_openai_error(unstructured_http_error(status, &body)),
+        }
+    };
+    *last_error.lock().unwrap() = Some(error);
+
+    // Replay the buffered error to the SDK so that it still applies its normal retry policy.
+    let mut response = tauri::http::Response::new(bytes);
+    *response.status_mut() = status;
+    *response.version_mut() = version;
+    *response.headers_mut() = headers;
+    Ok(response.into())
 }
 
 fn unstructured_http_error(status: StatusCode, body: &str) -> OpenAIError {
