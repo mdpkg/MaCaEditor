@@ -137,7 +137,7 @@ import type { DrawingPreferences } from "@maca/drawing-react";
 import { applySavedBaseline, exportFolderDocumentPackage, saveDocument } from "./lib/documentPersistence";
 import {
   applyEditHistoryEntry, createEditHistory, fileHistoryEntry, recordEdit, sameSavedContent,
-  textHistoryEntry, type HistoryDirection, type EditHistoryEntry, type TextEditGroup,
+  textHistoryEntry, type HistoryDirection, type EditHistoryEntry, type EditHistoryFocus, type TextEditGroup,
 } from "./lib/editHistory";
 import { blocksFolderSave, externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
 import { supportsPrintPageMargins } from "./lib/printPageMargins";
@@ -194,6 +194,11 @@ interface PendingInferredFolder {
   destination?: string;
 }
 
+function needsDiagramRender(state: DocumentState, renderedPath: string | undefined): boolean {
+  return !!renderedPath && (state.staleResources?.includes(renderedPath) === true ||
+    !state.files.some((file) => file.path === renderedPath && file.content));
+}
+
 export default function App() {
   const [doc, setDocumentState] = useState<DocumentState | null>(null);
   const [fileTask, setFileTask] = useState<string | null>(null);
@@ -209,6 +214,8 @@ export default function App() {
   const openSequenceRef = useRef(0);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("preview");
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const [status, setStatus] = useState(uiText("Ready"));
   const [error, setError] = useState<{
     operation: string;
@@ -253,9 +260,13 @@ export default function App() {
   const editHistoryRef = useRef(createEditHistory());
   const savedDocumentRef = useRef<DocumentState | null>(null);
   const typingRef = useRef<{ group: TextEditGroup; path: string; before: string; stale: string[] | undefined } | null>(null);
-  const [aiSelection, setAiSelection] = useState<{ task: AiTaskKind; snapshot: AiSelectionSnapshot } | null>(null);
+  const [aiSelection, setAiSelection] = useState<{
+    task: AiTaskKind; snapshot: AiSelectionSnapshot; path: string; session: number;
+  } | null>(null);
   const [aiSelectionRunning, setAiSelectionRunning] = useState(false);
-  const [aiDiagramEdit, setAiDiagramEdit] = useState<{ format: "plantuml" | "mermaid"; path: string } | null>(null);
+  const [aiDiagramEdit, setAiDiagramEdit] = useState<{
+    format: "plantuml" | "mermaid"; path: string; session: number;
+  } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const editorCursorsRef = useRef(new Map<string, number>());
   const editorScrollTopsRef = useRef(new Map<string, number>());
@@ -309,6 +320,10 @@ export default function App() {
     setLiveDiagnostics(null);
     setPackageDiagnostics(null);
     setNavigationTarget(null);
+    setTableEdit(null);
+    setAiSelection(null);
+    setAiSelectionRunning(false);
+    setAiDiagramEdit(null);
     editHistoryRef.current = createEditHistory();
     typingRef.current = null;
     savedDocumentRef.current = next.dirty ? null : next;
@@ -365,9 +380,10 @@ export default function App() {
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
   );
-  const recordDocumentOperation = (next: DocumentState, label: string) => {
-    if (!doc) return;
-    const entry = fileHistoryEntry(doc, next, label);
+  const recordDocumentOperation = (next: DocumentState, label: string, focus?: EditHistoryFocus) => {
+    const current = documentRef.current;
+    if (!current) return;
+    const entry = fileHistoryEntry(current, next, label, focus);
     if (!entry) return;
     typingRef.current = null;
     recordEdit(editHistoryRef.current, entry);
@@ -376,7 +392,8 @@ export default function App() {
   };
   const applyEditHistory = (direction: HistoryDirection, expectedEntry?: EditHistoryEntry) => {
     const current = documentRef.current;
-    if (!current) return;
+    const currentMode = modeRef.current;
+    if (!current || currentMode === "table") return;
     const undo = direction === "undo";
     const history = editHistoryRef.current;
     const entry = history.entries[undo ? history.cursor - 1 : history.cursor];
@@ -388,12 +405,27 @@ export default function App() {
     const operation = uiText(undo ? "Undo" : "Redo");
     try {
       const next = withDocumentDirty(applyEditHistoryEntry(current, entry, direction));
+      const requestedFocus = entry.kind === "files" ? entry.focus : undefined;
+      const focusFile = requestedFocus && next.files.find((file) => file.path === requestedFocus.path);
+      const diagramResource = requestedFocus?.mode === "plantuml" ? findPlantUmlResourceBySource(next.manifest, requestedFocus.path)
+        : requestedFocus?.mode === "mermaid" ? findMermaidResourceBySource(next.manifest, requestedFocus.path) : undefined;
+      const focus = focusFile && !needsDiagramRender(next, diagramResource?.rendered) ? requestedFocus : undefined;
+      const drawingSource = focus?.mode === "drawing" ? focusFile?.content : null;
+      const restoredDrawing = drawingSource ? parseDrawingFile(drawingSource) : null;
       typingRef.current = null;
       history.cursor += undo ? -1 : 1;
       applyDocumentState(next);
       setSelectedFolder(null);
-      setSelectedPath(entry.kind === "text" ? entry.path : next.entrypoint);
-      if (entry.kind === "files") setMode("preview");
+      setSelectedPath(entry.kind === "text" ? entry.path : focus?.path ?? next.entrypoint);
+      if (entry.kind === "files") {
+        setDrawingDoc(restoredDrawing);
+        setDrawingPath(restoredDrawing && focus ? focus.path : null);
+        setPlantUmlPath(focus?.mode === "plantuml" ? focus.path : null);
+        setMermaidPath(focus?.mode === "mermaid" ? focus.path : null);
+        setMode(focus?.mode === "drawing" && !restoredDrawing ? "preview" : focus?.mode ?? "preview");
+      } else if (currentMode !== "split") {
+        setMode("preview");
+      }
       clearError(operation);
       setStatus(`${entry.label}を${undo ? "元に戻しました" : "やり直しました"}`);
     } catch (reason) {
@@ -1012,7 +1044,7 @@ export default function App() {
     setMode("preview");
   };
 
-  const handleContentChange = (path: string, session: number, content: string, group?: TextEditGroup) => {
+  const recordTextEdit = (path: string, session: number, content: string, group?: TextEditGroup, label = path) => {
     const current = documentRef.current;
     if (!current || session !== documentSessionRef.current) return;
     const file = current.files.find((candidate) => candidate.path === path);
@@ -1025,7 +1057,7 @@ export default function App() {
         history.entries[history.cursor - 1] = textHistoryEntry(path, typing.before, content, typing.stale, next.staleResources);
       } else {
         typingRef.current = group ? { group, path, before: file.content, stale: current.staleResources } : null;
-        recordEdit(history, textHistoryEntry(path, file.content, content, current.staleResources, next.staleResources));
+        recordEdit(history, textHistoryEntry(path, file.content, content, current.staleResources, next.staleResources, label));
       }
       applyDocumentState(withDocumentDirty(next));
     } else {
@@ -1050,19 +1082,19 @@ export default function App() {
       return;
     }
     clearError(uiText("AI action"));
-    setAiSelection({ task, snapshot: sel });
+    if (displayFile) setAiSelection({ task, snapshot: sel, path: displayFile.path, session: documentSessionRef.current });
   };
 
   const handleAiApply = (mode: "replace" | "insert", result: string, snapshot: AiSelectionSnapshot) => {
-    if (!doc || !selectedPath) return;
-    const file = doc.files.find((f) => f.path === selectedPath);
-    const content = file?.is_text ? file.content ?? "" : "";
-    const applied = applyAiResult(content, snapshot, result, mode);
+    const current = documentRef.current;
+    if (!current || !aiSelection || aiSelection.session !== documentSessionRef.current) return;
+    const file = current.files.find((f) => f.path === aiSelection.path);
+    const applied = applyAiResult(file?.is_text ? file.content ?? "" : "", snapshot, result, mode);
     if (!applied.ok) {
       reportError(uiText("Apply AI result"), uiText("The document has changed since this AI request started. Please select the text again."));
       return;
     }
-    setDoc(updateFileContent(doc, selectedPath, applied.result.content));
+    recordTextEdit(aiSelection.path, aiSelection.session, applied.result.content, undefined, uiText("Apply AI result"));
     setAiSelection(null);
     setAiSelectionRunning(false);
     setStatus(`AI の結果を${mode === "replace" ? "置換" : "挿入"}しました`);
@@ -1093,7 +1125,7 @@ export default function App() {
       { markdownPath: markdownFile?.path, cursor },
     );
     editorCursorsRef.current.set(markdownFile?.path ?? doc.entrypoint, insertedCursor);
-    setDoc(state);
+    recordDocumentOperation(state, uiText("Insert Diagram"), { path: drawPath, mode: "drawing" });
     setDrawingDoc(empty);
     setDrawingPath(drawPath);
     setPlantUmlPath(null);
@@ -1131,18 +1163,33 @@ export default function App() {
     }
   };
 
+  const editorSession = documentSessionRef.current;
+
   const handlePlantUmlSourceChange = useCallback((source: string) => {
     setDoc((current) => current && plantUmlPath
       ? updateFileContent(current, plantUmlPath, source)
       : current);
   }, [plantUmlPath]);
 
+  const saveRenderedDiagram = useCallback((format: "plantuml" | "mermaid", path: string | null, source: string, svg: string) => {
+    const current = documentRef.current;
+    if (!current || !path || editorSession !== documentSessionRef.current ||
+        current.files.find((file) => file.path === path)?.content !== source) return;
+    const isPlantUml = format === "plantuml";
+    const resource = (isPlantUml ? findPlantUmlResourceBySource : findMermaidResourceBySource)(current.manifest, path);
+    if (!needsDiagramRender(current, resource?.rendered)) return;
+    const operation = uiText(isPlantUml ? "Render PlantUML" : "Render Mermaid");
+    try {
+      setDoc((isPlantUml ? savePlantUmlToDocument : saveMermaidToDocument)(current, path, source, svg));
+      setStatus(uiText(isPlantUml ? "PlantUML preview updated" : "Mermaid preview updated"));
+    } catch (reason) {
+      reportError(operation, reason);
+    }
+  }, [editorSession]);
+
   const handlePlantUmlRendered = useCallback((source: string, svg: string) => {
-    setDoc((current) => current && plantUmlPath
-      ? savePlantUmlToDocument(current, plantUmlPath, source, svg)
-      : current);
-    setStatus(uiText("PlantUML preview updated"));
-  }, [plantUmlPath]);
+    saveRenderedDiagram("plantuml", plantUmlPath, source, svg);
+  }, [plantUmlPath, saveRenderedDiagram]);
 
   const handleInsertMermaid = async () => {
     if (!doc) return;
@@ -1180,24 +1227,30 @@ export default function App() {
   }, [mermaidPath]);
 
   const handleMermaidRendered = useCallback((source: string, svg: string) => {
-    setDoc((current) => current && mermaidPath
-      ? saveMermaidToDocument(current, mermaidPath, source, svg)
-      : current);
-    setStatus(uiText("Mermaid preview updated"));
-  }, [mermaidPath]);
+    saveRenderedDiagram("mermaid", mermaidPath, source, svg);
+  }, [mermaidPath, saveRenderedDiagram]);
 
-  const handleAiDiagramEditApply = (updatedSource: string, snapshot: { path: string; source: string }) => {
-    if (!doc || !aiDiagramEdit) return;
+  const handleAiDiagramEditApply = (updatedSource: string, svg: string, snapshot: { path: string; source: string }) => {
+    const current = documentRef.current;
+    if (!current || !aiDiagramEdit || aiDiagramEdit.session !== documentSessionRef.current) return;
     const currentPath = aiDiagramEdit.format === "plantuml" ? plantUmlPath : mermaidPath;
-    const currentSource = doc.files.find((file) => file.path === currentPath)?.content ?? "";
+    const currentSource = current.files.find((file) => file.path === currentPath)?.content ?? "";
     const applied = applyDiagramEdit(currentPath ?? "", currentSource, snapshot, updatedSource);
     if (!applied.ok) {
       reportError(uiText("Apply AI diagram"), uiText("The diagram changed while AI generation was running. Run AI Generate again using the latest source."));
       return;
     }
-    if (aiDiagramEdit.format === "plantuml") handlePlantUmlSourceChange(applied.source);
-    else handleMermaidSourceChange(applied.source);
-    setAiDiagramEdit(null); setStatus(uiText("AI-generated diagram applied")); clearError(uiText("Apply AI diagram"));
+    try {
+      const saveDiagram = aiDiagramEdit.format === "plantuml" ? savePlantUmlToDocument : saveMermaidToDocument;
+      recordDocumentOperation(saveDiagram(current, snapshot.path, applied.source, svg), uiText("Apply AI diagram"), {
+        path: snapshot.path, mode: aiDiagramEdit.format,
+      });
+      setAiDiagramEdit(null);
+      setStatus(uiText("AI-generated diagram applied"));
+      clearError(uiText("Apply AI diagram"));
+    } catch (reason) {
+      reportError(uiText("Apply AI diagram"), reason);
+    }
   };
 
   const handleInsertMathJax = () => {
@@ -1278,39 +1331,44 @@ export default function App() {
     }
   };
 
-  const addImportedAttachments = (attachments: ImportedFile[]) => {
-    if (!doc || attachments.length === 0) return;
-    const markdownFile = selectedFile?.is_text && selectedFile.path.match(/\.(md|markdown)$/i)
-      ? selectedFile
-      : entrypointFile;
-    const cursor = insertionCursor(markdownFile);
-    let next = doc;
+  const addImportedAttachments = (attachments: ImportedFile[], markdownPath: string, useCursor: boolean) => {
+    const current = documentRef.current;
+    if (!current || attachments.length === 0) return;
+    const markdownFile = current.files.find((file) => file.path === markdownPath && file.is_text);
+    if (markdownFile?.content == null) {
+      reportError(uiText("Add attachments"), uiText("The attachment target is no longer available."));
+      return;
+    }
+    const cursor = useCursor ? editorCursorsRef.current.get(markdownPath) ?? null : null;
+    let next = current;
     const addedPaths: string[] = [];
     for (const attachment of attachments) {
-      const added = addAttachment(next, attachment.file_name, attachment.base64, markdownFile?.path ?? doc.entrypoint);
+      const added = addAttachment(next, attachment.file_name, attachment.base64, markdownPath);
       next = added.state;
       addedPaths.push(added.path);
     }
-    if (markdownFile?.content !== null && markdownFile?.content !== undefined) {
-      const inserted = insertMarkdownLinks(markdownFile.content, cursor, markdownFile.path, addedPaths);
-      next = updateFileContent(next, markdownFile.path, inserted.content);
-      editorCursorsRef.current.set(markdownFile.path, inserted.cursor);
-    }
-    setDoc(next);
-    setSelectedPath(markdownFile?.path ?? addedPaths[addedPaths.length - 1] ?? null);
+    const inserted = insertMarkdownLinks(markdownFile.content, cursor, markdownPath, addedPaths);
+    next = updateFileContent(next, markdownPath, inserted.content);
+    editorCursorsRef.current.set(markdownPath, inserted.cursor);
+    recordDocumentOperation(next, uiText("Add attachments"));
+    setSelectedPath(markdownPath);
     setStatus(`添付ファイルを ${attachments.length} 件追加しました`);
     clearError(uiText("Add attachments"));
   };
 
   const handleAddAttachment = async () => {
     if (!doc) return;
-    const result = await openDialog({ multiple: true });
-    const paths = Array.isArray(result) ? result : typeof result === "string" ? [result] : [];
-    if (paths.length === 0) return;
+    const session = documentSessionRef.current;
+    const target = selectedFile?.is_text && isMarkdownPath(selectedFile.path) ? selectedFile.path : doc.entrypoint;
+    const useCursor = target === selectedPath;
     try {
-      addImportedAttachments(await Promise.all(paths.map(readAttachment)));
+      const result = await openDialog({ multiple: true });
+      const paths = Array.isArray(result) ? result : typeof result === "string" ? [result] : [];
+      if (paths.length === 0 || session !== documentSessionRef.current) return;
+      const attachments = await Promise.all(paths.map(readAttachment));
+      if (session === documentSessionRef.current) addImportedAttachments(attachments, target, useCursor);
     } catch (e) {
-      reportError(uiText("Add attachments"), e);
+      if (session === documentSessionRef.current) reportError(uiText("Add attachments"), e);
     }
   };
 
@@ -1350,7 +1408,7 @@ export default function App() {
     const cursor = insertionCursor(markdownFile);
     const inserted = insertMarkdownBlock(markdownFile.content, cursor, EMPTY_2X2_MARKDOWN_TABLE);
     editorCursorsRef.current.set(markdownFile.path, inserted.cursor);
-    setDoc(updateFileContent(doc, markdownFile.path, inserted.content));
+    recordTextEdit(markdownFile.path, documentSessionRef.current, inserted.content, undefined, uiText("Insert Table"));
     setSelectedPath(markdownFile.path);
     setTableEdit(null);
     setMode("split");
@@ -1591,12 +1649,23 @@ export default function App() {
   };
 
   const handleDrawingChange = (next: DrawingDocument) => {
-    setDrawingDoc(next);
+    if (editorSession === documentSessionRef.current) setDrawingDoc(next);
   };
 
   const handleDrawingDirty = (next: DrawingDocument) => {
-    if (!doc || !drawingPath) return;
-    setDoc(saveDrawingToDocument(doc, drawingPath, next));
+    const current = documentRef.current;
+    if (!current || !drawingPath || editorSession !== documentSessionRef.current) return;
+    const source = current.files.find((file) => file.path === drawingPath)?.content;
+    if (!source) return;
+    try {
+      recordDocumentOperation(saveDrawingToDocument(current, drawingPath, next), uiText("Edit drawing"), {
+        path: drawingPath, mode: "drawing",
+      });
+      clearError(uiText("Edit drawing"));
+    } catch (reason) {
+      setDrawingDoc(parseDrawingFile(source));
+      reportError(uiText("Edit drawing"), reason);
+    }
   };
 
   const handleDrawingImageRequest = async (): Promise<string | null> => {
@@ -1669,7 +1738,7 @@ export default function App() {
       return;
     }
     const next = content.slice(0, start) + markdown + content.slice(end);
-    if (next !== content) setDoc(updateFileContent(current, path, next));
+    recordTextEdit(path, documentSessionRef.current, next, undefined, uiText("Edit table"));
     closeTableEditor();
   };
 
@@ -1691,7 +1760,7 @@ export default function App() {
       if (event.defaultPrevented || event.isComposing) return;
       const direction = historyShortcut(event);
       const target = event.target instanceof Element ? event.target : null;
-      if (direction && doc && (mode === "preview" || mode === "split") &&
+      if (direction && doc && mode !== "table" &&
           !target?.closest("input, textarea, select, [contenteditable], [role=dialog]") &&
           !document.querySelector('[role="dialog"][aria-modal="true"]')) {
         event.preventDefault();
@@ -1722,7 +1791,6 @@ export default function App() {
   const displayPreviewUnavailable = /\.(pdf|zip)$/i.test(displayFile?.path ?? "");
   const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
   const editorScrollTop = displayFile ? editorScrollTopsRef.current.get(displayFile.path) : undefined;
-  const editorSession = documentSessionRef.current;
   const liveDiagnosticPath = mode === "split" && displayIsMarkdown ? displayFile?.path : undefined;
   const diagnosticsOpen = packageDiagnostics !== null;
   useEffect(() => {
@@ -1760,7 +1828,7 @@ export default function App() {
     try {
       const link = packageFileMarkdownLink(displayFile.path, path, doc.files, doc.manifest);
       const inserted = insertMarkdownBlock(displayFile.content, position, link);
-      setDoc(updateFileContent(doc, displayFile.path, inserted.content));
+      recordTextEdit(displayFile.path, editorSession, inserted.content, undefined, uiText("Insert link"));
       editorCursorsRef.current.set(displayFile.path, inserted.cursor);
       setStatus(`${path} へのリンクを挿入しました`);
       clearError(uiText("Insert link"));
@@ -1824,8 +1892,8 @@ export default function App() {
         onValidatePackage={handleValidatePackage}
         onUndoFileOperation={() => applyEditHistory("undo")}
         onRedoFileOperation={() => applyEditHistory("redo")}
-        canUndoFileOperation={editHistoryRef.current.cursor > 0}
-        canRedoFileOperation={editHistoryRef.current.cursor < editHistoryRef.current.entries.length}
+        canUndoFileOperation={mode !== "table" && editHistoryRef.current.cursor > 0}
+        canRedoFileOperation={mode !== "table" && editHistoryRef.current.cursor < editHistoryRef.current.entries.length}
         onEditManifest={() => setManifestEditorOpen(true)}
         onSearchPackage={() => { setPackageDiagnostics(null); setPackageSearchOpen(true); }}
         onAddMarkdown={() => void handleAdd("markdown")}
@@ -1937,10 +2005,12 @@ export default function App() {
           )}
           {doc && mode === "drawing" && drawingDoc && drawingPath && preferencesLoaded && (
             <DrawingEditor
+              key={`${editorSession}:${drawingPath}`}
               translate={uiText}
               doc={drawingDoc}
               onChange={handleDrawingChange}
               onDirty={handleDrawingDirty}
+              onHistory={applyEditHistory}
               onRequestImage={handleDrawingImageRequest}
               propertiesPanelId="drawing-properties-panel"
               preferences={drawingPreferences}
@@ -1958,11 +2028,12 @@ export default function App() {
                 key={plantUmlPath}
                 source={sourceFile.content}
                 initialSvg={svgFile?.content ?? ""}
+                renderPending={needsDiagramRender(doc, resource?.rendered)}
                 onSourceChange={handlePlantUmlSourceChange}
                 onRendered={handlePlantUmlRendered}
                 vimMode={vimMode}
                 onSave={handleSave}
-                onAiEdit={() => setAiDiagramEdit({ format: "plantuml", path: plantUmlPath })}
+                onAiEdit={() => setAiDiagramEdit({ format: "plantuml", path: plantUmlPath, session: editorSession })}
               />
             ) : null;
           })()}
@@ -1977,11 +2048,12 @@ export default function App() {
                 key={mermaidPath}
                 source={sourceFile.content}
                 initialSvg={svgFile?.content ?? ""}
+                renderPending={needsDiagramRender(doc, resource?.rendered)}
                 onSourceChange={handleMermaidSourceChange}
                 onRendered={handleMermaidRendered}
                 vimMode={vimMode}
                 onSave={handleSave}
-                onAiEdit={() => setAiDiagramEdit({ format: "mermaid", path: mermaidPath })}
+                onAiEdit={() => setAiDiagramEdit({ format: "mermaid", path: mermaidPath, session: editorSession })}
               />
             ) : null;
           })()}
@@ -2039,7 +2111,7 @@ export default function App() {
                   <MarkdownEditor
                     key={`${editorSession}:${displayFile.path}`}
                     value={displayContent}
-                    onChange={(content, group) => handleContentChange(displayFile.path, editorSession, content, group)}
+                    onChange={(content, group) => recordTextEdit(displayFile.path, editorSession, content, group)}
                     onHistory={applyEditHistory}
                     onCursorChange={(position) => {
                       if (editorSession === documentSessionRef.current) editorCursorsRef.current.set(displayFile.path, position);

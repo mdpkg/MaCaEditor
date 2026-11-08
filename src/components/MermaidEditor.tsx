@@ -9,6 +9,7 @@ import { DiagramRenderError } from "./DiagramRenderError";
 interface Props {
   source: string;
   initialSvg: string;
+  renderPending?: boolean;
   onSourceChange: (source: string) => void;
   onRendered: (source: string, svg: string) => void;
   render?: (source: string) => Promise<string>;
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export function MermaidEditor({
-  source, initialSvg, onSourceChange, onRendered, render = renderMermaid, vimMode = false, onSave, onAiEdit,
+  source, initialSvg, renderPending = true, onSourceChange, onRendered, render = renderMermaid, vimMode = false, onSave, onAiEdit,
 }: Props) {
   const [svg, setSvg] = useState(initialSvg);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +28,12 @@ export function MermaidEditor({
   const sanitizedSvg = sanitizeHtml(svg);
 
   useEffect(() => {
+    if (!renderPending) {
+      setSvg(initialSvg);
+      setRendering(false);
+      setError(null);
+      return;
+    }
     let active = true;
     const timeout = window.setTimeout(() => {
       setRendering(true);
@@ -46,7 +53,7 @@ export function MermaidEditor({
       active = false;
       window.clearTimeout(timeout);
     };
-  }, [source, render, onRendered]);
+  }, [source, initialSvg, renderPending, render, onRendered]);
 
   return (
     <div className="mermaid-editor">

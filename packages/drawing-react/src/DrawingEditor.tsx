@@ -67,6 +67,8 @@ export interface DrawingEditorProps {
   doc: DrawingDocument;
   onChange: (doc: DrawingDocument) => void;
   onDirty: (doc: DrawingDocument) => void;
+  /** Route undo and redo to the host's history. Omit to use the editor's own history. */
+  onHistory?: (direction: "undo" | "redo") => void;
   onRequestImage?: () => Promise<string | null>;
   propertiesPanelId?: string;
   translate?: (text: string) => string;
@@ -151,6 +153,7 @@ export function DrawingEditor({
   doc,
   onChange,
   onDirty,
+  onHistory,
   onRequestImage,
   propertiesPanelId,
   translate = (text) => text,
@@ -158,6 +161,13 @@ export function DrawingEditor({
   onPreferencesChange,
 }: DrawingEditorProps) {
   const [tool, setTool] = useState<Tool>("select");
+  const currentDocRef = useRef(doc);
+  const mountedRef = useRef(false);
+  currentDocRef.current = doc;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
   const [localPreferences, setLocalPreferences] = useState(DEFAULT_DRAWING_PREFERENCES);
@@ -232,13 +242,16 @@ export function DrawingEditor({
   );
 
   const commit = useCallback(
-    (next: DrawingDocument) => {
-      setUndoStack((u) => [...u, { before: doc, after: next }]);
-      setRedoStack([]);
+    (next: DrawingDocument, before = doc) => {
       onChange(next);
+      if (next === before) return;
+      if (!onHistory) {
+        setUndoStack((u) => [...u, { before, after: next }]);
+        setRedoStack([]);
+      }
       onDirty(next);
     },
-    [doc, onChange, onDirty],
+    [doc, onChange, onDirty, onHistory],
   );
 
   const undo = useCallback(() => {
@@ -262,7 +275,7 @@ export function DrawingEditor({
   const addImage = useCallback(async () => {
     if (!onRequestImage) return;
     const src = await onRequestImage();
-    if (!src) return;
+    if (!src || !mountedRef.current || currentDocRef.current !== doc) return;
     const next = insertImageObject(
       doc,
       Math.max(0, (doc.canvas.width - 160) / 2),
@@ -537,7 +550,7 @@ export function DrawingEditor({
     // 作成ツール
     const obj = createObject(doc, tool, snapValue(x), snapValue(y));
     const next = { ...doc, objects: [...doc.objects, obj] };
-    commit(next);
+    onChange(next);
     dragPreviewRef.current = next;
     setSelectedIds([obj.id]);
     setDragging({
@@ -549,6 +562,7 @@ export function DrawingEditor({
       origY: obj.y,
       origW: obj.width,
       origH: obj.height,
+      before: doc,
     });
   };
 
@@ -777,29 +791,9 @@ export function DrawingEditor({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    if (dragging?.type === "move" && dragging.id && dragging.before) {
-      const after = dragPreviewRef.current ?? doc;
-      setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
-      setRedoStack([]);
-      onChange(after);
-      onDirty(after);
-    } else if (dragging?.type === "canvasResize" && dragging.before) {
-      const after = dragPreviewRef.current ?? doc;
-      setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
-      setRedoStack([]);
-      onChange(after);
-      onDirty(after);
-    } else if ((dragging?.type === "resize" || dragging?.type === "rotate" || dragging?.type === "connectorEndpoint" || dragging?.type === "curveAdjust" || dragging?.type === "arcAdjust" || dragging?.type === "calloutAdjust" || dragging?.type === "braceAdjust") && dragging.before) {
-      const after = dragPreviewRef.current ?? doc;
-      setUndoStack((stack) => [...stack, { before: dragging.before!, after }]);
-      setRedoStack([]);
-      onChange(after);
-      onDirty(after);
-    } else if (dragging?.type === "create") {
-      const after = dragPreviewRef.current ?? doc;
-      onChange(after);
-      onDirty(after);
-      setTool("select");
+    if (dragging?.before && dragging.type !== "marquee" && dragPreviewRef.current) {
+      commit(dragPreviewRef.current, dragging.before);
+      if (dragging.type === "create") setTool("select");
     }
     dragPreviewRef.current = null;
     setSelectionMarquee(null);
@@ -807,6 +801,15 @@ export function DrawingEditor({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    const key = e.key.toLowerCase();
+    const direction = (e.ctrlKey || e.metaKey) && !e.altKey
+      ? key === "z" ? e.shiftKey ? "redo" : "undo" : key === "y" && !e.shiftKey ? "redo" : undefined
+      : undefined;
+    if (direction && onHistory && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (!dragging) onHistory(direction);
+      return;
+    }
     const target = e.target;
     if (
       target instanceof HTMLElement &&
@@ -832,12 +835,10 @@ export function DrawingEditor({
       e.preventDefault();
       const dup = pasteObjects(doc, copyObjects(doc, selectedIds));
       commit(dup);
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+    } else if (direction) {
       e.preventDefault();
-      undo();
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-      e.preventDefault();
-      redo();
+      if (direction === "undo") undo();
+      else redo();
     } else if (e.key === "ArrowLeft") {
       const dx = e.shiftKey ? -10 : -1;
       const next = selectedIds.reduce(

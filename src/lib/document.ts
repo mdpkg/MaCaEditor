@@ -325,6 +325,29 @@ export function updateFileContent(
   };
 }
 
+export function updateRenderedDiagram(
+  state: DocumentState, sourcePath: string, renderedPath: string, source: string, svg: string,
+): DocumentState {
+  if (sourcePath === renderedPath) throw new Error(`Invalid rendered path: ${renderedPath}`);
+  const files = state.files.map((file) => {
+    if (file.path === sourcePath) return { ...file, content: source };
+    if (file.path === renderedPath) return { ...file, content: svg, is_text: true, base64: null };
+    return file;
+  });
+  if (!files.some((file) => file.path === renderedPath)) {
+    const path = validateNewPackagePath(renderedPath);
+    assertNoFileAncestor(state, path);
+    if (path !== renderedPath || pathExists(state, path)) throw new Error(`Invalid rendered path: ${renderedPath}`);
+    files.push({ path, content: svg, is_text: true, base64: null });
+  }
+  return {
+    ...state,
+    dirty: true,
+    files,
+    staleResources: state.staleResources?.filter((path) => path !== renderedPath),
+  };
+}
+
 export function addImage(
   state: DocumentState,
   fileName: string,

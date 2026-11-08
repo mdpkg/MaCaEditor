@@ -3,6 +3,10 @@ import type { DocumentState } from "./document";
 
 export type HistoryDirection = "undo" | "redo";
 export type TextEditGroup = object;
+export interface EditHistoryFocus {
+  path: string;
+  mode: "drawing" | "plantuml" | "mermaid";
+}
 
 interface TextChange {
   from: number;
@@ -31,7 +35,7 @@ function metadata(state: DocumentState) {
 
 export type EditHistoryEntry =
   | { kind: "text"; label: string; path: string; change: TextChange; beforeStale: string[] | undefined; afterStale: string[] | undefined }
-  | { kind: "files"; label: string; files: FileChange[]; before: ReturnType<typeof metadata>; after: ReturnType<typeof metadata> };
+  | { kind: "files"; label: string; focus?: EditHistoryFocus; files: FileChange[]; before: ReturnType<typeof metadata>; after: ReturnType<typeof metadata> };
 
 export interface EditHistory {
   entries: EditHistoryEntry[];
@@ -75,6 +79,7 @@ export function sameSavedContent(current: DocumentState, saved: DocumentState): 
 
 export function textHistoryEntry(
   path: string, before: string, after: string, beforeStale: string[] | undefined, afterStale: string[] | undefined,
+  label = path,
 ): EditHistoryEntry {
   let from = 0;
   while (from < Math.min(before.length, after.length) && before[from] === after[from]) from++;
@@ -85,7 +90,7 @@ export function textHistoryEntry(
     afterEnd--;
   }
   return {
-    kind: "text", label: path, path, beforeStale, afterStale,
+    kind: "text", label, path, beforeStale, afterStale,
     change: {
       from, before: before.slice(from, beforeEnd), after: after.slice(from, afterEnd),
       beforeLength: before.length, afterLength: after.length,
@@ -93,7 +98,9 @@ export function textHistoryEntry(
   };
 }
 
-export function fileHistoryEntry(current: DocumentState, next: DocumentState, label: string): EditHistoryEntry | undefined {
+export function fileHistoryEntry(
+  current: DocumentState, next: DocumentState, label: string, focus?: EditHistoryFocus,
+): EditHistoryEntry | undefined {
   const beforeFiles = new Map(current.files.map((file, index) => [file.path, { file, index }]));
   const afterFiles = new Map(next.files.map((file, index) => [file.path, { file, index }]));
   const files: FileChange[] = [];
@@ -105,7 +112,7 @@ export function fileHistoryEntry(current: DocumentState, next: DocumentState, la
   const before = metadata(current);
   const after = metadata(next);
   if (files.length === 0 && sameJson(before, after)) return;
-  return { kind: "files", label, files, before, after };
+  return { kind: "files", label, focus, files, before, after };
 }
 
 export function applyEditHistoryEntry(current: DocumentState, entry: EditHistoryEntry, direction: HistoryDirection): DocumentState {

@@ -1,4 +1,4 @@
-import type { DocumentState } from "../document";
+import { updateRenderedDiagram, type DocumentState } from "../document";
 import type { DrawingDocument } from "@maca/drawing-core";
 import { DEFAULT_DRAWING_DIR, generateDrawingFiles, nextDrawingName } from "./integration";
 import { insertMarkdownImages } from "../markdown";
@@ -107,6 +107,8 @@ export function saveDrawingToDocument(
   doc: DrawingDocument,
 ): DocumentState {
   const files = generateDrawingFiles(doc, dirOf(drawPath), nameOf(drawPath));
+  const resource = findResourceBySource(state.manifest, drawPath);
+  if (resource) return updateRenderedDiagram(state, drawPath, resource.rendered, files.drawContent, files.svgContent);
   return {
     ...state,
     dirty: true,
@@ -114,7 +116,7 @@ export function saveDrawingToDocument(
       if (f.path === drawPath) {
         return { ...f, content: files.drawContent };
       }
-      if (f.path === files.svgPath) {
+      if (f.path === files.svgPath.replace(/^\//, "")) {
         return { ...f, content: files.svgContent };
       }
       return f;
