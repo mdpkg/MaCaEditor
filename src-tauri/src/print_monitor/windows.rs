@@ -135,32 +135,32 @@ fn monitor_session(requests: &mpsc::Receiver<Request>, first: Request) -> io::Re
             }
             now.duration_since(*received) < EVENT_GRACE
         });
-        pending.retain(|title, print| {
-            let job = jobs
-                .values()
-                .find(|job| title_matches(&job.document, title));
-            if let Some(job) = job {
-                if let Some(ended) = job.ended {
-                    return now.duration_since(ended) < EVENT_GRACE;
-                }
-                if job.status & JOB_STATUS_ERROR != 0
-                    && !job.status_text.is_empty()
-                    && now.duration_since(job.status_since) >= EVENT_GRACE
-                {
-                    let _ = print.channel.send(job.status_text.clone());
-                    return false;
-                }
-                true
-            } else {
-                now.duration_since(print.started) < PREVIEW_TIMEOUT
-            }
-        });
-        jobs.retain(|_, job| {
-            job.ended
-                .is_none_or(|ended| now.duration_since(ended) < EVENT_GRACE)
-        });
+        update_pending_jobs(&mut pending, &jobs, now);
+        jobs.retain(|_, job| job.ended.is_none() || job.awaiting_failure_event(now));
     }
     Ok(())
+}
+
+fn update_pending_jobs(pending: &mut Pending, jobs: &HashMap<u32, Job>, now: Instant) {
+    pending.retain(|title, print| {
+        let Some(job) = jobs.values().find(|job| title_matches(&job.document, title)) else {
+            return now.duration_since(print.started) < PREVIEW_TIMEOUT;
+        };
+        // Give PrintService a chance to provide the original failure record first.
+        if job.awaiting_failure_event(now) {
+            return true;
+        }
+        if job.status & JOB_STATUS_ERROR != 0 && job.status & JOB_STATUS_PRINTED == 0 {
+            let detail = if job.status_text.trim().is_empty() {
+                format!("JOB_STATUS_ERROR (Status 0x{:08X})", job.status)
+            } else {
+                job.status_text.clone()
+            };
+            let _ = print.channel.send(detail);
+            return false;
+        }
+        job.ended.is_none()
+    });
 }
 
 fn title_matches(document: &str, title: &str) -> bool {
@@ -193,6 +193,11 @@ impl Job {
             status_since: now,
             ended: None,
         }
+    }
+
+    fn awaiting_failure_event(&self, now: Instant) -> bool {
+        let since = self.ended.map_or(self.status_since, |ended| ended.max(self.status_since));
+        now.duration_since(since) < EVENT_GRACE
     }
 }
 
@@ -529,6 +534,68 @@ mod tests {
     use super::*;
 
     const TITLE: &str = "MaCa-1234567890abcdef12345678";
+
+    #[test]
+    fn reports_queue_error_after_grace_even_without_status_text() {
+        for (text, status, expected) in [
+            ("", JOB_STATUS_ERROR, "JOB_STATUS_ERROR (Status 0x00000002)"),
+            (" \r\n", JOB_STATUS_ERROR | JOB_STATUS_DELETED, "JOB_STATUS_ERROR (Status 0x00000102)"),
+            ("Driver status message", JOB_STATUS_ERROR, "Driver status message"),
+        ] {
+            let now = Instant::now();
+            let (tx, rx) = mpsc::channel();
+            let mut pending = Pending::from([(
+                TITLE.to_owned(),
+                PendingPrint {
+                    channel: Channel::new(move |body| {
+                        tx.send(body.deserialize::<String>()?).unwrap();
+                        Ok(())
+                    }),
+                    started: now,
+                },
+            )]);
+            let mut job = Job::new(now);
+            job.document = format!("{TITLE} — example.mdpkg");
+            job.status = status;
+            job.status_text = text.to_owned();
+            if status & JOB_STATUS_DELETED != 0 {
+                job.ended = Some(now);
+            }
+            let jobs = HashMap::from([(1, job)]);
+
+            update_pending_jobs(&mut pending, &jobs, now);
+            assert!(rx.try_recv().is_err());
+            assert!(pending.contains_key(TITLE));
+            update_pending_jobs(&mut pending, &jobs, now + EVENT_GRACE);
+            assert_eq!(rx.try_recv().unwrap(), expected);
+            assert!(pending.is_empty());
+        }
+    }
+
+    #[test]
+    fn ignores_cancelled_and_printed_jobs_and_errors_from_other_documents() {
+        let now = Instant::now();
+        for (document, status, ended, keep_pending) in [
+            (TITLE, JOB_STATUS_DELETED, Some(now), false),
+            (TITLE, JOB_STATUS_ERROR | JOB_STATUS_PRINTED, Some(now), false),
+            ("Other document", JOB_STATUS_ERROR, None, true),
+        ] {
+            let mut pending = Pending::from([(
+                TITLE.to_owned(),
+                PendingPrint {
+                    channel: Channel::new(|_| panic!("unexpected print error")),
+                    started: now,
+                },
+            )]);
+            let mut job = Job::new(now);
+            job.document = document.to_owned();
+            job.status = status;
+            job.ended = ended;
+
+            update_pending_jobs(&mut pending, &HashMap::from([(1, job)]), now + EVENT_GRACE);
+            assert_eq!(pending.contains_key(TITLE), keep_pending);
+        }
+    }
 
     #[test]
     fn associates_renamed_failure_only_with_a_unique_matching_job() {
