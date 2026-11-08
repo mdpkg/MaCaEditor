@@ -83,16 +83,18 @@ pub(super) fn mark_published(
     }
     Ok(tx.execute(
         "UPDATE reclaim_batch SET request_count = ?1
-         WHERE request_id BETWEEN ?2 AND ?3 AND request_count IS NULL",
+         WHERE request_id BETWEEN ?2 AND ?3",
         params![request_count as i64, first_request, last_request],
     )? != 0)
 }
 
-pub(super) fn write_measurement(db: &mut Connection, released: Option<u64>) -> Result<()> {
+pub(super) fn write_measurement(path: &Path, released: Option<u64>) -> Result<()> {
+    let mut db = Connection::open(path)?;
     let tx = db.transaction()?;
     let mut blob = tx.blob_open("main", "reclaim_batch", "released_bytes", 1, false)?;
     blob.write_at(&released.unwrap_or(UNMEASURED).to_le_bytes(), 0)?;
     blob.close()?;
     tx.commit()?;
+    db.close().map_err(|(_, error)| error)?;
     Ok(())
 }
