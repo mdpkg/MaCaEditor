@@ -330,7 +330,7 @@ pub async fn clear_saved_edit_history(
     app: AppHandle,
     path: String,
     kind: String,
-) -> Result<(), String> {
+) -> Result<saved_history::ClearOutcome, String> {
     if !matches!(kind.as_str(), "package" | "folder") {
         return Err("unsupported edit history document kind".into());
     }

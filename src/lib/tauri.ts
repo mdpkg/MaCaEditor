@@ -7,6 +7,7 @@ import type {
   AiConfig,
   AiRequest,
   AiStreamEvent,
+  ClearEditHistoryOutcome,
   FolderSaveRequest,
   ImportedFile,
   ImportedImage,
@@ -37,7 +38,7 @@ export function saveFolder(request: FolderSaveRequest): Promise<SaveOutcome> {
   return saveWithEditHistory("save_folder", request);
 }
 
-export function clearSavedEditHistory(path: string, kind: "package" | "folder"): Promise<void> {
+export function clearSavedEditHistory(path: string, kind: "package" | "folder"): Promise<ClearEditHistoryOutcome> {
   return invoke("clear_saved_edit_history", { path, kind });
 }
 
