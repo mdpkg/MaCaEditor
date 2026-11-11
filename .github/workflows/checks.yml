@@ -1,4 +1,4 @@
-name: Frontend checks
+name: Checks
 
 on:
   pull_request:
@@ -17,4 +17,13 @@ jobs:
       - run: npm ci
       - run: npm run check:architecture
       - run: npm test
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: npm run test:browser
       - run: npm run build
+
+  rust-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
