@@ -28,7 +28,7 @@ use windows::{
     },
 };
 
-use crate::commands::supported_image_extension;
+use crate::image_formats::supported_image_extension;
 
 #[derive(Default)]
 pub struct ImageDropState(AtomicBool);

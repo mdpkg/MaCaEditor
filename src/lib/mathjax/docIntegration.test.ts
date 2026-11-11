@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { DocumentState } from "../document";
+import { updateFileContent, type DocumentState } from "../document";
 import {
   DEFAULT_MATHJAX_SOURCE,
   addMathJaxToDocument,
@@ -52,5 +52,18 @@ describe("MathJax document integration", () => {
     expect(updated.files.find((file) => file.path === added.svgPath)?.content).toBe("<svg>second</svg>");
     expect(findMathJaxResourceBySource(updated.manifest, added.sourcePath)?.rendered).toBe(added.svgPath);
     expect(findMathJaxResourceByRendered(updated.manifest, added.svgPath)?.source).toBe(added.sourcePath);
+  });
+});
+
+
+test("saving MathJax clears stale state and recreates a missing rendered SVG", () => {
+  const added = addMathJaxToDocument(state(), "x", "<svg>old</svg>", "MathJax");
+  const edited = updateFileContent(added.state, added.sourcePath, "y");
+  expect(edited.staleResources).toContain(added.svgPath);
+  const missingSvg = { ...edited, files: edited.files.filter((file) => file.path !== added.svgPath) };
+  const updated = saveMathJaxToDocument(missingSvg, added.sourcePath, "y", "<svg>new</svg>");
+  expect(updated.staleResources).not.toContain(added.svgPath);
+  expect(updated.files.find((file) => file.path === added.svgPath)).toMatchObject({
+    content: "<svg>new</svg>", is_text: true, base64: null,
   });
 });

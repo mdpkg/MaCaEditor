@@ -1,19 +1,16 @@
 import type { DocumentState } from "./document";
-import type { EditCheckpoint } from "../types";
+import type { EditCheckpoint, FolderSaveRequest, SaveOutcome, SaveRequest } from "../types";
 import { markSaved, toFolderSaveRequest, toSaveRequest } from "./document";
-import { exportPackage, saveFolder, savePackage } from "./tauri";
 
 export interface PersistenceCommands {
-  savePackage: typeof savePackage;
-  saveFolder: typeof saveFolder;
-  exportPackage: typeof exportPackage;
+  savePackage(request: SaveRequest): Promise<SaveOutcome>;
+  saveFolder(request: FolderSaveRequest): Promise<SaveOutcome>;
+  exportPackage(request: SaveRequest): Promise<void>;
 }
-
-const commands: PersistenceCommands = { savePackage, saveFolder, exportPackage };
 
 export async function saveDocument(
   state: DocumentState,
-  persistence: PersistenceCommands = commands,
+  persistence: PersistenceCommands,
   editHistory?: EditCheckpoint,
   onHistoryWarning?: (warning: string) => void,
 ): Promise<DocumentState> {
@@ -42,7 +39,7 @@ export function applySavedBaseline(current: DocumentState, saved: DocumentState)
 export async function exportFolderDocumentPackage(
   state: DocumentState,
   path: string,
-  persistence: PersistenceCommands = commands,
+  persistence: PersistenceCommands,
 ): Promise<DocumentState> {
   if (state.origin.kind !== "folder") throw new Error("Document is not in Folder mode");
   await persistence.exportPackage({ ...toSaveRequest(state), path });

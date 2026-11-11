@@ -5,10 +5,12 @@ pub mod folder_document;
 pub mod folder_watcher;
 mod history_maintenance;
 mod history_transfer;
+mod history_storage;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 #[cfg(target_os = "macos")]
 mod macos_print;
+mod image_formats;
 pub mod manifest;
 pub mod package_file;
 pub mod package_loader;
@@ -79,7 +81,7 @@ pub fn run() {
         .manage(history_transfer::HistoryUpload::default())
         .setup(|app| {
             use tauri::Manager;
-            if let Ok(database) = commands::history_database(app.handle()) {
+            if let Ok(database) = history_storage::history_database(app.handle()) {
                 app.manage(history_maintenance::HistoryMaintenance::start(database));
             }
             #[cfg(desktop)]
