@@ -4,7 +4,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
+use crate::image_formats::supported_image_extension;
 use crate::history_transfer::HistoryUpload;
+use crate::history_storage::history_database;
 use crate::package_loader::{load_package, LoadedPackage};
 use crate::package_writer::write_package;
 use crate::saved_history::{self, EditCheckpoint, PendingCheckpoint};
@@ -85,10 +87,6 @@ pub fn read_image(path: String) -> Result<ImportedImage, String> {
         return Err(format!("unsupported image type: .{extension}"));
     }
     read_imported_file(&source)
-}
-
-pub(crate) fn supported_image_extension(extension: &str) -> bool {
-    matches!(extension, "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp")
 }
 
 #[tauri::command]
@@ -421,13 +419,6 @@ pub async fn delete_missing_saved_edit_histories(
 pub async fn get_history_reclaim_status(app: AppHandle) -> Option<crate::history_maintenance::ReclaimStatus> {
     let maintenance = app.try_state::<crate::history_maintenance::HistoryMaintenance>()?;
     maintenance.status().await
-}
-
-pub(crate) fn history_database(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
-        .map(|path| path.join("edit-history.sqlite3"))
-        .map_err(|error| error.to_string())
 }
 
 fn prioritize_history_save(app: &AppHandle) -> Option<crate::history_maintenance::SaveGuard> {

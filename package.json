@@ -12,7 +12,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:architecture": "node scripts/check-architecture.mjs"
   },
   "dependencies": {
     "@maca/drawing-core": "file:packages/drawing-core",
@@ -36,7 +37,10 @@
     "react-markdown": "^10.1.0",
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.9",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.1",
@@ -46,6 +50,8 @@
     "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
     "vite": "^6.0.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@types/mdast": "^4.0.4",
+    "@types/unist": "^3.0.3"
   }
 }

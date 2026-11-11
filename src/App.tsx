@@ -1,3 +1,4 @@
+import { useAppNotifications, errorDetail } from "./hooks/useAppNotifications";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { useStoredLayoutNumber } from "./lib/layoutPreferences";
 import { uiText } from "./lib/uiText";
@@ -27,12 +28,8 @@ import { PackageSearchDialog } from "./components/PackageSearchDialog";
 import { SynchronizedScrollView } from "./components/SynchronizedScrollView";
 import packageInfo from "../package.json";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.txt?raw";
-import {
-  NotificationBanners,
-  type BannerNotice,
-  type NotificationTone,
-} from "./components/NotificationBanners";
-import { NotificationHistoryDialog, type NotificationHistoryEntry } from "./components/NotificationHistoryDialog";
+import { NotificationBanners } from "./components/NotificationBanners";
+import { NotificationHistoryDialog } from "./components/NotificationHistoryDialog";
 import { SavedEditHistoriesDialog } from "./components/SavedEditHistoriesDialog";
 import type { DocumentState } from "./lib/document";
 import {
@@ -63,6 +60,8 @@ import {
   openFolder,
   clearSavedEditHistory,
   savePackage,
+  saveFolder,
+  exportPackage,
   readAttachment,
   readImage,
   saveAttachment,
@@ -168,16 +167,8 @@ const MarkdownTableEditor = lazy(() => import("./components/MarkdownTableEditor"
   default: module.MarkdownTableEditor,
 })));
 
-const fileOperationsRequiringErrorTranslation = new Set([
-  "Save", "Reload folder", "Export folder", "Export package", "Print", "Print monitoring",
-  "Add images", "Add attachments", "Download attachment", "Add image to drawing", "Move", "Save editor settings",
-].map(uiText));
+const persistenceCommands = { savePackage, saveFolder, exportPackage };
 const saveEditorSettingsOperation = uiText("Save editor settings");
-
-function errorDetail(reason: unknown): string {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  return message.trim() ? message : uiText("Unknown error");
-}
 
 type Mode = "preview" | "split" | "drawing" | "plantuml" | "mermaid" | "mathjax" | "table";
 
@@ -218,12 +209,10 @@ export default function App() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const [status, setStatus] = useState(uiText("Ready"));
-  const [error, setError] = useState<{
-    operation: string;
-    summary: string;
-    detail: string;
-    presentation: "banner" | "dismissed" | "details";
-  } | null>(null);
+  const {
+    error, notifications, notificationHistory, reportError, clearError, dismissError,
+    showNotification, dismissNotification, resetDocumentNotifications, showErrorDetails,
+  } = useAppNotifications(setStatus);
   const [drawingPath, setDrawingPath] = useState<string | null>(null);
   const [drawingDoc, setDrawingDoc] = useState<DrawingDocument | null>(null);
   const [plantUmlPath, setPlantUmlPath] = useState<string | null>(null);
@@ -240,8 +229,6 @@ export default function App() {
   const [drawingPreferences, setDrawingPreferences] = useState<DrawingPreferences>({
     gridVisible: true, snap: false, smartGuidesEnabled: true,
   });
-  const [notifications, setNotifications] = useState<BannerNotice[]>([]);
-  const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryEntry[]>([]);
   const [notificationHistoryOpen, setNotificationHistoryOpen] = useState(false);
   const [savedEditHistoriesOpen, setSavedEditHistoriesOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -276,7 +263,6 @@ export default function App() {
   const documentAreaRef = useRef<HTMLElement>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
   const [editorSelection, setEditorSelection] = useState<AiSelectionSnapshot | null>(null);
-  const notificationSequenceRef = useRef(0);
   const documentRef = useRef<DocumentState | null>(null);
   const documentSessionRef = useRef(0);
   const fileTaskRef = useRef(false);
@@ -330,8 +316,7 @@ export default function App() {
     typingRef.current = null;
     savedDocumentRef.current = next.dirty ? null : next;
     setFolderConflict(false);
-    setError(null);
-    setNotifications((current) => current.filter((notice) => !notice.action));
+    resetDocumentNotifications();
     applyDocumentState(next);
 
   };
@@ -496,48 +481,6 @@ export default function App() {
     if (!value.trim() || /[\\/]/.test(value)) return uiText("Enter a name without path separators.");
     try { validateNewPackagePath(value); return null; } catch { return "ファイル名に使用できない文字が含まれています。"; }
   };
-
-  const recordNotification = useCallback((message: string, tone: NotificationTone, detail?: string) => {
-    const id = ++notificationSequenceRef.current;
-    const entry: NotificationHistoryEntry = { id, message, tone, detail, time: Date.now() };
-    setNotificationHistory((current) => [entry, ...current].slice(0, 50));
-    return id;
-  }, []);
-
-  const reportError = useCallback((operation: string, reason: unknown) => {
-    const detail = errorDetail(reason);
-    const firstLine = detail.trim().split(/\r?\n/, 1)[0];
-    const shortReason = firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
-    const translated = uiText(shortReason);
-    // File errors can contain Japanese paths or Windows messages alongside English text.
-    const localized = typeof translated === "string" && (
-      translated !== shortReason ||
-      (!fileOperationsRequiringErrorTranslation.has(operation) && /[ぁ-んァ-ヶ一-龠]/.test(translated))
-    );
-    const reasonText = localized ? translated : "詳しくは詳細欄を確認してください。";
-    const summary = `${uiText(operation)}に失敗しました。${reasonText}`;
-    recordNotification(summary, "error", detail);
-    setError({ operation, summary, detail, presentation: "banner" });
-    setStatus(summary);
-  }, [recordNotification]);
-
-  const clearError = useCallback((operation: string) => {
-    setError((current) => current?.operation === operation ? null : current);
-  }, []);
-
-  const dismissError = () => {
-    setError((current) => current && { ...current, presentation: "dismissed" });
-  };
-
-  const showNotification = (message: string, tone: NotificationTone, options?: Pick<BannerNotice, "action" | "detail">) => {
-    const id = recordNotification(message, tone, options?.detail);
-    const notice: BannerNotice = { id, message, tone, ...options };
-    setNotifications((current) => [...current, notice]);
-  };
-
-  const dismissNotification = useCallback((id: number) => {
-    setNotifications((current) => current.filter((notice) => notice.id !== id));
-  }, []);
 
   useEffect(() => {
     if (doc?.origin.kind !== "folder") {
@@ -780,7 +723,7 @@ export default function App() {
     let historyWarning;
     const saved = await saveDocument({
       ...snapshot, path: result, origin: { kind: "package", path: result }, folderSnapshot: undefined,
-    }, undefined, history, (warning) => { historyWarning = warning; });
+    }, persistenceCommands, history, (warning) => { historyWarning = warning; });
     if (isCurrentSession()) {
       finishSave(snapshot, saved, historyWarning);
     }
@@ -798,7 +741,7 @@ export default function App() {
       try {
         const history = captureEditCheckpoint(snapshot, editHistoryRef.current);
         let historyWarning;
-        const saved = await saveDocument(snapshot, undefined, history, (warning) => { historyWarning = warning; });
+        const saved = await saveDocument(snapshot, persistenceCommands, history, (warning) => { historyWarning = warning; });
         if (isCurrentSession()) finishSave(snapshot, saved, historyWarning);
       } catch (reason) {
         if (snapshot.origin.kind === "folder" && isCurrentSession() && blocksFolderSave(reason)) setFolderConflict(true);
@@ -1013,7 +956,7 @@ export default function App() {
     });
     if (typeof result !== "string" || !isCurrentSession()) return;
     const path = result.toLowerCase().endsWith(".mdpkg") ? result : `${result}.mdpkg`;
-    await exportFolderDocumentPackage(snapshot, path);
+    await exportFolderDocumentPackage(snapshot, path, persistenceCommands);
     if (isCurrentSession()) {
       setStatus(`${path} にパッケージを書き出しました`);
       clearError(uiText("Export package"));
@@ -2348,7 +2291,7 @@ export default function App() {
         location={doc?.origin.kind === "folder" ? doc.origin.path : undefined}
         onShowNotificationHistory={() => setNotificationHistoryOpen(true)}
         onShowErrorDetails={error && error.presentation !== "banner" ? () => {
-          setError((current) => current?.presentation === "dismissed" ? { ...current, presentation: "details" } : current);
+          showErrorDetails();
         } : undefined}
       />
       {notificationHistoryOpen && (

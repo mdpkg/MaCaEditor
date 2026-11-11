@@ -6,7 +6,7 @@ use tauri::{
 };
 use uuid::Uuid;
 
-use crate::{commands::history_database, saved_history};
+use crate::{history_storage::history_database, saved_history};
 
 pub const CHUNK_BYTES: usize = 3 * 1024 * 1024;
 
