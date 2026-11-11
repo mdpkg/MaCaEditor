@@ -17,21 +17,6 @@ describe("attached Markdown preview theme", () => {
   });
 });
 
-describe("image sizing styles", () => {
-  it.each([".markdown-preview img", ".drawing-image svg", ".binary-view img"])(
-    "preserves aspect ratio for %s",
-    (selector) => {
-      const start = styles.indexOf(`${selector} {`);
-      const block = start >= 0 ? styles.slice(start, styles.indexOf("}", start)) : "";
-      expect(block).toContain("max-width: 100%");
-      expect(block).toContain("max-height: 70vh");
-      expect(block).toContain("width: auto");
-      expect(block).toContain("height: auto");
-      expect(block).toContain("object-fit: contain");
-    },
-  );
-});
-
 describe("Markdown preview media overlay", () => {
   it("fills the window and contains enlarged media without distortion", () => {
     const overlayStart = styles.indexOf(".preview-media-overlay {");

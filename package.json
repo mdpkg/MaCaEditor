@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:browser": "node --test tests/browser/image-sizing.mjs",
     "check:architecture": "node scripts/check-architecture.mjs"
   },
   "dependencies": {
@@ -48,6 +49,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^29.1.1",
+    "playwright": "^1.65.0",
     "typescript": "^5.6.3",
     "vite": "^6.0.3",
     "vitest": "^2.1.8",
