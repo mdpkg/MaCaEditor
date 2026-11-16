@@ -5,7 +5,7 @@ export type HistoryDirection = "undo" | "redo";
 export type TextEditGroup = object;
 export interface EditHistoryFocus {
   path: string;
-  mode: "drawing" | "plantuml" | "mermaid";
+  mode: "split" | "drawing" | "plantuml" | "mermaid";
 }
 
 interface TextChange {

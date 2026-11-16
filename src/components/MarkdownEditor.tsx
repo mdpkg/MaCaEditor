@@ -1,8 +1,9 @@
 import { CodeEditor } from "./CodeEditor";
+import type { ComponentProps } from "react";
 import type { AiTaskKind } from "../lib/aiSelection";
 import type { HistoryDirection, TextEditGroup } from "../lib/editHistory";
 
-interface Props {
+interface Props extends Pick<ComponentProps<typeof CodeEditor>, "onImagePaste" | "onImagePasteError"> {
   value: string;
   onChange: (value: string, group?: TextEditGroup) => void;
   onHistory?: (direction: HistoryDirection) => void;
@@ -21,7 +22,7 @@ interface Props {
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
-export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges }: Props) {
+export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onImagePaste, onImagePasteError, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
@@ -36,6 +37,8 @@ export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onS
       ariaLabel="Markdown source"
       onAiSelection={onAiSelection}
       onPackagePathDrop={onPackagePathDrop}
+      onImagePaste={onImagePaste}
+      onImagePasteError={onImagePasteError}
       onMarkdownLinkOpen={onMarkdownLinkOpen}
       initialCursorPosition={initialCursorPosition}
       initialScrollTop={initialScrollTop}

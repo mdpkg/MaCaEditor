@@ -386,10 +386,10 @@ function addBinaryAsset(
   const dot = safeName.lastIndexOf(".");
   const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
   const extension = dot > 0 ? safeName.slice(dot) : "";
-  const used = new Set(state.files.map((file) => file.path.toLowerCase()));
   let path = `${directory}/${safeName}`;
+  assertNoFileAncestor(state, path);
   let suffix = 2;
-  while (used.has(path.toLowerCase())) {
+  while (pathExists(state, path)) {
     path = `${directory}/${stem}-${suffix}${extension}`;
     suffix += 1;
   }

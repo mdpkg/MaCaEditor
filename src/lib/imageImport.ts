@@ -25,3 +25,30 @@ export async function droppedFileToImage(file: File): Promise<ImportedImage> {
     base64: toBase64(new Uint8Array(await file.arrayBuffer())),
   };
 }
+
+const clipboardImageExtensions = new Map([
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/gif", "gif"],
+  ["image/webp", "webp"],
+  ["image/bmp", "bmp"],
+]);
+
+export async function clipboardBlobToImage(blob: Blob): Promise<ImportedImage> {
+  const extension = clipboardImageExtensions.get(blob.type);
+  if (!extension) throw new Error(`Unsupported image type: ${blob.type}`);
+  return {
+    file_name: `pasted-image.${extension}`,
+    base64: toBase64(new Uint8Array(await blob.arrayBuffer())),
+  };
+}
+
+export async function readImageOrTextClipboard(clipboard: Clipboard): Promise<ImportedImage[] | string> {
+  const items = await clipboard.read?.().catch(() => []);
+  const images = (items ?? []).flatMap((item) => {
+    const type = item.types.find((candidate) => clipboardImageExtensions.has(candidate))
+      ?? item.types.find((candidate) => candidate.startsWith("image/"));
+    return type ? [item.getType(type).then(clipboardBlobToImage)] : [];
+  });
+  return images.length > 0 ? Promise.all(images) : clipboard.readText();
+}

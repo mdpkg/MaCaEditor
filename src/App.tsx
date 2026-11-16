@@ -1825,6 +1825,31 @@ export default function App() {
     }
   };
 
+  const handleImagePaste = (images: ImportedImage[], target: { from: number; to: number; content: string }) => {
+    const current = documentRef.current;
+    if (!current || !displayFile || !displayIsMarkdown || editorSession !== documentSessionRef.current) return;
+    const path = displayFile.path;
+    const markdown = current.files.find((file) => file.path === path && file.is_text)?.content;
+    if (markdown?.replace(/\r\n?/g, "\n") !== target.content) return;
+
+    let next = current;
+    const addedPaths: string[] = [];
+    for (const image of images) {
+      const added = addImage(next, image.file_name, image.base64, path);
+      next = added.state;
+      addedPaths.push(added.path);
+    }
+    const before = target.content.slice(0, target.from);
+    const after = target.content.slice(target.to);
+    const inserted = insertMarkdownImages(before + after, target.from, path, addedPaths);
+    const insert = inserted.content.slice(target.from, inserted.content.length - after.length);
+    next = updateFileContent(next, path, inserted.content);
+    recordDocumentOperation(next, uiText("Paste images"), { path, mode: "split" });
+    setStatus(`画像を ${images.length} 件貼り付けました`);
+    clearError(uiText("Paste images"));
+    return { insert, cursor: inserted.cursor };
+  };
+
   useEffect(() => {
     const area = documentAreaRef.current;
     if (!area) return;
@@ -2119,6 +2144,8 @@ export default function App() {
                     vimMode={vimMode}
                     onSave={handleSave}
                     onPackagePathDrop={handlePackagePathDrop}
+                    onImagePaste={displayIsMarkdown ? handleImagePaste : undefined}
+                    onImagePasteError={(reason) => reportError(uiText("Paste images"), reason)}
                     onMarkdownLinkOpen={(destination) => {
                       const target = resolveMarkdownLink(displayFile.path, destination, doc.files);
                       if (target && isMarkdownPath(target)) {

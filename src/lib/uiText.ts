@@ -468,6 +468,7 @@ const labels: Record<string, string> = {
   "Render PlantUML": "PlantUML の描画",
   "Render Mermaid": "Mermaid の描画",
   "Add images": "画像の追加",
+  "Paste images": "画像の貼り付け",
   "Add attachments": "添付ファイルの追加",
   "The attachment target is no longer available.": "添付先の Markdown ファイルが見つかりません。",
   "Download attachment": "添付ファイルの保存",

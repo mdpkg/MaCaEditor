@@ -14,6 +14,8 @@ import { PACKAGE_PATH_DRAG_TYPE, PACKAGE_PATH_POINTER_DROP, type PackagePathPoin
 import { historyShortcut, isDocumentSearchShortcut } from "../lib/shortcuts";
 import type { HistoryDirection, TextEditGroup } from "../lib/editHistory";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
+import { clipboardBlobToImage, readImageOrTextClipboard } from "../lib/imageImport";
+import type { ImportedImage } from "../types";
 
 interface Props {
   value: string;
@@ -28,6 +30,9 @@ interface Props {
   ariaLabel?: string;
   onAiSelection?: (task: AiTaskKind) => void;
   onPackagePathDrop?: (path: string, position: number) => void;
+  onImagePaste?: (images: ImportedImage[], target: { from: number; to: number; content: string }) =>
+    { insert: string; cursor: number } | undefined;
+  onImagePasteError?: (reason: unknown) => void;
   onMarkdownLinkOpen?: (destination: string) => void;
   initialCursorPosition?: number;
   initialScrollTop?: number;
@@ -126,6 +131,8 @@ export function CodeEditor({
   onSelectionChange,
   onAiSelection,
   onPackagePathDrop,
+  onImagePaste,
+  onImagePasteError,
   onMarkdownLinkOpen,
   initialCursorPosition = 0,
   initialScrollTop,
@@ -144,6 +151,9 @@ export function CodeEditor({
   const onAiSelectionRef = useRef(onAiSelection);
   const onSaveRef = useRef(onSave);
   const onPackagePathDropRef = useRef(onPackagePathDrop);
+  const onImagePasteRef = useRef(onImagePaste);
+  const onImagePasteErrorRef = useRef(onImagePasteError);
+  const pendingPastesRef = useRef(new Set<{ from: number; to: number }>());
   const onMarkdownLinkOpenRef = useRef(onMarkdownLinkOpen);
   const [contextMenu, setContextMenu] = useState<{ from: number; to: number; x: number; y: number } | null>(null);
   const vimCompartmentRef = useRef(new Compartment());
@@ -162,7 +172,38 @@ export function CodeEditor({
   onAiSelectionRef.current = onAiSelection;
   onSaveRef.current = onSave;
   onPackagePathDropRef.current = onPackagePathDrop;
+  onImagePasteRef.current = onImagePaste;
+  onImagePasteErrorRef.current = onImagePasteError;
   onMarkdownLinkOpenRef.current = onMarkdownLinkOpen;
+
+  const pasteFromClipboard = async (
+    view: EditorView,
+    { from, to }: { from: number; to: number },
+    read: () => Promise<ImportedImage[] | string>,
+  ) => {
+    const range = { from, to };
+    const pending = pendingPastesRef.current;
+    pending.add(range);
+    try {
+      const clipboard = await read();
+      if (!pending.delete(range) || viewRef.current !== view) return;
+      if (typeof clipboard === "string") {
+        view.dispatch({ changes: { ...range, insert: clipboard }, userEvent: "input.paste" });
+        return;
+      }
+      const result = onImagePasteRef.current?.(clipboard, { ...range, content: view.state.doc.toString() });
+      if (result) view.dispatch({
+        changes: { ...range, insert: result.insert },
+        selection: { anchor: result.cursor },
+        annotations: controlledChange.of(true),
+        scrollIntoView: true,
+      });
+    } catch (reason) {
+      if (viewRef.current === view) onImagePasteErrorRef.current?.(reason);
+    } finally {
+      pending.delete(range);
+    }
+  };
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -187,6 +228,14 @@ export function CodeEditor({
     };
     const extensions = [
       Prec.highest(EditorView.domEventHandlers({
+        paste: (event, view) => {
+          if (!onImagePasteRef.current || !event.clipboardData || !view.contentDOM.contains(event.target as Node)) return false;
+          const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+          if (images.length === 0) return false;
+          finishComposition(view);
+          void pasteFromClipboard(view, view.state.selection.main, () => Promise.all(images.map(clipboardBlobToImage)));
+          return true;
+        },
         keydown: (event, view) => {
           if (event.isComposing) return false;
           finishComposition(view);
@@ -244,6 +293,12 @@ export function CodeEditor({
       navigationHighlight,
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": uiText(ariaLabel) })] : []),
       EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          for (const range of pendingPastesRef.current) {
+            range.from = update.changes.mapPos(range.from, 1);
+            range.to = Math.max(range.from, update.changes.mapPos(range.to, -1));
+          }
+        }
         const edits = update.transactions.filter((tr) => tr.docChanged && !tr.annotation(controlledChange));
         if (edits.length > 0) {
           const { view, state } = update;
@@ -350,6 +405,7 @@ export function CodeEditor({
       });
     }
     return () => {
+      pendingPastesRef.current.clear();
       if (scrollFrameRef.current !== null) {
         cancelAnimationFrame(scrollFrameRef.current);
         scrollFrameRef.current = null;
@@ -387,6 +443,7 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === value) return;
+    pendingPastesRef.current.clear();
     const head = Math.min(view.state.selection.main.head, value.length);
     const { scrollTop, scrollLeft } = view.scrollDOM;
     view.dispatch({
@@ -470,10 +527,11 @@ export function CodeEditor({
   const paste = () => {
     const view = viewRef.current;
     const menu = contextMenu;
-    if (!view || !menu) return;
-    void navigator.clipboard?.readText().then((text) => {
-      view.dispatch({ changes: { from: menu.from, to: menu.to, insert: text } });
-    });
+    const clipboard = navigator.clipboard;
+    if (!view || !menu || !clipboard) return;
+    void pasteFromClipboard(view, menu, () => onImagePasteRef.current
+      ? readImageOrTextClipboard(clipboard)
+      : clipboard.readText());
     closeMenu();
   };
 

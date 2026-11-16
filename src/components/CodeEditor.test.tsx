@@ -14,6 +14,37 @@ afterEach(() => {
 });
 
 describe("CodeEditor", () => {
+  test("intercepts image paste and tracks the selected range while reading the clipboard", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const insert = "![image](images/image.png)";
+    const onImagePaste = vi.fn(() => ({ insert, cursor: 3 + insert.length }));
+    act(() => root.render(<CodeEditor value="A replace Z" onChange={onChange} onImagePaste={onImagePaste} />));
+    try {
+      const view = EditorView.findFromDOM(host.querySelector<HTMLElement>(".cm-editor")!)!;
+      const image = new File([new Uint8Array([1, 2, 3])], "image.png", { type: "image/png" });
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: { files: [image] } });
+      await act(async () => {
+        view.dispatch({ selection: { anchor: 2, head: 9 } });
+        view.contentDOM.dispatchEvent(event);
+        view.dispatch({ changes: { from: 0, insert: "!" } });
+      });
+      expect(event.defaultPrevented).toBe(true);
+      expect(onImagePaste).toHaveBeenCalledWith(
+        [{ file_name: "pasted-image.png", base64: "AQID" }],
+        { from: 3, to: 10, content: "!A replace Z" },
+      );
+      expect(view.state.doc.toString()).toBe("!A ![image](images/image.png) Z");
+      expect(view.state.selection.main.head).toBe(3 + insert.length);
+      expect(onChange.mock.calls).toEqual([["!A replace Z"]]);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   test("routes document history through the host in standard and Vim modes", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
