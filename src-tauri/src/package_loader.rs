@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
 
@@ -8,6 +7,7 @@ use crate::package_validation::{
     validate_entrypoint_exists, validate_manifest, validate_paths, ValidationError,
 };
 use crate::path_validator::{validate_package_path, PathError};
+use crate::bounded_io::{read_limited, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_FILES, MAX_FILE_BYTES};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
@@ -35,9 +35,9 @@ pub enum LoadError {
     SuspiciousCompressionRatio,
 }
 
-const MAX_ARCHIVE_ENTRIES: usize = 10_000;
-const MAX_FILE_UNCOMPRESSED_SIZE: u64 = 128 * 1024 * 1024;
-const MAX_ARCHIVE_UNCOMPRESSED_SIZE: u64 = 512 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = MAX_DOCUMENT_FILES;
+const MAX_FILE_UNCOMPRESSED_SIZE: u64 = MAX_FILE_BYTES;
+const MAX_ARCHIVE_UNCOMPRESSED_SIZE: u64 = MAX_DOCUMENT_BYTES;
 const MIN_RATIO_CHECK_SIZE: u64 = 1024 * 1024;
 const MAX_COMPRESSION_RATIO: u64 = 1_000;
 
@@ -74,6 +74,10 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(LoadError::NotZip)?;
 
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(LoadError::TooManyEntries(archive.len()));
+    }
+
     let sizes = (0..archive.len()).map(|index| {
         let entry = archive.by_index(index).map_err(LoadError::NotZip)?;
         Ok((entry.size(), entry.compressed_size()))
@@ -93,6 +97,8 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
             }
         })?;
         let collision_key = path_to_validate.replace('\\', "/").nfc().collect::<String>();
+        #[cfg(windows)]
+        let collision_key = collision_key.to_lowercase();
         if !normalized_paths.insert(collision_key) {
             return Err(LoadError::DuplicatePath(name));
         }
@@ -108,15 +114,14 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
         .map(|(index, _)| *index)
         .ok_or(LoadError::MissingManifest)?;
 
-    let mut manifest_bytes = Vec::new();
-    {
-        let mut entry = archive
+    let manifest_bytes = {
+        let entry = archive
             .by_index(manifest_index)
             .map_err(LoadError::NotZip)?;
-        entry
-            .read_to_end(&mut manifest_bytes)
-            .map_err(|e| LoadError::ReadFailed("manifest.json".to_string(), e.to_string()))?;
-    }
+        read_limited(entry, MAX_FILE_UNCOMPRESSED_SIZE)
+            .map_err(|e| LoadError::ReadFailed("manifest.json".to_string(), e.to_string()))?
+    };
+    let mut actual_total = manifest_bytes.len() as u64;
 
     let manifest_json = String::from_utf8(manifest_bytes).map_err(|e| {
         LoadError::InvalidManifest(ManifestError::InvalidJson(serde_json::Error::io(
@@ -136,11 +141,11 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
         if name.replace('\\', "/") == "manifest.json" {
             continue;
         }
-        let mut entry = archive.by_index(*i).map_err(LoadError::NotZip)?;
-        let mut content = Vec::new();
-        entry
-            .read_to_end(&mut content)
+        let entry = archive.by_index(*i).map_err(LoadError::NotZip)?;
+        let limit = MAX_FILE_UNCOMPRESSED_SIZE.min(MAX_ARCHIVE_UNCOMPRESSED_SIZE - actual_total);
+        let content = read_limited(entry, limit)
             .map_err(|e| LoadError::ReadFailed(name.clone(), e.to_string()))?;
+        actual_total += content.len() as u64;
 
         let file = if is_text_path(name) {
             match String::from_utf8(content.clone()) {
@@ -412,5 +417,24 @@ mod tests {
             validate_archive_limits(&[(MIN_RATIO_CHECK_SIZE, MIN_RATIO_CHECK_SIZE / (MAX_COMPRESSION_RATIO + 1))]),
             Err(LoadError::SuspiciousCompressionRatio)
         ));
+    }
+
+    #[test]
+    fn bounds_inflation_even_when_the_zip_declares_a_smaller_size() {
+        let mut bytes = build_zip(&[("payload.txt", &vec![b'a'; 64 * 1024])]);
+        let central = bytes.windows(4).position(|v| v == b"PK\x01\x02").unwrap();
+        bytes[central + 24..central + 28].copy_from_slice(&1_u32.to_le_bytes());
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let entry = archive.by_index(0).unwrap();
+        assert_eq!(entry.size(), 1);
+        assert!(read_limited(entry, 1024).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_names_that_would_overwrite_the_same_windows_file() {
+        let manifest = br#"{"format":"mdpkg","version":"2.0","entrypoint":"index.md"}"#;
+        let zip = build_zip(&[("manifest.json", manifest), ("index.md", b"# Index"), ("Manifest.json", b"other")]);
+        assert!(matches!(load_package(&zip), Err(LoadError::DuplicatePath(_))));
     }
 }

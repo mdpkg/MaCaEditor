@@ -7,6 +7,7 @@ export async function renderMermaid(source: string): Promise<string> {
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
+      flowchart: { htmlLabels: false },
       suppressErrorRendering: true,
     });
     initialized = true;

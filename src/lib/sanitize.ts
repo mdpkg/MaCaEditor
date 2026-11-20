@@ -1,65 +1,76 @@
-/**
- * Markdown 内の raw HTML から危険な要素を取り除く。
- * 任意 JavaScript の実行を防ぐ。
- */
-export function sanitizeHtml(html: string): string {
-  // SVG は image/svg+xml としてパースして名前空間を保持する。
-  // text/html でパースすると SVG 要素が HTML 名前空間に入り、描画されなくなるため。
-  const trimmed = html.trim();
-  const isSvg = /^<svg[\s>]/.test(trimmed);
-  if (isSvg) {
-    const doc = new DOMParser().parseFromString(trimmed, "image/svg+xml");
+import createDOMPurify from "dompurify";
 
-    // パースエラー（parsererror）が返った場合は空文字にする
-    if (doc.querySelector("parsererror")) return "";
+const purifier = createDOMPurify(window);
 
-    // 危険な要素を削除
-    const dangerousTags = ["script", "foreignobject", "iframe", "object", "embed"];
-    for (const tag of dangerousTags) {
-      doc.querySelectorAll(tag).forEach((el) => el.remove());
-    }
-
-    // 危険な属性を削除
-    const dangerousAttrs = [/^on/i, /^javascript:/i];
-    for (const el of Array.from(doc.querySelectorAll("*"))) {
-      for (const attr of Array.from(el.attributes)) {
-        const name = attr.name;
-        const value = attr.value;
-        if (dangerousAttrs.some((re) => re.test(name) || re.test(value))) {
-          el.removeAttribute(name);
-        }
-      }
-    }
-
-    return doc.documentElement.outerHTML;
-  }
-
-  const doc = new DOMParser().parseFromString(html, "text/html");
-
-  // 危険な要素を削除
-  const dangerousTags = ["script", "iframe", "object", "embed"];
-  for (const tag of dangerousTags) {
-    doc.body.querySelectorAll(tag).forEach((el) => el.remove());
-  }
-
-  // 危険な属性を削除
-  const dangerousAttrs = [
-    /^on/i, // event handler attributes
-    /^javascript:/i,
-  ];
-  for (const el of Array.from(doc.body.querySelectorAll("*"))) {
-    for (const attr of Array.from(el.attributes)) {
-      const name = attr.name;
-      const value = attr.value;
-      if (dangerousAttrs.some((re) => re.test(name) || re.test(value))) {
-        el.removeAttribute(name);
-      }
-    }
-  }
-
-  return doc.body.innerHTML;
+function unsafeCss(value: string): boolean {
+  const withoutLocalReferences = value.replace(/url\(\s*["']?#[\w:.-]+["']?\s*\)/gi, "");
+  return /(?:url\s*\(|@|expression\s*\(|\\|\/\*)/i.test(withoutLocalReferences);
 }
 
-// Backward-compatible application export. The implementation belongs to the
-// framework-independent drawing package.
+// Exported diagrams use stylesheets for their colors and text. Copy only SVG
+// presentation properties onto matching elements before discarding stylesheets,
+// so a package stylesheet cannot affect the application UI.
+function inlineSvgStyles(root: Element): void {
+  const presentation = /^(?:fill(?:-opacity|-rule)?|stroke(?:-width|-opacity|-dasharray|-dashoffset|-linecap|-linejoin|-miterlimit)?|opacity|color|font-(?:family|size|weight|style)|text-anchor|dominant-baseline|marker-(?:start|mid|end)|visibility|display)$/;
+  const values = new Map<Element, string[]>();
+  for (const style of root.querySelectorAll("style")) {
+    const css = style.textContent ?? "";
+    if (unsafeCss(css)) continue;
+    // Only flat rules are supported; at-rules and escapes are excluded above.
+    for (const text of css.match(/[^{}]+\{[^{}]*\}/g) ?? []) {
+      try {
+        const sheet = new CSSStyleSheet();
+        sheet.insertRule(text);
+        const rule = sheet.cssRules[0] as CSSStyleRule;
+        if (!rule.selectorText || !rule.style) continue;
+        const declarations = [];
+        for (let index = 0; index < rule.style.length; index += 1) {
+          const name = rule.style[index];
+          const value = rule.style.getPropertyValue(name);
+          if (presentation.test(name) && !unsafeCss(value)) declarations.push(`${name}:${value}`);
+        }
+        const nodes = [...root.querySelectorAll(rule.selectorText)];
+        if (root.matches(rule.selectorText)) nodes.push(root);
+        for (const node of nodes) values.set(node, [...values.get(node) ?? [], ...declarations]);
+      } catch { /* Unsupported selectors or CSS rules do not enter the preview. */ }
+    }
+  }
+  for (const [node, declarations] of values) {
+    node.setAttribute("style", `${declarations.join(";")};${node.getAttribute("style") ?? ""}`);
+  }
+}
+
+// Retain diagram styles, while preventing stylesheet-based network requests.
+purifier.addHook("uponSanitizeAttribute", (node, data) => {
+  if (node.nodeName.toLowerCase() === "use" && /^(?:xlink:)?href$/.test(data.attrName) && !/^#[^\s]+$/.test(data.attrValue)) {
+    data.keepAttr = false;
+  }
+  if (data.attrName === "style" && unsafeCss(data.attrValue)) {
+    data.keepAttr = false;
+  }
+});
+purifier.addHook("uponSanitizeElement", (node) => {
+  if (node.nodeName.toLowerCase().split(":").pop() === "foreignobject") node.parentNode?.removeChild(node);
+});
+
+/** Sanitize HTML/SVG with DOMPurify's element, attribute and URL allowlists.
+ * foreignObject and embedded stylesheets are intentionally excluded from previews.
+ */
+export function sanitizeHtml(html: string): string {
+  const trimmed = html.trim();
+  if (/^<svg[\s>]/i.test(trimmed)) {
+    const doc = new DOMParser().parseFromString(trimmed, "image/svg+xml");
+    if (doc.querySelector("parsererror")) return "";
+    inlineSvgStyles(doc.documentElement);
+    html = doc.documentElement.outerHTML;
+  }
+  return purifier.sanitize(html, {
+    USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true },
+    ADD_TAGS: ["use"],
+    FORBID_TAGS: ["foreignObject", "style", "iframe", "object", "embed", "link", "meta", "base"],
+    FORBID_ATTR: ["srcdoc"],
+  });
+}
+
+// The image-source policy belongs to the framework-independent drawing package.
 export { sanitizeImageSrc } from "@maca/drawing-core";

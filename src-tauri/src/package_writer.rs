@@ -29,7 +29,7 @@ pub fn write_package(manifest: &Manifest, files: &[PackageFile]) -> Result<Vec<u
 
     // 各ファイルを書き込む
     // manifest.json は上で常に書き込むため、files に含まれている場合はスキップする
-    // （load_package は manifest.json を files に含めるため、そのまま保存すると重複する）
+    // 呼び出し元から manifest.json が渡されても重複させない。
     for file in files {
         if file.path.replace('\\', "/") == "manifest.json" {
             continue;

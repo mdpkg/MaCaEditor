@@ -9,23 +9,25 @@ const KEY_ENTRY: &str = "ai-api-key";
 
 /// AI 設定を保存する。
 /// API Key は keyring に保存し、設定 JSON には保存しない。
-pub fn save_ai_config(config: &AiConfig) -> Result<(), String> {
+pub fn save_ai_config(path: &Path, config: &AiConfig) -> Result<(), String> {
     validate_config(config).map_err(|e| e.to_string())?;
 
     // 設定本体（API Key を除く）を JSON として保存
     let mut persisted = config.clone();
     persisted.api_key = None;
     let json = serde_json::to_string_pretty(&persisted).map_err(|e| e.to_string())?;
-    let path = ai_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
 
     if let Some(key) = &config.api_key {
         let entry = keyring::Entry::new(SERVICE_NAME, KEY_ENTRY).map_err(|e| e.to_string())?;
         if key.trim().is_empty() {
-            return save_without_api_key(&path, &json, &entry);
+            return save_without_api_key(path, &json, &entry);
         }
         entry.set_password(key).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    crate::atomic_save::atomic_save(path, json.as_bytes()).map_err(|e| e.to_string())
 }
 
 fn save_without_api_key(path: &Path, json: &str, entry: &keyring::Entry) -> Result<(), String> {
@@ -39,7 +41,7 @@ fn save_without_api_key(path: &Path, json: &str, entry: &keyring::Entry) -> Resu
         Err(error) => return Err(error.to_string()),
     };
 
-    if let Err(error) = std::fs::write(path, json) {
+    if let Err(error) = crate::atomic_save::atomic_save(path, json.as_bytes()) {
         if let Some(secret) = previous_key {
             entry
                 .set_secret(&secret)
@@ -52,8 +54,8 @@ fn save_without_api_key(path: &Path, json: &str, entry: &keyring::Entry) -> Resu
 
 /// AI 設定を読み込む。
 /// API Key は keyring から取得する。
-pub fn load_ai_config() -> Result<AiConfig, String> {
-    let json = std::fs::read_to_string(ai_config_path()).map_err(|e| e.to_string())?;
+pub fn load_ai_config(path: &Path) -> Result<AiConfig, String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut config: AiConfig =
         serde_json::from_str(&json).map_err(|e| e.to_string())?;
     config.api_key = load_api_key();
@@ -61,8 +63,8 @@ pub fn load_ai_config() -> Result<AiConfig, String> {
 }
 
 /// Checks whether the saved settings can be used without reading the API key.
-pub fn has_ai_configuration() -> Result<bool, String> {
-    let json = match std::fs::read_to_string(ai_config_path()) {
+pub fn has_ai_configuration(path: &Path) -> Result<bool, String> {
+    let json = match std::fs::read_to_string(path) {
         Ok(json) => json,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.to_string()),
@@ -84,9 +86,8 @@ pub fn delete_api_key() -> Result<(), String> {
     entry.delete_credential().map_err(|e| e.to_string())
 }
 
-fn ai_config_path() -> PathBuf {
-    let dir = std::env::temp_dir();
-    dir.join("maca-editor-ai-config.json")
+pub fn ai_config_path(config_directory: &Path) -> PathBuf {
+    config_directory.join("ai-config.json")
 }
 
 #[cfg(test)]
@@ -94,8 +95,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_path_is_absolute() {
-        assert!(ai_config_path().is_absolute());
+    fn config_path_uses_the_application_directory() {
+        let dir = std::env::temp_dir().join("application-config");
+        assert_eq!(ai_config_path(&dir), dir.join("ai-config.json"));
+    }
+
+    #[test]
+    fn persists_configuration_in_a_created_application_directory() {
+        let root = std::env::temp_dir().join(format!("maca-config-{}", uuid::Uuid::new_v4()));
+        let path = ai_config_path(&root.join("settings"));
+        let config = AiConfig::new(
+            crate::ai::config::AiProviderKind::OpenAiCompatible,
+            "http://localhost:11434/v1".into(), None, "test-model".into(),
+            Some(0.7), Some(4096), Some(10), Some(300),
+        );
+        assert!(!has_ai_configuration(&path).unwrap());
+        save_ai_config(&path, &config).unwrap();
+        assert!(has_ai_configuration(&path).unwrap());
+        let persisted: AiConfig = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted.model, "test-model");
+        assert!(persisted.api_key.is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

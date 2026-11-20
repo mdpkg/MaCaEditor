@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::atomic_save::atomic_save;
+use crate::bounded_io::{read_file, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_FILES, MAX_FILE_BYTES};
 use crate::manifest::Manifest;
 use crate::package_file::PackageFile;
 use crate::package_validation::{validate_entrypoint_exists, validate_manifest, validate_paths};
@@ -126,7 +127,7 @@ fn load_folder_inner(path: &Path, own_save_directory: bool) -> Result<FolderDocu
     let manifest_path = root.join("manifest.json");
     let manifest_bytes = if manifest_path.is_file() {
         reject_link(&manifest_path)?;
-        Some(fs::read(&manifest_path)?)
+        Some(read_file(&manifest_path, MAX_FILE_BYTES)?)
     } else {
         None
     };
@@ -137,6 +138,8 @@ fn load_folder_inner(path: &Path, own_save_directory: bool) -> Result<FolderDocu
         &mut files,
         manifest_bytes.is_none(),
         &save_path,
+        &mut ReadBudget { bytes: manifest_bytes.as_ref().map_or(0, |v| v.len() as u64) },
+        0,
     )?;
     let (manifest, manifest_was_generated) = if let Some(bytes) = &manifest_bytes {
         let manifest_text = std::str::from_utf8(bytes)
@@ -233,13 +236,20 @@ fn ignored_inference_directory(path: &Path) -> bool {
     )
 }
 
+struct ReadBudget { bytes: u64 }
+
 fn collect(
     root: &Path,
     dir: &Path,
     files: &mut Vec<PackageFile>,
     ignore_generated_directories: bool,
     save_path: &Path,
+    budget: &mut ReadBudget,
+    depth: usize,
 ) -> Result<(), FolderError> {
+    if depth > 128 {
+        return Err(FolderError::Invalid("folder nesting exceeds the depth limit".into()));
+    }
     reject_link(dir)?;
     ensure_inside(root, dir)?;
     for entry in fs::read_dir(dir)? {
@@ -250,12 +260,13 @@ fn collect(
         }
         reject_link(&path)?;
         ensure_inside(root, &path)?;
-        if entry.file_type()?.is_dir() {
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
             if ignore_generated_directories && ignored_inference_directory(&path) {
                 continue;
             }
-            collect(root, &path, files, ignore_generated_directories, save_path)?;
-        } else if entry.file_type()?.is_file() {
+            collect(root, &path, files, ignore_generated_directories, save_path, budget, depth + 1)?;
+        } else if file_type.is_file() {
             let rel = path
                 .strip_prefix(root)
                 .map_err(|_| FolderError::Outside(path.display().to_string()))?;
@@ -264,7 +275,11 @@ fn collect(
             if rel == "manifest.json" {
                 continue;
             }
-            let bytes = fs::read(&path)?;
+            if files.len() >= MAX_DOCUMENT_FILES - 1 {
+                return Err(FolderError::Invalid("folder contains too many files".into()));
+            }
+            let bytes = read_file(&path, MAX_FILE_BYTES.min(MAX_DOCUMENT_BYTES - budget.bytes))?;
+            budget.bytes += bytes.len() as u64;
             let file = if crate::package_loader::is_text_path(&rel) {
                 match String::from_utf8(bytes.clone()) {
                     Ok(text) => PackageFile::new_text(rel, text),
@@ -282,8 +297,25 @@ fn collect(
 pub fn validate_document(manifest: &Manifest, files: &[PackageFile]) -> Result<(), FolderError> {
     validate_manifest(manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
     validate_paths(manifest).map_err(|e| FolderError::Invalid(e.to_string()))?;
+    let manifest_size = serde_json::to_vec_pretty(manifest)
+        .map_err(|e| FolderError::Invalid(e.to_string()))?.len() as u64;
+    let mut total = manifest_size;
+    if files.len() >= MAX_DOCUMENT_FILES || manifest_size > MAX_FILE_BYTES {
+        return Err(FolderError::Invalid("document exceeds the size or file count limit".into()));
+    }
+    let mut seen = std::collections::HashSet::new();
     for file in files {
         validate_package_path(&file.path).map_err(|_| FolderError::Outside(file.path.clone()))?;
+        let key = file.path.replace('\\', "/");
+        #[cfg(windows)]
+        let key = key.to_lowercase();
+        if key.eq_ignore_ascii_case("manifest.json") || !seen.insert(key) {
+            return Err(FolderError::Invalid(format!("duplicate or reserved path: {}", file.path)));
+        }
+        total = total.saturating_add(file.content.len() as u64);
+        if file.content.len() as u64 > MAX_FILE_BYTES || total > MAX_DOCUMENT_BYTES {
+            return Err(FolderError::Invalid("document exceeds the size limit".into()));
+        }
     }
     let paths = files.iter().map(|f| f.path.clone()).collect::<Vec<_>>();
     validate_entrypoint_exists(manifest, &paths)
@@ -683,13 +715,17 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn rejects_directory_symlinks_or_junctions() {
-        use std::os::windows::fs::symlink_dir;
-        let dir = valid_folder("symlink");
-        if symlink_dir(std::env::temp_dir(), dir.join("linked")).is_ok() {
-            assert!(matches!(load_folder(&dir), Err(FolderError::Link(_))));
-            fs::remove_dir(dir.join("linked")).unwrap();
-        }
+    fn rejects_actual_directory_junctions() {
+        let dir = valid_folder("junction");
+        let linked = dir.join("linked");
+        let result = std::process::Command::new("cmd")
+            .args(["/D", "/C", "mklink", "/J"])
+            .arg(&linked).arg(std::env::temp_dir()).output().unwrap();
+        assert!(result.status.success(), "junction creation failed: {}", String::from_utf8_lossy(&result.stderr));
+        let loaded = load_folder(&dir);
+        // Remove the junction itself, without traversing the target.
+        fs::remove_dir(&linked).unwrap();
+        assert!(matches!(loaded, Err(FolderError::Link(_))));
         fs::remove_dir_all(dir).unwrap();
     }
 }

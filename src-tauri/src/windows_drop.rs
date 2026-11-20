@@ -6,6 +6,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
+use tauri_plugin_fs::FsExt;
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller4;
 use windows::{
     core::{implement, Interface, Ref, Result, BOOL},
@@ -275,6 +276,16 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
         };
         if !set_effect(effect, true) {
             return Ok(());
+        }
+        // Only OS-originated drops may grant the custom importer filesystem access.
+        for path in &paths {
+            if path.is_file() {
+                if let Err(error) = self.app.fs_scope().allow_file(path) {
+                    *effect = DROPEFFECT_NONE;
+                    eprintln!("failed to authorize the dropped file: {error}");
+                    return Ok(());
+                }
+            }
         }
         let payload = FileDrop { action, paths };
         if let Err(error) =
