@@ -25,7 +25,7 @@ pub fn watch_folder(
     let event_path = path;
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
         let Ok(event) = result else { return };
-        if is_content_change(&event.kind) {
+        if is_document_change(&event) {
             let _ = app.emit(
                 "folder-changed",
                 FolderChangedEvent {
@@ -52,6 +52,18 @@ fn is_content_change(kind: &EventKind) -> bool {
     )
 }
 
+fn is_document_change(event: &notify::Event) -> bool {
+    is_content_change(&event.kind)
+        && (event.paths.is_empty()
+            || event.paths.iter().any(|path| {
+                !path.components().any(|part| {
+                    let name = part.as_os_str().to_string_lossy();
+                    name == ".maca-save"
+                        || (name.starts_with(".maca-save-") && name.ends_with(".tmp"))
+                })
+            }))
+}
+
 #[tauri::command]
 pub fn stop_watching_folder(state: tauri::State<'_, FolderWatcherState>) -> Result<(), String> {
     *state
@@ -63,7 +75,7 @@ pub fn stop_watching_folder(state: tauri::State<'_, FolderWatcherState>) -> Resu
 
 #[cfg(test)]
 mod tests {
-    use super::is_content_change;
+    use super::{is_content_change, is_document_change};
     use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
     use notify::EventKind;
 
@@ -73,5 +85,18 @@ mod tests {
         assert!(is_content_change(&EventKind::Modify(ModifyKind::Any)));
         assert!(is_content_change(&EventKind::Remove(RemoveKind::File)));
         assert!(!is_content_change(&EventKind::Access(AccessKind::Read)));
+    }
+
+    #[test]
+    fn ignores_staging_but_keeps_publication_and_external_edits() {
+        let event = |path: &str| {
+            notify::Event::new(EventKind::Modify(ModifyKind::Any)).add_path(path.into())
+        };
+        assert!(!is_document_change(&event("book/.maca-save/0")));
+        assert!(!is_document_change(&event("book/.maca-save-uuid.tmp")));
+        assert!(is_document_change(&event("book/index.md")));
+        assert!(is_document_change(
+            &event("book/.maca-save/0").add_path("book/index.md".into())
+        ));
     }
 }

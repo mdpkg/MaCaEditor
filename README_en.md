@@ -283,3 +283,18 @@ When a text input field has focus, text-editing keys such as `Backspace` are not
 MaCa Editor is available under the [MIT License](LICENSE).
 
 Copyright (c) 2026 mikoto2000 &lt;mikoto2000@gmail.com&gt;
+
+### Safe Export and Folder Recovery
+
+Folder export requires an empty destination. Files are prepared in a sibling staging folder before publication; existing content is never merged or overwritten. Import rejects symbolic links and Windows junctions. Folders with a manifest are treated as complete documents, including directories such as `node_modules`; separate unwanted build artifacts before import.
+
+Limits are 128 MiB per file, 512 MiB per document after ZIP inflation, 10,000 files including the manifest, 512 MiB for the source ZIP, and 128 folder levels. Windows device names, alternate data streams, and trailing spaces or periods in path segments are rejected.
+
+Do not delete `.maca-save` during a save or before recovery. If recovery is required:
+
+1. Export the edits still in the app to a separate `.mdpkg` using **パッケージに書き出し...**.
+2. Close the folder in the app and copy the entire folder, including `.maca-save`, elsewhere.
+3. On the copy, inspect `.maca-save/backup/`. Compare the original relative paths and contents before restoring individual backups. Do not restore all `write-*` staging files indiscriminately.
+4. Check the restored manifest, entrypoint, images and attachments. Move `.maca-save` out of the copied document, then reopen the copy. Keep the original folder and exported package until verification is complete.
+
+AI settings now live in `ai-config.json` in the OS application configuration directory. API keys remain in the OS credential store. Temporary settings from older versions are not imported automatically; configure the connection again in the AI settings dialog.

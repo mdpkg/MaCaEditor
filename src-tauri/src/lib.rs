@@ -1,7 +1,9 @@
 pub mod ai;
 pub mod atomic_save;
+mod bounded_io;
 pub mod commands;
 pub mod folder_document;
+mod folder_export;
 pub mod folder_watcher;
 mod history_maintenance;
 mod history_transfer;
@@ -104,6 +106,14 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                use tauri_plugin_fs::FsExt;
+                for path in paths {
+                    if path.is_file() { let _ = webview.fs_scope().allow_file(path); }
+                }
+            }
+        })
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             commands::open_package,

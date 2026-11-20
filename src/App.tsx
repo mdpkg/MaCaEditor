@@ -1943,6 +1943,7 @@ export default function App() {
       {folderConflict && (
         <div className="folder-conflict">
           <span role="alert">{uiText("The folder changed on disk or needs recovery. Saving to this folder is blocked.")}</span>
+          <p>{uiText("Export your edits before recovery. Close this folder and copy it, including .maca-save, before restoring backup files. See the README recovery instructions.")}</p>
           <button type="button" disabled={fileTask !== null} onClick={handleExportPackage}>{uiText("Export Package...")}</button>
           <button type="button" disabled={fileTask !== null} onClick={handleReloadFolder}>{uiText("Reload Folder...")}</button>
         </div>

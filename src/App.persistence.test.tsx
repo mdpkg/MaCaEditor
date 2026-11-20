@@ -934,6 +934,7 @@ describe("App persistence", () => {
     expect(container.querySelector(".folder-conflict")).not.toBeNull();
     await act(async () => saveShortcut());
     expect(tauri.saveFolder).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".folder-conflict")?.textContent).toContain(".maca-save を含むフォルダ全体をコピー");
     await historyShortcut("z");
     expect(container.querySelector("textarea")?.value).toBe("Original");
   });

@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_fs::FsExt;
 
 use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
+use crate::bounded_io::{read_file, MAX_DOCUMENT_BYTES, MAX_FILE_BYTES};
 use crate::image_formats::supported_image_extension;
 use crate::history_transfer::HistoryUpload;
 use crate::history_storage::history_database;
@@ -76,7 +78,12 @@ pub struct ImportedImage {
 }
 
 #[tauri::command]
-pub fn read_image(path: String) -> Result<ImportedImage, String> {
+pub fn read_image(window: tauri::Window, path: String) -> Result<ImportedImage, String> {
+    ensure_selected_path(&window.fs_scope(), Path::new(&path))?;
+    read_image_at(path)
+}
+
+fn read_image_at(path: String) -> Result<ImportedImage, String> {
     let source = PathBuf::from(&path);
     let extension = source
         .extension()
@@ -98,13 +105,30 @@ pub fn set_image_drop_enabled(app: tauri::AppHandle, enabled: bool) {
 }
 
 #[tauri::command]
-pub fn read_attachment(path: String) -> Result<ImportedImage, String> {
+pub fn read_attachment(window: tauri::Window, path: String) -> Result<ImportedImage, String> {
+    ensure_selected_path(&window.fs_scope(), Path::new(&path))?;
     read_imported_file(&PathBuf::from(path))
 }
 
 #[tauri::command]
-pub fn save_attachment(path: String, base64: String) -> Result<(), String> {
+pub fn save_attachment(window: tauri::Window, path: String, base64: String) -> Result<(), String> {
+    ensure_selected_path(&window.fs_scope(), Path::new(&path))?;
+    save_attachment_at(path, base64)
+}
+
+fn ensure_selected_path(scope: &tauri::fs::Scope, path: &Path) -> Result<(), String> {
+    if !path.is_absolute() || !scope.is_allowed(path) {
+        return Err("file access requires selecting or dropping the file first".into());
+    }
+    Ok(())
+}
+
+fn save_attachment_at(path: String, base64: String) -> Result<(), String> {
+    if base64.len() as u64 > MAX_FILE_BYTES.div_ceil(3) * 4 {
+        return Err("file exceeds the size limit".into());
+    }
     let data = decode_base64(&base64)?;
+    if data.len() as u64 > MAX_FILE_BYTES { return Err("file exceeds the size limit".into()); }
     atomic_save(&PathBuf::from(path), &data).map_err(|error| error.to_string())
 }
 
@@ -114,7 +138,7 @@ fn read_imported_file(source: &PathBuf) -> Result<ImportedImage, String> {
         .and_then(|value| value.to_str())
         .ok_or("invalid image file name")?
         .to_string();
-    let data = std::fs::read(&source).map_err(|e| e.to_string())?;
+    let data = read_file(source, MAX_FILE_BYTES).map_err(|e| e.to_string())?;
     Ok(ImportedImage {
         file_name,
         base64: encode_base64(&data),
@@ -154,7 +178,7 @@ pub async fn open_package(app: AppHandle, path: String) -> Result<PackageInfo, S
 }
 
 fn open_package_at(path: &Path, database: Result<PathBuf, String>) -> Result<PackageInfo, String> {
-    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+    let data = read_file(path, MAX_DOCUMENT_BYTES).map_err(|e| e.to_string())?;
     let loaded: LoadedPackage = load_package(&data).map_err(|e| e.to_string())?;
 
     let files: Vec<FileInfo> = loaded.files.iter().map(to_file_info).collect();
@@ -258,6 +282,7 @@ fn save_package_at(
 ) -> Result<SaveOutcome, String> {
     let manifest = parse_manifest(&request.manifest)?;
     let files = parse_files(request.files)?;
+    crate::folder_document::validate_document(&manifest, &files).map_err(|e| e.to_string())?;
     let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
     let path = Path::new(&request.path);
     let mut history = HistoryWrite::new(database, request.edit_history, uploaded);
@@ -602,108 +627,39 @@ pub fn create_new_package(path: String) -> Result<(), String> {
 /// フォルダから `.mdpkg` を作成する Tauri コマンド。
 #[tauri::command]
 pub fn import_folder(folder: String, dest: String) -> Result<(), String> {
-    let mut files: Vec<crate::package_file::PackageFile> = Vec::new();
-    let mut manifest_json: Option<String> = None;
-
-    let base = PathBuf::from(&folder);
-    collect_folder(&base, &base, &mut files, &mut manifest_json).map_err(|e| e.to_string())?;
-
-    let manifest_json = manifest_json.ok_or("manifest.json is missing")?;
-    let manifest = crate::manifest::Manifest::parse(&manifest_json).map_err(|e| e.to_string())?;
-
-    let zip = write_package(&manifest, &files).map_err(|e| e.to_string())?;
-    atomic_save(&PathBuf::from(&dest), &zip).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-fn collect_folder(
-    base: &PathBuf,
-    dir: &PathBuf,
-    files: &mut Vec<crate::package_file::PackageFile>,
-    manifest_json: &mut Option<String>,
-) -> Result<(), std::io::Error> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_folder(base, &path, files, manifest_json)?;
-        } else {
-            let rel = path
-                .strip_prefix(base)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let rel_str = rel.to_string_lossy().replace('\\', "/");
-            let content = std::fs::read(&path)?;
-            let file = if is_text_path(&rel_str) {
-                match String::from_utf8(content.clone()) {
-                    Ok(text) => crate::package_file::PackageFile::new_text(rel_str.clone(), text),
-                    Err(_) => {
-                        crate::package_file::PackageFile::new_binary(rel_str.clone(), content)
-                    }
-                }
-            } else {
-                crate::package_file::PackageFile::new_binary(rel_str.clone(), content)
-            };
-            if rel_str == "manifest.json" {
-                *manifest_json = Some(
-                    String::from_utf8(file.content.clone())
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
-                );
-            }
-            files.push(file);
-        }
-    }
-    Ok(())
-}
-
-fn is_text_path(path: &str) -> bool {
-    let lower = path.to_lowercase();
-    lower.ends_with(".md")
-        || lower.ends_with(".markdown")
-        || lower.ends_with(".json")
-        || lower.ends_with(".yaml")
-        || lower.ends_with(".yml")
-        || lower.ends_with(".puml")
-        || lower.ends_with(".mmd")
-        || lower.ends_with(".dot")
-        || lower.ends_with(".svg")
-        || lower.ends_with(".txt")
-        || lower.ends_with(".toml")
+    let loaded = crate::folder_document::load_folder(Path::new(&folder)).map_err(|e| e.to_string())?;
+    let zip = write_package(&loaded.manifest, &loaded.files).map_err(|e| e.to_string())?;
+    atomic_save(Path::new(&dest), &zip).map_err(|e| e.to_string())
 }
 
 /// `.mdpkg` をフォルダへ展開する Tauri コマンド。
 #[tauri::command]
 pub fn export_folder(package_path: String, dest: String) -> Result<(), String> {
-    let data = std::fs::read(&package_path).map_err(|e| e.to_string())?;
+    let data = read_file(Path::new(&package_path), MAX_DOCUMENT_BYTES).map_err(|e| e.to_string())?;
     let loaded = load_package(&data).map_err(|e| e.to_string())?;
-    let dest = PathBuf::from(&dest);
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    let manifest = serde_json::to_vec_pretty(&loaded.manifest).map_err(|e| e.to_string())?;
-    atomic_save(&dest.join("manifest.json"), &manifest).map_err(|e| e.to_string())?;
-    for file in &loaded.files {
-        let target = dest.join(file.path.replace('\\', "/"));
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&target, &file.content).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    crate::folder_export::export(&loaded, Path::new(&dest))
 }
 
 /// AI 設定を保存する Tauri コマンド。
 #[tauri::command]
-pub fn save_ai_config(config: crate::ai::config::AiConfig) -> Result<(), String> {
-    crate::ai::storage::save_ai_config(&config)
+pub fn save_ai_config(app: AppHandle, config: crate::ai::config::AiConfig) -> Result<(), String> {
+    crate::ai::storage::save_ai_config(&ai_config_path(&app)?, &config)
 }
 
 /// AI 設定を読み込む Tauri コマンド。
 #[tauri::command]
-pub fn load_ai_config() -> Result<crate::ai::config::AiConfig, String> {
-    crate::ai::storage::load_ai_config()
+pub fn load_ai_config(app: AppHandle) -> Result<crate::ai::config::AiConfig, String> {
+    crate::ai::storage::load_ai_config(&ai_config_path(&app)?)
 }
 
 #[tauri::command]
-pub fn has_ai_configuration() -> Result<bool, String> {
-    crate::ai::storage::has_ai_configuration()
+pub fn has_ai_configuration(app: AppHandle) -> Result<bool, String> {
+    crate::ai::storage::has_ai_configuration(&ai_config_path(&app)?)
+}
+
+fn ai_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(crate::ai::storage::ai_config_path(&directory))
 }
 
 fn ai_settings_timeout(seconds: Option<u64>) -> Result<Duration, AiError> {
@@ -878,8 +834,9 @@ pub fn setup(app: &mut tauri::App) {
 
 #[cfg(test)]
 mod tests {
+    use super::{import_folder, read_image_at};
     use super::{
-        create_new_package, export_folder, export_package, read_attachment, save_attachment,
+        create_new_package, export_folder, export_package, read_imported_file, save_attachment_at,
         FileContent, SaveRequest,
     };
     use super::{
@@ -897,6 +854,55 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn invalid_saves_leave_the_existing_package_untouched() {
+        let path = temporary_attachment_path().with_extension("mdpkg");
+        std::fs::write(&path, b"existing bytes").unwrap();
+        let valid = serde_json::json!({"format":"mdpkg","version":"2.0","entrypoint":"index.md"});
+        let mut wrong_format = valid.clone();
+        wrong_format["format"] = "other".into();
+        let mut missing_entry = valid.clone();
+        missing_entry["entrypoint"] = "missing.md".into();
+        let mut outside_resource = valid.clone();
+        outside_resource["resources"] = serde_json::json!([{"source":"../outside.puml","rendered":"diagram.svg","type":"plantuml"}]);
+        for manifest in [wrong_format, missing_entry, outside_resource] {
+            let result = save_package_at(SaveRequest {
+                path: path.to_string_lossy().into_owned(), manifest,
+                files: index_file("new"), edit_history: None,
+            }, Err("unused".into()), Ok(None));
+            assert!(result.is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), b"existing bytes");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn import_uses_folder_validation_and_does_not_copy_the_manifest_twice() {
+        let dir = temporary_attachment_path();
+        std::fs::create_dir(&dir).unwrap();
+        let source = dir.join("source");
+        crate::folder_document::create_empty_folder(&source).unwrap();
+        let destination = dir.join("out.mdpkg");
+        import_folder(source.to_string_lossy().into_owned(), destination.to_string_lossy().into_owned()).unwrap();
+        let bytes = std::fs::read(&destination).unwrap();
+        assert_eq!(crate::package_loader::load_package(&bytes).unwrap().files.len(), 1);
+        std::fs::write(source.join("manifest.json"), r#"{"format":"other","version":"2.0","entrypoint":"index.md"}"#).unwrap();
+        assert!(import_folder(source.to_string_lossy().into_owned(), destination.to_string_lossy().into_owned()).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn image_and_attachment_imports_reject_oversized_files_before_reading() {
+        let path = temporary_attachment_path().with_extension("png");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(crate::bounded_io::MAX_FILE_BYTES + 1).unwrap();
+        drop(file);
+        assert!(read_image_at(path.to_string_lossy().into_owned()).unwrap_err().contains("size limit"));
+        assert!(read_imported_file(&path).unwrap_err().contains("size limit"));
+        std::fs::remove_file(path).unwrap();
     }
 
     fn checkpoint(text: &str) -> EditCheckpoint {
@@ -1024,7 +1030,7 @@ mod tests {
         let path = temporary_attachment_path();
         std::fs::write(&path, [1_u8, 2, 3]).unwrap();
 
-        let imported = read_attachment(path.to_string_lossy().into_owned()).unwrap();
+        let imported = read_imported_file(&path).unwrap();
 
         assert_eq!(
             imported.file_name,
@@ -1038,7 +1044,7 @@ mod tests {
     fn saves_a_base64_attachment_to_the_selected_path() {
         let path = temporary_attachment_path();
 
-        save_attachment(path.to_string_lossy().into_owned(), "AQID".to_string()).unwrap();
+        save_attachment_at(path.to_string_lossy().into_owned(), "AQID".to_string()).unwrap();
 
         assert_eq!(std::fs::read(&path).unwrap(), [1_u8, 2, 3]);
         std::fs::remove_file(path).unwrap();
