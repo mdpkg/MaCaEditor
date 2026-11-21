@@ -1,7 +1,7 @@
 {
   "name": "maca-editor",
   "private": true,
-  "version": "2.4.0",
+  "version": "2.4.1",
   "license": "MIT",
   "type": "module",
   "workspaces": [
@@ -33,7 +33,7 @@
     "mathjax-full": "^3.2.2",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-toc": "^7.1.0",
-    "mermaid": "^11.16.1",
+    "mermaid": "^12.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
@@ -52,8 +52,8 @@
     "jsdom": "^29.1.1",
     "playwright": "^1.65.0",
     "typescript": "^5.6.3",
-    "vite": "^6.0.3",
-    "vitest": "^2.1.8",
+    "vite": "^6.4.6",
+    "vitest": "^5.1.1",
     "@types/mdast": "^4.0.4",
     "@types/unist": "^3.0.3"
   }

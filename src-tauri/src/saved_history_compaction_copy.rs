@@ -595,7 +595,7 @@ mod tests {
         .unwrap()
         .complete("rev")
         .unwrap();
-        let source = connect_sqlite(&database, Duration::ZERO).unwrap();
+        let mut source = connect_sqlite(&database, Duration::ZERO).unwrap();
         let revision = revision(&source).unwrap();
         let scratch = Scratch(root.join("scratch.sqlite3"));
         let (mut target, cursor) = open(&source, &scratch, revision, 0).unwrap();

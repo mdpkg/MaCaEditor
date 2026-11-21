@@ -1,6 +1,6 @@
 [package]
 name = "maca-editor"
-version = "2.4.0"
+version = "2.4.1"
 description = "MaCa Editor - Markdown Package editor"
 authors = ["MaCa Editor"]
 edition = "2021"
@@ -12,6 +12,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[patch.crates-io]
+# RUSTSEC-2024-0429: upstream VariantStrIter fix backported to GTK3's glib line.
+glib = { path = "vendor/glib" }
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
@@ -20,9 +24,9 @@ tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-rusqlite = { version = "0.38", features = ["backup", "blob", "bundled", "hooks"] }
+rusqlite = { version = "0.41", features = ["backup", "blob", "bundled", "hooks"] }
 base64 = "0.22"
-zip = { version = "2", default-features = false, features = ["deflate", "deflate-flate2"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate", "deflate-flate2"] }
 thiserror = "2"
 notify = "8.2"
 async-openai = { version = "0.41", default-features = false, features = ["rustls", "chat-completion", "model", "middleware"] }

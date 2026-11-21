@@ -48,7 +48,7 @@ codemirror 6.0.2
 Copyright (C) 2018-2021 by Marijn Haverbeke
 <marijn@haverbeke.berlin> and others
 
-mermaid 11.16.1
+mermaid 12.3.0
 Copyright (c) 2014-2022 Knut Sveidqvist
 
 react 18.3.1

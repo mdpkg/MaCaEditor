@@ -89,7 +89,7 @@ pub fn load_package(data: &[u8]) -> Result<LoadedPackage, LoadError> {
     let mut normalized_paths = HashSet::new();
     for i in 0..archive.len() {
         let entry = archive.by_index(i).map_err(LoadError::NotZip)?;
-        let name = entry.name().to_string();
+        let name = entry.name().map_err(LoadError::NotZip)?.into_owned();
         let path_to_validate = name.trim_end_matches('/');
         validate_package_path(path_to_validate).map_err(|e| match e {
             PathError::Empty | PathError::InvalidSegment | PathError::OutsidePackage => {
