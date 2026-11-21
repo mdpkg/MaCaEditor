@@ -1,7 +1,7 @@
 import { isPackageSearchShortcut } from "../lib/shortcuts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { CodeEditor } from "./CodeEditor";
 import { EditorView } from "codemirror";
 import { getCM, Vim, type CodeMirrorV } from "@replit/codemirror-vim";
@@ -9,11 +9,72 @@ import { PACKAGE_PATH_DRAG_TYPE } from "../lib/packageDrag";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+// jsdom has no layout; CodeMirror measures text ranges on animation frames.
+beforeAll(() => {
+  Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [] });
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => new DOMRect() });
+});
+
+afterAll(() => {
+  Reflect.deleteProperty(Range.prototype, "getClientRects");
+  Reflect.deleteProperty(Range.prototype, "getBoundingClientRect");
+});
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
 
 describe("CodeEditor", () => {
+  test.each(["markdown", "plain"] as const)("pastes HTML structures with language %s", (language) => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    act(() => root.render(<CodeEditor value="replace" onChange={onChange} language={language} />));
+    try {
+      const view = EditorView.findFromDOM(host.querySelector<HTMLElement>(".cm-editor")!)!;
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: {
+        files: [], getData: (type: string) => type === "text/html" ? "<ul><li>One</li><li>Two</li></ul>" : "One\nTwo",
+      } });
+      act(() => {
+        view.dispatch({ selection: { anchor: 0, head: 7 } });
+        view.contentDOM.dispatchEvent(event);
+      });
+      const expected = language === "markdown" ? "- One\n- Two" : "One\nTwo";
+      expect(view.state.doc.toString()).toBe(expected);
+      expect(view.state.selection.main.head).toBe(expected.length);
+      expect(onChange).toHaveBeenCalledWith(expected);
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  test("converts HTML from the context menu clipboard reader", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const readText = vi.fn(async () => "One");
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      read: async () => [{ types: ["text/html"], getType: async () => new Blob(["<ul><li>One</li></ul>"], { type: "text/html" }) }],
+      readText,
+    } });
+    act(() => root.render(<CodeEditor value="" onChange={vi.fn()} language="markdown" />));
+    try {
+      const view = EditorView.findFromDOM(host.querySelector<HTMLElement>(".cm-editor")!)!;
+      act(() => view.contentDOM.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+      const button = [...document.querySelectorAll<HTMLButtonElement>(".editor-context-menu button")].find((button) => button.textContent === "貼り付け")!;
+      await act(async () => button.click());
+      expect(view.state.doc.toString()).toBe("- One");
+      expect(readText).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
   test("intercepts image paste and tracks the selected range while reading the clipboard", async () => {
     const host = document.createElement("div");
     document.body.appendChild(host);

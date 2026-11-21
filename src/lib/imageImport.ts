@@ -43,9 +43,20 @@ export async function clipboardBlobToImage(blob: Blob): Promise<ImportedImage> {
   };
 }
 
-export async function readImageOrTextClipboard(clipboard: Clipboard): Promise<ImportedImage[] | string> {
+export async function readImageOrTextClipboard(
+  clipboard: Clipboard,
+  options: { htmlToText?: (html: string) => string | null; images?: boolean } = {},
+): Promise<ImportedImage[] | string> {
   const items = await clipboard.read?.().catch(() => []);
-  const images = (items ?? []).flatMap((item) => {
+  if (options.htmlToText) {
+    for (const item of items ?? []) {
+      if (!item.types.includes("text/html")) continue;
+      const html = await item.getType("text/html").then((blob) => blob.text()).catch(() => "");
+      const converted = options.htmlToText(html);
+      if (converted !== null) return converted;
+    }
+  }
+  const images = (options.images === false ? [] : items ?? []).flatMap((item) => {
     const type = item.types.find((candidate) => clipboardImageExtensions.has(candidate))
       ?? item.types.find((candidate) => candidate.startsWith("image/"));
     return type ? [item.getType(type).then(clipboardBlobToImage)] : [];
