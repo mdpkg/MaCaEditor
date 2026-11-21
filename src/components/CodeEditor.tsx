@@ -15,6 +15,7 @@ import { historyShortcut, isDocumentSearchShortcut } from "../lib/shortcuts";
 import type { HistoryDirection, TextEditGroup } from "../lib/editHistory";
 import { markdownLinkAtPosition } from "../lib/markdownLinks";
 import { clipboardBlobToImage, readImageOrTextClipboard } from "../lib/imageImport";
+import { htmlClipboardToMarkdown } from "../lib/htmlClipboard";
 import type { ImportedImage } from "../types";
 
 interface Props {
@@ -188,7 +189,12 @@ export function CodeEditor({
       const clipboard = await read();
       if (!pending.delete(range) || viewRef.current !== view) return;
       if (typeof clipboard === "string") {
-        view.dispatch({ changes: { ...range, insert: clipboard }, userEvent: "input.paste" });
+        view.dispatch({
+          changes: { ...range, insert: clipboard },
+          selection: { anchor: range.from + clipboard.length },
+          userEvent: "input.paste",
+          scrollIntoView: true,
+        });
         return;
       }
       const result = onImagePasteRef.current?.(clipboard, { ...range, content: view.state.doc.toString() });
@@ -229,7 +235,15 @@ export function CodeEditor({
     const extensions = [
       Prec.highest(EditorView.domEventHandlers({
         paste: (event, view) => {
-          if (!onImagePasteRef.current || !event.clipboardData || !view.contentDOM.contains(event.target as Node)) return false;
+          if (!event.clipboardData || !view.contentDOM.contains(event.target as Node)) return false;
+          const converted = language === "markdown"
+            ? htmlClipboardToMarkdown(event.clipboardData.getData?.("text/html") ?? "") : null;
+          if (converted !== null) {
+            finishComposition(view);
+            view.dispatch(view.state.replaceSelection(converted), { userEvent: "input.paste", scrollIntoView: true });
+            return true;
+          }
+          if (!onImagePasteRef.current) return false;
           const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
           if (images.length === 0) return false;
           finishComposition(view);
@@ -529,8 +543,11 @@ export function CodeEditor({
     const menu = contextMenu;
     const clipboard = navigator.clipboard;
     if (!view || !menu || !clipboard) return;
-    void pasteFromClipboard(view, menu, () => onImagePasteRef.current
-      ? readImageOrTextClipboard(clipboard)
+    void pasteFromClipboard(view, menu, () => language === "markdown" || onImagePasteRef.current
+      ? readImageOrTextClipboard(clipboard, {
+        htmlToText: language === "markdown" ? htmlClipboardToMarkdown : undefined,
+        images: !!onImagePasteRef.current,
+      })
       : clipboard.readText());
     closeMenu();
   };
