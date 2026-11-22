@@ -54,6 +54,7 @@ jobs:
       contents: write
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_BODY: ${{ needs.prepare.outputs.body }}
       NODE_OPTIONS: --max-old-space-size=4096
     strategy:
       fail-fast: false
@@ -81,6 +82,9 @@ jobs:
           node-version: lts/*
           cache: npm
 
+      - name: Require validated release notes
+        run: node -e "if (!process.env.RELEASE_BODY?.trim()) throw new Error('Validated release notes were not received')"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -102,7 +106,7 @@ jobs:
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: MaCa Editor ${{ env.RELEASE_TAG }}
-          releaseBody: ${{ needs.prepare.outputs.body }}
+          releaseBody: ${{ env.RELEASE_BODY }}
           generateReleaseNotes: false
           releaseDraft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
