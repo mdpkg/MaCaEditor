@@ -13,7 +13,6 @@ import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import type { FileInfo } from "../types";
-import { resolvePackagePath } from "../lib/markdown";
 import { resolvePreviewLink } from "../lib/previewUrl";
 import { sanitizeHtml } from "../lib/sanitize";
 import { findResourceByRendered } from "../lib/drawing/docIntegration";
@@ -75,14 +74,6 @@ interface MediaTransform {
 
 const initialMediaTransform: MediaTransform = { scale: 1, x: 0, y: 0 };
 
-function decodePackageUrl(url: string): string {
-  try {
-    return decodeURIComponent(url);
-  } catch {
-    return url;
-  }
-}
-
 function attachmentDataUrl(file: FileInfo): string {
   if (file.base64 !== null) {
     return `data:application/octet-stream;base64,${file.base64}`;
@@ -100,7 +91,7 @@ function normalizeLegacyImageDestinations(
     if (!/\s/.test(trimmed) || (trimmed.startsWith("<") && trimmed.endsWith(">"))) {
       return match;
     }
-    const resolved = resolvePackagePath(baseDir, decodePackageUrl(trimmed));
+    const resolved = resolvePreviewLink(baseDir, trimmed).path;
     if (!resolved || !files.some((file) => file.path === resolved)) return match;
     return `![${alt}](<${trimmed}>)`;
   });
@@ -254,7 +245,7 @@ export function MarkdownPreview({
     ...structuralComponents,
     img({ src = "", alt = "", ...props }) {
       const { files, actions } = useContext(PreviewContext);
-      const resolved = resolvePackagePath(baseDir, decodePackageUrl(src));
+      const resolved = resolvePreviewLink(baseDir, src).path;
       const file = resolved ? files.find((candidate) => candidate.path === resolved) : undefined;
       if (file?.base64) {
         const imageSrc = `data:${imageMediaType(file.path)};base64,${file.base64}`;
