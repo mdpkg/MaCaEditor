@@ -1,0 +1,2 @@
+# CSP hashes cover the exact source bytes on every platform.
+src/lib/marp/frameRuntime.js text eol=lf

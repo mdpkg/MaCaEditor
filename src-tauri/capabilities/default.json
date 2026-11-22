@@ -7,8 +7,6 @@
     "core:default",
     "core:window:allow-show",
     "core:window:allow-set-title",
-    "dialog:default",
-    "fs:default",
-    "store:default"
+    "dialog:default"
   ]
 }

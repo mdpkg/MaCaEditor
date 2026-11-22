@@ -1,5 +1,4 @@
-import { LazyStore } from "@tauri-apps/plugin-store";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { DrawingPreferences } from "@maca/drawing-react";
 
 const VIM_MODE_KEY = "vimMode";
@@ -20,7 +19,18 @@ interface EditorPreferences {
   drawingPreferences: DrawingPreferences;
 }
 
-const settingsStore = new LazyStore("settings.json", { autoSave: false });
+const pendingPreferences = new Map<string, unknown>();
+const settingsStore: PreferenceStore = {
+  async get<T>(key: string): Promise<T | undefined> {
+    if (!isTauri()) return undefined;
+    const values = await invoke<Record<string, unknown>>("read_editor_preferences");
+    return values[key] as T | undefined;
+  },
+  async set(key, value) { pendingPreferences.set(key, value); },
+  async save() {
+    await invoke("save_editor_preferences", { preferences: Object.fromEntries(pendingPreferences) });
+  },
+};
 
 export async function loadDrawingPreferences(store: PreferenceStore = settingsStore): Promise<DrawingPreferences> {
   let stored: Partial<DrawingPreferences> | null | undefined;

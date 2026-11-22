@@ -430,6 +430,37 @@ describe("App persistence", () => {
     await click("キャンセル", dialog);
   });
 
+  test.each(["package", "folder"] as const)("reselects an unapproved legacy recent %s through the native picker", async (kind) => {
+    act(() => root.unmount());
+    const recent = kind === "package" ? "C:/documents/legacy.mdpkg" : "C:/documents/legacy";
+    const selected = kind === "package" ? "C:/selected/book.mdpkg" : "C:/selected/book";
+    localStorage.setItem("maca.recentDocuments", JSON.stringify([{ path: recent, kind }]));
+    const reader = kind === "package" ? tauri.openPackage : tauri.openFolder;
+    vi.mocked(reader).mockRejectedValueOnce("file access requires selecting or dropping the file first")
+      .mockResolvedValueOnce(documentInfo("Selected document"));
+    vi.mocked(open).mockResolvedValue(selected);
+    root = createRoot(container);
+    await act(async () => root.render(<App />));
+    await click(recent, container.querySelector(".recent-documents")!);
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: recent }));
+    if (kind === "folder") expect(open).toHaveBeenCalledWith(expect.objectContaining({ directory: true, recursive: true }));
+    expect(reader).toHaveBeenCalledTimes(2);
+    expect(reader).toHaveBeenLastCalledWith(...(kind === "folder" ? [selected, true] : [selected]));
+    expect(container.querySelector(".document-area")?.textContent).toContain("Selected document");
+  });
+
+  test("cancelling re-selection does not open a legacy recent path", async () => {
+    act(() => root.unmount());
+    localStorage.setItem("maca.recentDocuments", JSON.stringify([{ path: "legacy.mdpkg", kind: "package" }]));
+    vi.mocked(tauri.openPackage).mockRejectedValue("file access requires selecting or dropping the file first");
+    vi.mocked(open).mockResolvedValue(null);
+    root = createRoot(container);
+    await act(async () => root.render(<App />));
+    await click("legacy.mdpkg", container.querySelector(".recent-documents")!);
+    expect(tauri.openPackage).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".empty-state")).not.toBeNull();
+  });
+
   test("reopens recent documents and exposes AI settings and keyboard help from the empty state", async () => {
     const empty = container.querySelector(".empty-state")!;
     expect([...empty.querySelectorAll("button")].map((item) => item.textContent)).toEqual(["新規作成", "開く", "フォルダを開く..."]);

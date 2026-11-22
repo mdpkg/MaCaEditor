@@ -16,9 +16,11 @@ struct FolderChangedEvent {
 #[tauri::command]
 pub fn watch_folder(
     app: tauri::AppHandle,
+    window: tauri::Window,
     state: tauri::State<'_, FolderWatcherState>,
     path: String,
 ) -> Result<(), String> {
+    crate::document_access::require_document(&window, std::path::Path::new(&path), true)?;
     let loaded = crate::folder_document::load_folder(std::path::Path::new(&path))
         .map_err(|error| error.to_string())?;
     let root = loaded.root;

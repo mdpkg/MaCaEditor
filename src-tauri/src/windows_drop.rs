@@ -279,8 +279,10 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
         }
         // Only OS-originated drops may grant the custom importer filesystem access.
         for path in &paths {
-            if path.is_file() {
-                if let Err(error) = self.app.fs_scope().allow_file(path) {
+            if path.is_file() || path.is_dir() {
+                let grant = if path.is_dir() { self.app.fs_scope().allow_directory(path, true) }
+                    else { self.app.fs_scope().allow_file(path) };
+                if let Err(error) = grant {
                     *effect = DROPEFFECT_NONE;
                     eprintln!("failed to authorize the dropped file: {error}");
                     return Ok(());
