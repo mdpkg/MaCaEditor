@@ -11,14 +11,50 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    name: Validate Japanese release notes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      # Use workflow tooling even when manually rebuilding an older tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          path: release-source
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/release-notes.node-test.cjs
+      - name: Read notes from the release tag
+        id: notes
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        with:
+          script: |
+            const { readReleaseNotes } = require('./scripts/release-notes.cjs');
+            core.setOutput('body', readReleaseNotes('release-source', process.env.RELEASE_TAG));
+
   release:
+    needs: prepare
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_BODY: ${{ needs.prepare.outputs.body }}
       NODE_OPTIONS: --max-old-space-size=4096
     strategy:
       fail-fast: false
@@ -46,6 +82,9 @@ jobs:
           node-version: lts/*
           cache: npm
 
+      - name: Require validated release notes
+        run: node -e "if (!process.env.RELEASE_BODY?.trim()) throw new Error('Validated release notes were not received')"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,7 +106,31 @@ jobs:
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: MaCa Editor ${{ env.RELEASE_TAG }}
-          generateReleaseNotes: true
+          releaseBody: ${{ env.RELEASE_BODY }}
+          generateReleaseNotes: false
           releaseDraft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           args: ${{ matrix.args }}
+
+  verify-notes:
+    name: Verify published Japanese release notes
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+      - uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          EXPECTED_BODY: ${{ needs.prepare.outputs.body }}
+        with:
+          script: |
+            const { verifyReleaseNotes } = require('./scripts/release-notes.cjs');
+            const { data } = await github.rest.repos.getReleaseByTag({
+              ...context.repo, tag: process.env.RELEASE_TAG,
+            });
+            verifyReleaseNotes(process.env.EXPECTED_BODY, data.body);
+            core.info(`Verified Japanese overview: ${data.html_url}`);
