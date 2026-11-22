@@ -1,6 +1,15 @@
 import createDOMPurify from "dompurify";
 
 const purifier = createDOMPurify(window);
+const safeCssFunction = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|calc|min|max|clamp|matrix|matrix3d|translate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?|rotate(?:x|y|z|3d)?|skew(?:x|y)?)$/i;
+
+function safeSvgReference(node: Element, name: string, value: string): boolean {
+  if (/^#[\w:.-]+$/.test(value)) return true;
+  // Raster data on image href is inert and retains drawing-core's embedded
+  // images. Data SVG/HTML and navigable data links are never admitted.
+  return node.localName === "image" && name !== "src"
+    && /^data:image\/(?:png|jpeg|gif|webp|bmp);base64,[a-z\d+/]+={0,2}$/i.test(value);
+}
 
 function unsafeCss(value: string): boolean {
   const withoutLocalReferences = value.replace(/url\(\s*["']?#[\w:.-]+["']?\s*\)/gi, "");
@@ -8,8 +17,7 @@ function unsafeCss(value: string): boolean {
   // Fail closed for CSS functions that can fetch strings (image-set, src),
   // inherit URLs from the host (var), or gain new resource-loading semantics.
   const functions = withoutLocalReferences.matchAll(/([\w-]+)\s*\(/g);
-  const safeFunction = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|calc|min|max|clamp|matrix|matrix3d|translate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?|rotate(?:x|y|z|3d)?|skew(?:x|y)?)$/i;
-  return [...functions].some((match) => !safeFunction.test(match[1]));
+  return [...functions].some((match) => !safeCssFunction.test(match[1]));
 }
 
 // Exported diagrams use stylesheets for their colors and text. Copy only SVG
@@ -48,13 +56,8 @@ function inlineSvgStyles(root: Element): void {
 // Retain diagram styles, while preventing stylesheet-based network requests.
 purifier.addHook("uponSanitizeAttribute", (node, data) => {
   if (node.namespaceURI === "http://www.w3.org/2000/svg") {
-    if (/^(?:href|xlink:href|src)$/.test(data.attrName)) {
-      const local = /^#[\w:.-]+$/.test(data.attrValue);
-      // Raster data on image href is inert and retains drawing-core's embedded
-      // images. Data SVG/HTML and navigable data links are never admitted.
-      const raster = node.localName === "image" && data.attrName !== "src"
-        && /^data:image\/(?:png|jpeg|gif|webp|bmp);base64,[a-z\d+/]+={0,2}$/i.test(data.attrValue);
-      if (!local && !raster) data.keepAttr = false;
+    if (/^(?:href|xlink:href|src)$/.test(data.attrName) && !safeSvgReference(node, data.attrName, data.attrValue)) {
+      data.keepAttr = false;
     }
     // Presentation attributes are CSS values too (filter, mask, paint, etc.).
     if (unsafeCss(data.attrValue)) data.keepAttr = false;

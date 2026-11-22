@@ -21,9 +21,17 @@ test.each(["image", "use", "a", "rect"])("rejects nonlocal URL attributes on SVG
 
 test.each(["fill", "stroke", "filter", "mask", "clip-path", "marker-start", "cursor"])("blocks external CSS in SVG %s", (attr) => {
   for (const value of ["url(http://127.0.0.1:1/x)", "url(//127.0.0.1/x)", "url(data:image/png;base64,AAAA)",
-    "u\\72l(http://127.0.0.1/x)", "url(/**/#id)", "var(--external)"]) {
-    expect(svg(`<rect ${attr}="${value}"/>`).firstElementChild?.getAttribute(attr)).toBeNull();
+    "u\\72l(http://127.0.0.1/x)", "url(/**/#id)", "var(--external)", 'image-set("http://127.0.0.1/x" 1x)']) {
+    expect(svg(`<rect ${attr}="${value.replace(/"/g, "&quot;")}"/>`).firstElementChild?.getAttribute(attr)).toBeNull();
   }
+});
+
+test("blocks CSS string-fetch functions, escaped URLs, font imports and mutable SVG URLs", () => {
+  const result = svg('<style>@import "http://127.0.0.1:1/import"; @font-face {font-family:x;src:url(http://127.0.0.1:1/font)}</style>'
+    + '<rect style="background-image:image-set(&quot;http://127.0.0.1:1/image&quot; 1x)"/>'
+    + '<image href="#id"><set attributeName="href" to="http://127.0.0.1:1/set"/><animate attributeName="href" values="#id;http://127.0.0.1:1/animate"/></image>');
+  expect(result.querySelector("style, set, animate")).toBeNull();
+  expect(result.querySelector("rect")?.getAttribute("style")).toBeNull();
 });
 
 test("keeps local SVG paint, clip, mask, filter, marker, use and anchor references", () => {
