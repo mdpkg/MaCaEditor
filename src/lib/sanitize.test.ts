@@ -32,10 +32,11 @@ describe("sanitizeHtml", () => {
     expect(sanitizeHtml('<svg><rect style="fill: red; stroke: blue" /></svg>')).toContain("fill: red");
   });
 
-  test("preserves local SVG references and safe links", () => {
+  test("preserves local SVG references and allows external links only in HTML", () => {
     const result = sanitizeHtml('<svg xmlns="http://www.w3.org/2000/svg"><defs><path id="shape" d="M0 0" /></defs><use href="#shape"/><a href="https://example.com"><text>link</text></a></svg>');
     expect(result).toContain('href="#shape"');
-    expect(result).toContain('href="https://example.com"');
+    expect(result).not.toContain('href="https://example.com"');
+    expect(sanitizeHtml('<a href="https://example.com">link</a>')).toContain('href="https://example.com"');
   });
 
   test("preserves diagram stylesheet colors without publishing global CSS", () => {
