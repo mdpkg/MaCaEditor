@@ -131,7 +131,10 @@ describe("App persistence", () => {
   }
 
   async function click(label: string, scope?: ParentNode) {
-    await act(async () => button(label, scope).click());
+    await act(async () => {
+      button(label, scope).click();
+      await vi.dynamicImportSettled();
+    });
   }
 
   async function edit(value: string, group?: TextEditGroup) {

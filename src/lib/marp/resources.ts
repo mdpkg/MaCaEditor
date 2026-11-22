@@ -33,8 +33,14 @@ export function connectMarpResources(html: string, css: string, baseDir: string,
   const byPath = new Map(files.map((file) => [file.path, file]));
   const resolved = new Map<string, string>();
   let used = 0;
+  const reserve = (data: string): string => {
+    used += data.length;
+    if (used <= 24 * 1024 * 1024) return data;
+    warnings.add("画像の展開容量（24 MiB）を超えた参照を省略しました。");
+    return "";
+  };
   const image = (url: string): string => {
-    if (resolved.has(url)) return resolved.get(url)!;
+    if (resolved.has(url)) return reserve(resolved.get(url)!);
     let data = "";
     try {
       const target = decodeURIComponent(url);
@@ -60,14 +66,12 @@ export function connectMarpResources(html: string, css: string, baseDir: string,
       } else if (file.base64 && rasterMatches(file.path, file.base64)) {
         data = `data:${imageMediaType(file.path)};base64,${file.base64}`;
       } else throw new Error("Invalid image bytes");
-      used += data.length;
-      if (used > 24 * 1024 * 1024) throw new Error("Resource budget exceeded");
     } catch {
       warnings.add(`画像を読み込めません（不足・禁止された参照・形式・容量）: ${url.slice(0, 200)}`);
       data = "";
     }
     resolved.set(url, data);
-    return data;
+    return reserve(data);
   };
   const rewriteCss = (value: string, context: "stylesheet" | "declarationList") => {
     try {

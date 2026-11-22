@@ -83,6 +83,7 @@ test("synchronizes only slide changes in both directions without scroll echoes",
   expect(dispatch).toHaveBeenCalledTimes(1);
   act(() => message(1));
   expect(dispatch).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(50); });
   editorOffset = 30;
   act(() => host.querySelector(".cm-scroller")!.dispatchEvent(new Event("scroll")));
   expect(send).not.toHaveBeenCalled();
@@ -91,6 +92,11 @@ test("synchronizes only slide changes in both directions without scroll echoes",
   expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "go", index: 0 }), "*");
   act(() => message(0));
   expect(dispatch).toHaveBeenCalledTimes(1);
+  send.mockClear();
+  act(() => root.render(<div className="split-view"><div className="markdown-editor"><div className="cm-scroller" /></div><DocumentPreview {...props} markdown={props.markdown + "updated"} /></div>));
+  editorOffset = 40;
+  act(() => host.querySelector(".cm-scroller")!.dispatchEvent(new Event("scroll")));
+  expect(send).not.toHaveBeenCalled();
   find.mockRestore();
 });
 

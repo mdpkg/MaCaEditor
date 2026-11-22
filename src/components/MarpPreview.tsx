@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileInfo } from "../types";
 import type { MarpResult } from "../lib/marp/render";
 import { mapSourceOffset, slideAtOffset } from "../lib/marp/position";
-import { createFrameShell, readFrameMessage } from "../lib/marp/frame";
+import { createFrameSession, createFrameShell, readFrameMessage } from "../lib/marp/frame";
 import { isMarkdownPath, resolvePackagePath } from "../lib/markdown";
 import { EditorView } from "@codemirror/view";
 
@@ -34,7 +34,9 @@ export function MarpPreview(props: Props) {
   const renderedGeneration = useRef(0);
   const editorView = useRef<EditorView | null>(null);
   const lastEditorSlide = useRef(-1);
-  const session = useMemo(() => crypto.randomUUID(), [retry]);
+  const syncingEditor = useRef(false);
+  const releaseSync = useRef(0);
+  const session = useMemo(() => createFrameSession(), [retry]);
   const shell = useMemo(() => createFrameShell(session), [session]);
   const { markdown, baseDir, files } = props;
 
@@ -47,9 +49,16 @@ export function MarpPreview(props: Props) {
   const synchronizeEditor = (index: number) => {
     const view = editorView.current;
     const slide = successful.current?.result.slides[index];
-    if (!view || !slide || lastEditorSlide.current === index) return;
+    if (!view || !slide || successful.current?.source !== latest.current.markdown || lastEditorSlide.current === index) return;
     lastEditorSlide.current = index;
+    syncingEditor.current = true;
+    cancelAnimationFrame(releaseSync.current);
     view.dispatch({ effects: EditorView.scrollIntoView(Math.min(view.state.doc.length, slide.startOffset), { y: "start" }) });
+    // CodeMirror measures and scrolls on its next frame. Ignore that scroll's
+    // echo, including a partially visible preceding line at the viewport edge.
+    releaseSync.current = requestAnimationFrame(() => {
+      releaseSync.current = requestAnimationFrame(() => { syncingEditor.current = false; });
+    });
   };
   const go = (index: number, fromEditor = false) => {
     const value = successful.current;
@@ -127,10 +136,11 @@ export function MarpPreview(props: Props) {
     let scroller: HTMLElement | null = null;
     const editorScrolled = () => {
       const view = editorView.current;
-      if (!view || !scroller) return;
+      if (!view || !scroller || syncingEditor.current || snapshot.source !== latest.current.markdown) return;
       // Whole CodeMirror line blocks identify the source slide. We deliberately
       // do not interpolate paragraph/DOM positions inside a Marp slide.
-      const offset = view.lineBlockAtHeight(scroller.scrollTop).from;
+      const top = typeof view.documentTop === "number" ? scroller.getBoundingClientRect().top - view.documentTop : scroller.scrollTop;
+      const offset = view.lineBlockAtHeight(Math.max(0, top + (view.defaultLineHeight ?? 0))).from;
       go(slideAtOffset(snapshot.result.slides, offset), true);
     };
     const connect = () => {
@@ -141,12 +151,15 @@ export function MarpPreview(props: Props) {
       editorView.current = next ? EditorView.findFromDOM(next) : null;
       lastEditorSlide.current = -1;
       scroller?.addEventListener("scroll", editorScrolled, { passive: true });
-      synchronizeEditor(active.current);
+      if (editorView.current && scroller && slideAtOffset(snapshot.result.slides, editorView.current.lineBlockAtHeight(scroller.scrollTop).from) !== active.current) synchronizeEditor(active.current);
     };
     connect();
     const observer = new MutationObserver(connect);
     observer.observe(split, { childList: true, subtree: true });
-    return () => { observer.disconnect(); scroller?.removeEventListener("scroll", editorScrolled); editorView.current = null; };
+    return () => {
+      observer.disconnect(); scroller?.removeEventListener("scroll", editorScrolled); editorView.current = null;
+      cancelAnimationFrame(releaseSync.current); syncingEditor.current = false;
+    };
   }, [snapshot, session]);
 
   return <div className="marp-preview" ref={host}>
@@ -158,6 +171,7 @@ export function MarpPreview(props: Props) {
     </div>
     {error && <div role="alert" className="preview-warning">{error} <button onClick={() => { renderedGeneration.current = 0; setRetry((value) => value + 1); }}>再試行</button></div>}
     {!!snapshot?.result.warnings.length && <details className="preview-warning"><summary>プレビューの警告 ({snapshot.result.warnings.length})</summary>{snapshot.result.warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
-    <iframe ref={frame} title="Marp スライドプレビュー" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={shell} data-session={session} />
+    <iframe ref={frame} title="Marp スライドプレビュー" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={shell} data-session={session}
+      onLoad={() => frame.current?.contentWindow?.postMessage({ channel: "maca-marp", session, generation: 0, type: "hello" }, "*")} />
   </div>;
 }

@@ -14,10 +14,17 @@ export interface MarpResult {
 
 const purifier = createDOMPurify(window);
 
+class PreviewMarp extends Marp {
+  selectedTheme?: string;
+  protected renderStyle(theme?: string): string {
+    return super.renderStyle(this.selectedTheme ?? theme);
+  }
+}
+
 export function renderMarp(markdown: string, baseDir: string, files: FileInfo[]): MarpResult {
   if (markdown.length > 1024 * 1024) throw new Error("Marp 文書の上限は 1 MiB です。");
   const warnings = new Set<string>();
-  const marp = new Marp({
+  const marp = new PreviewMarp({
     html: false, script: false, math: "mathjax", looseYAML: false,
     emoji: { unicode: false, shortcode: false },
     container: false, printable: false,
@@ -26,6 +33,7 @@ export function renderMarp(markdown: string, baseDir: string, files: FileInfo[])
   const hasTheme = marp.themeSet.has.bind(marp.themeSet);
   marp.themeSet.has = (name: string) => {
     const known = hasTheme(name);
+    marp.selectedTheme = known ? name : "default";
     if (!known) warnings.add(`未知のテーマ ${name}: default を使用します。`);
     return known;
   };
@@ -35,11 +43,19 @@ export function renderMarp(markdown: string, baseDir: string, files: FileInfo[])
     // Document styles are parsed by Marpit even with html:false. Keep its parser
     // (so source maps stay correct), but never apply those styles to the theme.
     md.core.ruler.disable(["marpit_style_assign", "marp_math_directive"]);
+    md.core.ruler.before("marpit_header_and_footer", "maca_directive_limits", (state) => {
+      if (state.tokens.filter((token) => token.type === "marpit_slide_open").length > 500) throw new Error("スライド数の上限は 500 枚です。");
+      for (const token of state.tokens) {
+        if (token.attrs?.some(([, value]) => value.length > 8192)) throw new Error("ディレクティブ・画像参照の値は 8192 文字以内にしてください。");
+      }
+    });
     md.core.ruler.push("maca_slide_sources", (state) => {
       for (const token of state.tokens) {
         // The single Marpit token contract used here is covered by source-map tests.
         if (token.type === "marpit_slide_open") starts.push(lineOffsets[token.map?.[0] ?? 0] ?? 0);
         if (token.type === "marpit_style" || token.attrGet("data-style")) warnings.add("文書内 style はプレビューに適用しません。");
+        if (token.attrGet("data-math") === "katex") warnings.add("数式はオフラインの MathJax SVG で表示します。");
+        if (token.type === "fence" && token.info.trim().toLowerCase() === "mermaid") warnings.add("Mermaid ブロックの直接描画は未対応です。パッケージ内 SVG を参照してください。");
         const theme = token.attrGet("data-theme");
         if (theme && !["default", "gaia", "uncover"].includes(theme)) warnings.add(`未知のテーマ ${theme}: default を使用します。`);
       }

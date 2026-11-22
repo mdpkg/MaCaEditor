@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:browser": "node --test tests/browser/image-sizing.mjs tests/browser/sanitize.mjs",
+    "test:browser": "node --test tests/browser/image-sizing.mjs tests/browser/sanitize.mjs tests/browser/marp.mjs",
     "check:architecture": "node scripts/check-architecture.mjs"
   },
   "dependencies": {

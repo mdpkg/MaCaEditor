@@ -11,7 +11,7 @@ export function detectMarp(markdown: string, path = "document.md"): { marp: bool
   const warning = "frontmatter が不正、または上限（64 KiB・エイリアス不可）を超えています。";
   if (end < 0) return { marp: false, warning };
   const yaml = lines.slice(1, end).join("\n");
-  if (yaml.length > 65_536) return { marp: false, warning };
+  if (yaml.length > 65_536 || new TextEncoder().encode(yaml).length > 65_536) return { marp: false, warning };
   try {
     const document = parseDocument(yaml, { schema: "core", uniqueKeys: true });
     let alias = false;

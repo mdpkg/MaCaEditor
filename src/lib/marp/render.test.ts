@@ -40,6 +40,13 @@ test("does not treat arbitrary bytes or oversized resources as images", () => {
   expect(result.html).not.toContain("data:image/png");
 });
 
+test("bounds repeated data URL expansion before building an enormous frame payload", () => {
+  const image = { ...svg, content: `<svg xmlns="http://www.w3.org/2000/svg"><text>${"a".repeat(300_000)}</text></svg>` };
+  const result = renderMarp("# A\n" + "![d](images/diagram.svg)\n".repeat(100), "", [image]);
+  expect(result.html.length).toBeLessThan(32 * 1024 * 1024);
+  expect(result.warnings.length).toBeGreaterThan(0);
+});
+
 test.each(["default", "gaia", "uncover"])("uses standard theme %s, 4:3, directives and offline MathJax SVG", (theme) => {
   const result = renderMarp(`---\nmarp: true\ntheme: ${theme}\nsize: 4:3\npaginate: true\nheader: Header\nfooter: Footer\n---\n# A\n$x^2$`, "", []);
   expect(result.html).toContain('viewBox="0 0 960 720"');
@@ -56,4 +63,11 @@ test("ignores document styles, raw HTML and unknown themes", () => {
   expect(result.html).not.toContain("<script");
   expect(result.warnings.join(" ")).toMatch(/theme|テーマ/);
   expect(result.warnings.join(" ")).toMatch(/style|スタイル/);
+});
+
+test("the last unknown theme falls back to default even after a valid theme", () => {
+  const expected = renderMarp("# A", "", []).css;
+  const result = renderMarp("---\nmarp: true\ntheme: gaia\n---\n<!-- theme: unknown -->\n# A", "", []);
+  expect(result.css).toBe(expected);
+  expect(result.warnings.join(" ")).toContain("unknown");
 });
