@@ -1,8 +1,8 @@
 import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
 import { DiagramRenderError } from "./DiagramRenderError";
-import ReactMarkdown from "react-markdown";
-import type { Components, UrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import type { Components } from "react-markdown";
 import type {
   ComponentProps,
   PointerEvent as ReactPointerEvent,
@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import type { FileInfo } from "../types";
-import { resolvePackagePath } from "../lib/markdown";
+import { resolvePreviewLink } from "../lib/previewUrl";
 import { sanitizeHtml } from "../lib/sanitize";
 import { findResourceByRendered } from "../lib/drawing/docIntegration";
 import { imageMediaType } from "../lib/document";
@@ -74,19 +74,6 @@ interface MediaTransform {
 
 const initialMediaTransform: MediaTransform = { scale: 1, x: 0, y: 0 };
 
-function packageUrl(baseDir: string, url: string): string {
-  if (/^(?:https?:|mailto:|#)/i.test(url)) return url;
-  return resolvePackagePath(baseDir, decodePackageUrl(url)) ?? "#";
-}
-
-function decodePackageUrl(url: string): string {
-  try {
-    return decodeURIComponent(url);
-  } catch {
-    return url;
-  }
-}
-
 function attachmentDataUrl(file: FileInfo): string {
   if (file.base64 !== null) {
     return `data:application/octet-stream;base64,${file.base64}`;
@@ -104,7 +91,7 @@ function normalizeLegacyImageDestinations(
     if (!/\s/.test(trimmed) || (trimmed.startsWith("<") && trimmed.endsWith(">"))) {
       return match;
     }
-    const resolved = resolvePackagePath(baseDir, decodePackageUrl(trimmed));
+    const resolved = resolvePreviewLink(baseDir, trimmed).path;
     if (!resolved || !files.some((file) => file.path === resolved)) return match;
     return `![${alt}](<${trimmed}>)`;
   });
@@ -258,7 +245,7 @@ export function MarkdownPreview({
     ...structuralComponents,
     img({ src = "", alt = "", ...props }) {
       const { files, actions } = useContext(PreviewContext);
-      const resolved = resolvePackagePath(baseDir, decodePackageUrl(src));
+      const resolved = resolvePreviewLink(baseDir, src).path;
       const file = resolved ? files.find((candidate) => candidate.path === resolved) : undefined;
       if (file?.base64) {
         const imageSrc = `data:${imageMediaType(file.path)};base64,${file.base64}`;
@@ -361,10 +348,8 @@ export function MarkdownPreview({
     },
     a({ href = "", ...props }) {
       const { files, actions: { onDownloadAttachment, onNavigateMarkdown } } = useContext(PreviewContext);
-      const packagePath = decodePackageUrl(href);
-      const resolvedPath = files.some((file) => file.path === packagePath)
-        ? packagePath
-        : resolvePackagePath(baseDir, packagePath);
+      const destination = resolvePreviewLink(baseDir, href);
+      const resolvedPath = destination.path;
       const attachment = files.find((file) => file.path === resolvedPath &&
         /(^|\/)attachments\//.test(file.path));
       if (attachment) {
@@ -383,13 +368,13 @@ export function MarkdownPreview({
       }
       const markdown = files.find((file) => file.path === resolvedPath && /\.(md|markdown)$/i.test(file.path));
       if (markdown) {
-        return <a {...props} href={markdown.path} onClick={(event) => {
+        return <a {...props} href={destination.href} onClick={(event) => {
           if (!onNavigateMarkdown) return;
           event.preventDefault();
           onNavigateMarkdown(markdown.path);
         }} />;
       }
-      return <a {...props} href={packageUrl(baseDir, href)} />;
+      return <a {...props} href={destination.href} />;
     },
   }), [
     baseDir, manifest, showPreviewMedia, structuralComponents,
@@ -400,8 +385,6 @@ export function MarkdownPreview({
   // Markdown. Keep the parsed preview while its interactive elements use the
   // latest files and actions from context.
   const preview = useMemo(() => {
-    const urlTransform: UrlTransform = (url, key) =>
-      key === "href" ? packageUrl(baseDir, url) : url;
     const remarkPlugins: NonNullable<ComponentProps<typeof ReactMarkdown>["remarkPlugins"]> = [
       remarkFrontmatter,
       remarkGfm,
@@ -410,7 +393,7 @@ export function MarkdownPreview({
       remarkGitHubAlerts,
       [remarkFrontmatterTable, { showToc }],
     ];
-    return <ReactMarkdown components={components} remarkPlugins={remarkPlugins} urlTransform={urlTransform}>
+    return <ReactMarkdown components={components} remarkPlugins={remarkPlugins} urlTransform={defaultUrlTransform}>
       {previewMarkdown}
     </ReactMarkdown>;
   }, [baseDir, components, parseCache, previewMarkdown, rspressMode, showToc]);
