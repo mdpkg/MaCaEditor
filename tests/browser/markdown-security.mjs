@@ -37,7 +37,8 @@ async function fixture(t) {
 test("Markdown obfuscated links never execute when clicked", async (t) => {
   const page = await fixture(t);
   const urls = ["java\tscript:", "java%09script:", "java%0Ascript:", " javascript:", "java%0Dscript:",
-    "javascript:", "JaVaScRiPt:", "java%2509script:", "%256aavascript:", "%00javascript:"];
+    "javascript:", "JaVaScRiPt:", "java%2509script:", "%256aavascript:", "%00javascript:",
+    "vbscript:", "data:text/html,", "file:///", "blob:http://127.0.0.1/", "ftp://127.0.0.1/"];
   const outcomes = [];
   for (const [index, prefix] of urls.entries()) {
     const label = `probe-${index}`;
@@ -59,6 +60,7 @@ test("Markdown obfuscated links never execute when clicked", async (t) => {
 
 test("SVG rendering and enlargement cannot request resources or navigate", async (t) => {
   const page = await fixture(t);
+  const firstRequest = requests.length;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="150" height="100">
     <defs><linearGradient id="gradient"><stop stop-color="red"/></linearGradient><rect id="shape" width="5" height="5"/></defs>
     <image href="${origin}/svg-img.png" width="10" height="10"/>
@@ -69,6 +71,8 @@ test("SVG rendering and enlargement cannot request resources or navigate", async
     <rect width="10" height="10" fill="url(#gradient)" filter="url(${origin}/filter.svg#x)"/>
     <use href="#shape"/><style>@import '${origin}/style.css'; @font-face {font-family:evil;src:url(${origin}/font.woff)}</style>
     <text style="fill:url(${origin}/css.png)">css</text>
+    <rect style="background-image:image-set(&quot;${origin}/css-string.png&quot; 1x)"/>
+    <rect mask="url(${origin}/mask.svg#x)" clip-path="url(${origin}/clip.svg#x)"/>
     <foreignObject><img xmlns="http://www.w3.org/1999/xhtml" src="${origin}/foreign.png"/></foreignObject>
   </svg>`;
   await page.evaluate((svg) => window.MacaMarkdown.mount("![diagram](diagram.svg)", [
@@ -76,12 +80,11 @@ test("SVG rendering and enlargement cannot request resources or navigate", async
   ]), svg);
   await page.locator(".preview-diagram-content svg").waitFor();
   await page.waitForTimeout(200);
-  t.diagnostic(`SVG resource requests: ${requests.filter((url) => /svg-|external|filter|css|style|font|foreign/.test(url)).join(", ")}`);
   // Exercise a real SVG navigation independently of the enlargement handler.
   await page.locator(".preview-diagram-content a").first().evaluate((a) => a.addEventListener("click", (e) => e.stopPropagation()));
   await page.getByText("svg nav", { exact: true }).click();
   assert.equal(page.url(), origin + "/", "SVG anchor must not navigate");
-  await page.locator(".preview-diagram-content").click({ position: { x: 140, y: 90 } });
+  await page.locator('.preview-diagram-content rect[fill="url(#gradient)"]').click();
   await page.locator(".preview-media-overlay svg").waitFor();
   await page.waitForTimeout(200);
   for (const selector of [".preview-diagram-content svg", ".preview-media-overlay svg"]) {
@@ -89,5 +92,26 @@ test("SVG rendering and enlargement cannot request resources or navigate", async
     assert.equal(await page.locator(selector + ' rect[fill="url(#gradient)"]').count(), 1);
     assert.equal(await page.locator(selector + ' [href^="http"], ' + selector + ' [filter^="url(http"]').count(), 0);
   }
-  assert.deepEqual(requests.filter((url) => /svg-|external|filter|css|style|font|foreign/.test(url)), []);
+  assert.deepEqual(requests.slice(firstRequest).filter((url) => url !== "/favicon.ico"), []);
+  assert.equal(await page.evaluate(() => window.MacaMarkdown.sourceFiles[0].content), svg);
+});
+
+test("package navigation, attachments, raster enlargement and external links remain usable", async (t) => {
+  const page = await fixture(t);
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=";
+  await page.evaluate(({ origin, png }) => window.MacaMarkdown.mount(
+    `[guide](../guide/%E6%97%A5%E6%9C%AC%E8%AA%9E%20file.md?q=1#part)\n\n[attachment](<../attachments/notes file.txt>)\n\n![pixel](../images/pixel.png)\n\n[external](${origin}/normal-link)\n\n[mail](mailto:a@example.invalid)\n\n[anchor](#part)`,
+    [ { path: "guide/日本語 file.md", is_text: true, content: "# Guide", base64: null },
+      { path: "attachments/notes file.txt", is_text: true, content: "notes", base64: null },
+      { path: "images/pixel.png", is_text: false, content: null, base64: png } ], "docs"), { origin, png });
+  await page.getByRole("link", { name: "guide", exact: true }).click();
+  await page.getByRole("link", { name: "attachment", exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.MacaMarkdown.actions), ["guide/日本語 file.md", "attachments/notes file.txt"]);
+  assert.equal(await page.getByRole("link", { name: "mail", exact: true }).getAttribute("href"), "mailto:a@example.invalid");
+  assert.equal(await page.getByRole("link", { name: "anchor", exact: true }).getAttribute("href"), "#part");
+  await page.locator('.markdown-preview img[alt="pixel"]').click();
+  await page.locator('.preview-media-overlay img[alt="pixel"]').waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "external", exact: true }).click();
+  await page.waitForURL(origin + "/normal-link");
 });
