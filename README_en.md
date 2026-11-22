@@ -280,6 +280,10 @@ When a text input field has focus, text-editing keys such as `Backspace` are not
 - Dedicated HTML export or direct PDF export without using the operating system's print dialog
 - Real-time collaborative editing or cloud synchronization
 
+## Development and Releases
+
+See the [release procedure (Japanese)](docs/release.md) for version updates, validation, publication, Japanese release summaries and artifact verification.
+
 ## License
 
 MaCa Editor is available under the [MIT License](LICENSE).
