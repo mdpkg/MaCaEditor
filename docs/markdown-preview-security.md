@@ -94,9 +94,11 @@ synthetic documents were used; no real user documents or credentials were read.
 | Gradient, pattern, clip, mask, filter, marker and use references | Retained | Retained |
 | Internal Markdown navigation | Passed | Passed |
 
-A positive loopback fetch succeeded before the tests, showing that zero SVG
-requests were not caused by an unavailable test server or a blanket network
-block. Source SVG text and the mdpkg archive hash were unchanged after testing.
+A positive loopback fetch succeeded in that initial validation, showing that
+zero SVG requests were not caused by an unavailable test server. Source SVG text
+and the mdpkg archive hash were unchanged after testing. Following the
+[CSP/IPC hardening](tauri-security.md), the runner checks the loopback server from
+the controller and requires fetch from the protected WebView to be blocked.
 
 ### Repeating the native check
 
@@ -119,6 +121,11 @@ loopback debugging port. It forces a new WebView2 profile inside that run's
 output directory and checks the runtime app identifier before accessing storage.
 The script temporarily sets build/test environment variables and restores them
 on exit. Run one check at a time when sharing the same Cargo target directory.
+To model reopening previously native-selected documents, the hardened runner
+seeds only its new test application's approval ledger with its synthetic
+folder/package identities. It also checks that unselected IPC paths are denied,
+private state cannot be overwritten and editor settings retain their native
+round-trip behavior. It does not automate native file dialogs.
 
 `tests/native/markdown-security.mjs` creates only synthetic folder/ZIP fixtures,
 uses a server bound to 127.0.0.1 and drives the native WebView through Playwright
@@ -142,5 +149,6 @@ Native rendering, link clicks, SVG network behavior and enlargement have now
 been tested; the earlier native-rendering limitation is resolved. An
 XSS-to-IPC exploit chain and arbitrary privileged IPC operations were **not**
 executed. The tests use harmless JavaScript markers and do not access real
-credentials or user files. The investigation's global CSP and broad IPC scoping
-concerns remain separate follow-up work, outside these two targeted fixes.
+credentials or user files. The follow-up main-window CSP and document IPC path
+authorization changes are recorded in [Tauri security](tauri-security.md),
+including compatibility effects and remaining boundaries.
