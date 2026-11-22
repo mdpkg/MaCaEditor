@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, realpath, copyFile, cp } from "node:fs/promises";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
@@ -45,6 +45,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.
 await writeFile(folder + "/README.md", markdown);
 await writeFile(folder + "/diagram.svg", svg);
 await writeFile(folder + "/guide.md", "# Native guide");
+await writeFile(folder + "/slides.md", "---\nmarp: true\n---\n# Native CSP slides\n\n$E=mc^2$\n\n---\n\n# Next native slide");
 await mkdir(folder + "/attachments", { recursive: true });
 await writeFile(folder + "/attachments/notes.txt", "Disposable attachment");
 await writeFile(folder + "/manifest.json", JSON.stringify({ format: "mdpkg", version: "2.0", entrypoint: "README.md", resources: [] }));
@@ -52,6 +53,26 @@ execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
   "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory($env:MACA_NATIVE_FIXTURE, $env:MACA_NATIVE_ARCHIVE)"],
   { windowsHide: true, env: { ...process.env, MACA_NATIVE_FIXTURE: folder, MACA_NATIVE_ARCHIVE: archive } });
 const archiveHash = createHash("sha256").update(await readFile(archive)).digest("hex");
+const saveArchive = join(record, "approved-save.mdpkg");
+const saveFolder = join(record, "approved-save-folder");
+await copyFile(archive, saveArchive);
+await cp(folder, saveFolder, { recursive: true });
+// Seed only this disposable application's Rust-owned prior-selection record.
+// This models reopening previously selected documents after restart; it does
+// not add a production command that could grant paths from JavaScript.
+const appData = join(process.env.LOCALAPPDATA, identifierExpected);
+await mkdir(appData); // A fresh identifier must never reuse existing app data.
+const canonical = async (path) => {
+  const value = await realpath(path);
+  return value.startsWith("\\\\?\\") ? value : "\\\\?\\" + value;
+};
+await writeFile(join(appData, "approved-documents.json"), JSON.stringify({ documents: [
+  { path: await canonical(folder), directory: true }, { path: await canonical(archive), directory: false },
+  { path: await canonical(saveArchive), directory: false }, { path: await canonical(saveFolder), directory: true },
+] }));
+const unselected = join(record, "unselected.mdpkg");
+await copyFile(archive, unselected);
+const unselectedHash = createHash("sha256").update(await readFile(unselected)).digest("hex");
 
 // Select a fresh loopback port instead of attaching to an existing debug-enabled
 // user application. Verify the unique app identifier before using its storage.
@@ -92,10 +113,79 @@ try {
   await page.waitForFunction(() => window.__TAURI_INTERNALS__);
   const identifier = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke("plugin:app|identifier"));
   assert.equal(identifier, identifierExpected);
-  const canary = await page.evaluate((origin) => fetch(origin + "/canary").then((r) => r.text()), origin);
-  assert.equal(canary, "probe");
-  assert.deepEqual(requests, ["/canary"]);
+  // Validate the sink independently: production connect-src must now block it.
+  assert.equal(await (await fetch(origin + "/canary")).text(), "probe");
   requests.length = 0;
+  const csp = await page.evaluate(async (origin) => {
+    window.cspExecuted = false;
+    const script = document.createElement("script"); script.textContent = "window.cspExecuted=true"; document.body.append(script);
+    window.evalBlocked = false;
+    const button = document.createElement("button"); button.id = "eval-probe"; button.textContent = "probe";
+    button.addEventListener("click", () => {
+      try { window.eval("window.cspExecuted=true"); } catch { window.evalBlocked = true; }
+    });
+    document.body.append(button);
+    const fetchBlocked = await fetch(origin + "/blocked-by-csp").then(() => false, () => true);
+    return { inlineBlocked: !window.cspExecuted, fetchBlocked };
+  }, origin);
+  await page.locator("#eval-probe").click();
+  csp.evalBlocked = await page.evaluate(() => window.evalBlocked);
+  assert.equal(await page.evaluate(() => window.cspExecuted), false);
+  await page.locator("#eval-probe").evaluate((button) => button.remove());
+  assert.deepEqual(csp, { inlineBlocked: true, evalBlocked: true, fetchBlocked: true });
+  assert.deepEqual(requests, []);
+  const deniedCommands = await page.evaluate(async ({ unselected, folder, appData }) => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    const request = { path: unselected, manifest: { format: "mdpkg", version: "2.0", entrypoint: "README.md" },
+      files: [{ path: "README.md", is_text: true, content: "canary overwrite", base64: null }], edit_history: null };
+    const cases = [
+      ["open_package", { path: unselected }], ["open_folder", { path: unselected + "-folder" }],
+      ["save_package", { request }], ["save_folder", { request: { ...request, original_paths: [], expected_revision: "none" } }],
+      ["create_new_package", { path: unselected }], ["create_empty_folder", { path: unselected + "-new" }],
+      ["export_package", { request }], ["import_folder", { folder, dest: unselected }],
+      ["export_folder", { packagePath: unselected, dest: unselected + "-export" }],
+      ["watch_folder", { path: unselected + "-folder" }],
+      ["read_image", { path: unselected }], ["read_attachment", { path: unselected }], ["save_attachment", { path: unselected, base64: "eA==" }],
+      ["plugin:store|load", { path: unselected, options: {} }],
+      ["save_attachment", { path: appData + "/approved-documents.json", base64: "e30=" }],
+    ];
+    const denied = [];
+    for (const [command, args] of cases) {
+      try { await invoke(command, args); } catch (error) {
+        // Verify access denial, not merely malformed requests or a missing file.
+        if (/requires selecting|application data|not allowed|not found/i.test(String(error))) denied.push(command);
+        else throw new Error(`${command}: unexpected rejection ${error}`);
+      }
+    }
+    if (denied.length !== cases.length) throw new Error(`Denied ${denied.length}/${cases.length} commands`);
+    return denied;
+  }, { unselected, folder, appData });
+  const preferenceRoundtrip = await page.evaluate(async () => {
+    const preferences = { vimMode: false, showToc: true, rspressMode: false,
+      drawingPreferences: { gridVisible: true, snap: false, smartGuidesEnabled: true } };
+    await window.__TAURI_INTERNALS__.invoke("save_editor_preferences", { preferences });
+    const restored = await window.__TAURI_INTERNALS__.invoke("read_editor_preferences");
+    return { expected: preferences, restored };
+  });
+  assert.deepEqual(preferenceRoundtrip.restored, preferenceRoundtrip.expected);
+  const preferencesPersisted = true;
+  const approvedOperations = await page.evaluate(async ({ saveArchive, saveFolder }) => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    const pkg = await invoke("open_package", { path: saveArchive });
+    pkg.files.find((file) => file.path === "README.md").content = "# Saved approved package";
+    await invoke("save_package", { request: { path: saveArchive, manifest: pkg.manifest, files: pkg.files, edit_history: null } });
+    const saved = await invoke("open_package", { path: saveArchive });
+    const folder = await invoke("open_folder", { path: saveFolder });
+    folder.files.find((file) => file.path === "README.md").content = "# Saved approved folder";
+    await invoke("save_folder", { request: { path: saveFolder, manifest: folder.manifest, files: folder.files, edit_history: null,
+      original_paths: folder.files.map((file) => file.path), expected_revision: folder.folder_revision } });
+    const reloaded = await invoke("open_folder", { path: saveFolder });
+    await invoke("watch_folder", { path: saveFolder });
+    await invoke("stop_watching_folder");
+    return { packageSaved: saved.files.find((file) => file.path === "README.md").content === "# Saved approved package",
+      folderSaved: reloaded.files.find((file) => file.path === "README.md").content === "# Saved approved folder", watcherInstalled: true };
+  }, { saveArchive, saveFolder });
+  assert.deepEqual(approvedOperations, { packageSaved: true, folderSaved: true, watcherInstalled: true });
   await page.evaluate(({ folder, archive }) => localStorage.setItem("maca.recentDocuments", JSON.stringify([
     { path: folder, kind: "folder" }, { path: archive, kind: "package" },
   ])), { folder, archive });
@@ -138,11 +228,19 @@ try {
     await page.keyboard.press("Escape");
     await page.getByRole("link", { name: "guide", exact: true }).click();
     await page.locator(".markdown-preview").getByRole("heading", { name: "Native guide", exact: true }).waitFor();
-    results.push({ mode, blockedLinks: prefixes.length, svgRequests: requests.length - before, svgNavigationBlocked: true, enlarged: true, internalNavigation: true, localSvgReferencesPreserved: true });
+    await page.locator('[data-path="slides.md"]').click();
+    const marp = page.frameLocator("iframe");
+    await marp.getByRole("heading", { name: "Native CSP slides", exact: true }).waitFor();
+    assert.equal(await marp.locator("mjx-container svg").count(), 1);
+    assert.equal(await marp.locator("body").evaluate(() => typeof window.__TAURI_INTERNALS__), "undefined");
+    await page.getByRole("button", { name: "次のスライド", exact: true }).click();
+    await marp.getByRole("heading", { name: "Next native slide", exact: true }).waitFor();
+    results.push({ mode, blockedLinks: prefixes.length, svgRequests: requests.length - before, svgNavigationBlocked: true, enlarged: true, internalNavigation: true, localSvgReferencesPreserved: true, marpMathAndNavigation: true });
   }
   assert.equal(await readFile(folder + "/diagram.svg", "utf8"), svg);
   assert.equal(createHash("sha256").update(await readFile(archive)).digest("hex"), archiveHash);
-  const result = { identifier, webviewProfile, executableSha256: createHash("sha256").update(await readFile(executable)).digest("hex"), engine: await browser.version(), userAgent: await page.evaluate(() => navigator.userAgent), loopbackCanaryPassed: true, results, originalSvgUnchanged: true, originalArchiveUnchanged: true, attackToIpcTested: false };
+  assert.equal(createHash("sha256").update(await readFile(unselected)).digest("hex"), unselectedHash);
+  const result = { identifier, webviewProfile, executableSha256: createHash("sha256").update(await readFile(executable)).digest("hex"), engine: await browser.version(), userAgent: await page.evaluate(() => navigator.userAgent), loopbackCanaryPassed: true, csp, deniedCommands, preferencesPersisted, approvedOperations, results, originalSvgUnchanged: true, originalArchiveUnchanged: true, unauthorizedCanaryUnchanged: true, attackToIpcTested: false };
   await writeFile(record + "/native-result.json", JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } catch (error) {
