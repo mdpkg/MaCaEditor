@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test scripts/release-notes.test.cjs
+      - run: node --test scripts/release-notes.node-test.cjs
       - name: Read notes from the release tag
         id: notes
         uses: actions/github-script@v7
