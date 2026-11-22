@@ -39,13 +39,15 @@ test("Markdown obfuscated links never execute when clicked", async (t) => {
   const urls = ["java\tscript:", "java%09script:", "java%0Ascript:", " javascript:", "java%0Dscript:",
     "javascript:", "JaVaScRiPt:", "java%2509script:", "%256aavascript:", "%00javascript:"];
   const outcomes = [];
-  for (const prefix of urls) {
-    await page.evaluate((url) => {
+  for (const [index, prefix] of urls.entries()) {
+    const label = `probe-${index}`;
+    await page.evaluate(({ url, label }) => {
       window.__probe = false;
-      window.MacaMarkdown.mount(`[probe](<${url}window.__probe=true>)`);
-    }, prefix);
-    const link = page.getByRole("link", { name: "probe", exact: true });
+      window.MacaMarkdown.mount(`[${label}](<${url}window.__probe=true>)`);
+    }, { url: prefix, label });
+    const link = page.getByRole("link", { name: label, exact: true });
     await link.click();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     outcomes.push(await link.evaluate((a) => ({ executed: window.__probe, href: a.getAttribute("href"), protocol: a.protocol })));
   }
   assert.deepEqual(outcomes.map((value) => value.executed), urls.map(() => false));
@@ -74,6 +76,7 @@ test("SVG rendering and enlargement cannot request resources or navigate", async
   ]), svg);
   await page.locator(".preview-diagram-content svg").waitFor();
   await page.waitForTimeout(200);
+  t.diagnostic(`SVG resource requests: ${requests.filter((url) => /svg-|external|filter|css|style|font|foreign/.test(url)).join(", ")}`);
   // Exercise a real SVG navigation independently of the enlargement handler.
   await page.locator(".preview-diagram-content a").first().evaluate((a) => a.addEventListener("click", (e) => e.stopPropagation()));
   await page.getByText("svg nav", { exact: true }).click();
