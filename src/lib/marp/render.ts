@@ -3,6 +3,7 @@ import createDOMPurify from "dompurify";
 import type MarkdownIt from "markdown-it";
 import type { FileInfo } from "../../types";
 import type { SlideSourceMap } from "./position";
+import { connectMarpResources } from "./resources";
 
 export interface MarpResult {
   html: string;
@@ -13,7 +14,7 @@ export interface MarpResult {
 
 const purifier = createDOMPurify(window);
 
-export function renderMarp(markdown: string, _baseDir: string, _files: FileInfo[]): MarpResult {
+export function renderMarp(markdown: string, baseDir: string, files: FileInfo[]): MarpResult {
   if (markdown.length > 1024 * 1024) throw new Error("Marp 文書の上限は 1 MiB です。");
   const warnings = new Set<string>();
   const marp = new Marp({
@@ -55,6 +56,7 @@ export function renderMarp(markdown: string, _baseDir: string, _files: FileInfo[
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "link", "meta", "base", "form"],
     FORBID_ATTR: ["srcdoc", "srcset", "target", "download"],
   })}</article>`).join("");
-  if (html.length + result.css.length > 32 * 1024 * 1024) throw new Error("プレビューの上限（32 MiB）を超えました。");
-  return { html, css: result.css, slides, warnings: [...warnings] };
+  const connected = connectMarpResources(html, result.css, baseDir, files, warnings);
+  if (connected.html.length + connected.css.length > 32 * 1024 * 1024) throw new Error("プレビューの上限（32 MiB）を超えました。");
+  return { ...connected, slides, warnings: [...warnings] };
 }
