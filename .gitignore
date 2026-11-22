@@ -4,3 +4,4 @@ target
 src-tauri/target
 /src-tauri/vendor/glib/Cargo.lock
 *.log
+/output/native-markdown-security/
