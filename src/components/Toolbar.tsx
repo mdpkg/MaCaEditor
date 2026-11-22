@@ -57,6 +57,7 @@ interface Props {
   vimMode: boolean;
   onVimModeChange: (enabled: boolean) => void;
   canPrint: boolean;
+  printDisabledReason?: string;
 }
 
 type Menu = "file" | "diagram" | "ai" | "help" | null;
@@ -115,6 +116,7 @@ export function Toolbar({
   vimMode,
   onVimModeChange,
   canPrint,
+  printDisabledReason,
 }: Props) {
   const [openMenu, setOpenMenu] = useState<Menu>(null);
   const [aiConfiguration, setAiConfiguration] = useState<"checking" | "ready" | "missing" | "error">("checking");
@@ -188,7 +190,7 @@ export function Toolbar({
             <button type="button" role="menuitem" onClick={() => run(onStartWithEmptyFolder ?? (() => {}))}>{uiText("Start with New Empty Folder")}</button>
             <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || folderConflict} data-shortcut="Ctrl/Cmd+S" aria-keyshortcuts="Control+S Meta+S" onClick={() => run(onSave)}>{uiText("Save")}</button>
             <button type="button" role="menuitem" disabled={!hasDocument || fileTaskInProgress || documentKind === "folder"} onClick={() => run(onSaveAs)}>{uiText("Save As")}</button>
-            <button type="button" role="menuitem" disabled={!canPrint} onClick={() => run(onPrint)}>{uiText("Print")}</button>
+            <button type="button" role="menuitem" disabled={!canPrint} title={printDisabledReason} onClick={() => run(onPrint)}>{uiText("Print")}</button>
             <div className="toolbar-menu-separator" role="separator" />
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddMarkdown)}>{uiText("Add Markdown...")}</button>
             <button type="button" role="menuitem" disabled={!hasDocument} onClick={() => run(onAddFolder)}>{uiText("Add Folder...")}</button>

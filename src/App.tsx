@@ -140,6 +140,8 @@ import {
   textHistoryEntry, type HistoryDirection, type EditHistoryEntry, type EditHistoryFocus, type TextEditGroup,
 } from "./lib/editHistory";
 import { blocksFolderSave, externalFolderAction, folderInfoFingerprint } from "./lib/folderSync";
+import { detectMarp } from "./lib/marp/detect";
+import type { MarpPosition } from "./components/MarpPreview";
 import { supportsPrintPageMargins } from "./lib/printPageMargins";
 import { diagnosePackage, diagnoseRelatedMarkdown, type PackageDiagnostic } from "./lib/packageDiagnostics";
 import { findBacklinks, resolveMarkdownLink } from "./lib/packageNavigation";
@@ -148,8 +150,8 @@ import { inferManifest, type ManifestInference } from "./lib/manifestInference";
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor").then((module) => ({
   default: module.MarkdownEditor,
 })));
-const MarkdownPreview = lazy(() => import("./components/MarkdownPreview").then((module) => ({
-  default: module.MarkdownPreview,
+const DocumentPreview = lazy(() => import("./components/DocumentPreview").then((module) => ({
+  default: module.DocumentPreview,
 })));
 const DrawingEditor = lazy(() => import("@maca/drawing-react").then((module) => ({
   default: module.DrawingEditor,
@@ -259,6 +261,7 @@ export default function App() {
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const editorCursorsRef = useRef(new Map<string, number>());
   const editorScrollTopsRef = useRef(new Map<string, number>());
+  const marpPositionsRef = useRef(new Map<string, MarpPosition>());
   const markdownScrollRatiosRef = useRef(new Map<string, number>());
   const documentAreaRef = useRef<HTMLElement>(null);
   const editorSelectionRef = useRef<AiSelectionSnapshot | null>(null);
@@ -305,6 +308,7 @@ export default function App() {
     editorCursorsRef.current.clear();
     editorScrollTopsRef.current.clear();
     markdownScrollRatiosRef.current.clear();
+    marpPositionsRef.current.clear();
     setLiveDiagnostics(null);
     setPackageDiagnostics(null);
     setNavigationTarget(null);
@@ -812,6 +816,7 @@ export default function App() {
   });
 
   const handlePrint = async () => {
+    if (displayIsMarp) { setStatus("Marp スライドの印刷は未対応です。"); return; }
     if (printDialogRef.current) return;
     printDialogRef.current = true;
     let dispose: (() => void) | undefined;
@@ -1776,6 +1781,7 @@ export default function App() {
   }, [printTitle]);
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
+  const displayIsMarp = useMemo(() => detectMarp(displayContent, displayFile?.path ?? "").marp, [displayContent, displayFile?.path]);
   const displayPreviewUnavailable = /\.(pdf|zip)$/i.test(displayFile?.path ?? "");
   const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
   const editorScrollTop = displayFile ? editorScrollTopsRef.current.get(displayFile.path) : undefined;
@@ -1938,7 +1944,8 @@ export default function App() {
         onRspressModeChange={setRspressMode}
         vimMode={vimMode}
         onVimModeChange={setVimMode}
-        canPrint={displayFile?.is_text === true && (mode === "preview" || mode === "split")}
+        canPrint={!displayIsMarp && displayFile?.is_text === true && (mode === "preview" || mode === "split")}
+        printDisabledReason={displayIsMarp ? "Marp スライドの印刷は未対応です。" : undefined}
       />
       {folderConflict && (
         <div className="folder-conflict">
@@ -2103,7 +2110,11 @@ export default function App() {
             <>
               {mode === "preview" && (
                 <div className="preview-only">
-                  <MarkdownPreview
+                  <DocumentPreview
+                    path={displayFile.path}
+                    key={`${editorSession}:${displayFile.path}`}
+                    initialMarpPosition={marpPositionsRef.current.get(displayFile.path)}
+                    onMarpPositionChange={(position) => marpPositionsRef.current.set(displayFile.path, position)}
                     markdown={displayContent}
                     showToc={showToc && displayIsMarkdown}
                     rspressMode={rspressMode}
@@ -2155,7 +2166,11 @@ export default function App() {
                       }
                     }}
                   />
-                  <MarkdownPreview
+                  <DocumentPreview
+                    path={displayFile.path}
+                    key={`${editorSession}:${displayFile.path}`}
+                    initialMarpPosition={marpPositionsRef.current.get(displayFile.path)}
+                    onMarpPositionChange={(position) => marpPositionsRef.current.set(displayFile.path, position)}
                     markdown={displayContent}
                     scrollRestoreKey={`${editorSession}:${displayFile.path}`}
                     restoreScroll={editorScrollTop === undefined && !navigation}

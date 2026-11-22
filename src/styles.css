@@ -452,6 +452,53 @@ body {
   overflow: auto;
 }
 
+.marp-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.marp-preview iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+}
+
+.marp-navigation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  font-size: 13px;
+}
+
+.preview-only:has(.marp-preview) {
+  height: 100%;
+  max-width: none;
+}
+
+.preview-only .marp-navigation { padding-right: 80px; }
+.preview-warning {
+  padding: 8px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+.preview-detection-warning {
+  position: absolute;
+  z-index: 1;
+  max-width: 480px;
+}
+
 .plantuml-editor,
 .mermaid-editor,
 .mathjax-editor {

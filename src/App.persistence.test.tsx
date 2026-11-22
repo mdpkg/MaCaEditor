@@ -153,6 +153,15 @@ describe("App persistence", () => {
     });
   }
 
+  test("disables printing Marp source with a reason", async () => {
+    vi.mocked(open).mockResolvedValue("slides.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("---\nmarp: true\n---\n# Slides"));
+    await click("開く", container.querySelector(".empty-state")!);
+    await click("ファイル");
+    expect(button("印刷").disabled).toBe(true);
+    expect(button("印刷").title).toContain("Marp");
+  });
+
   test("opens package search only for an unhandled shifted shortcut and returns focus on Escape", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Disk"));
