@@ -131,7 +131,10 @@ describe("App persistence", () => {
   }
 
   async function click(label: string, scope?: ParentNode) {
-    await act(async () => button(label, scope).click());
+    await act(async () => {
+      button(label, scope).click();
+      await vi.dynamicImportSettled();
+    });
   }
 
   async function edit(value: string, group?: TextEditGroup) {
@@ -152,6 +155,15 @@ describe("App persistence", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, cancelable: true }));
     });
   }
+
+  test("disables printing Marp source with a reason", async () => {
+    vi.mocked(open).mockResolvedValue("slides.mdpkg");
+    vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("---\nmarp: true\n---\n# Slides"));
+    await click("開く", container.querySelector(".empty-state")!);
+    await click("ファイル");
+    expect(button("印刷").disabled).toBe(true);
+    expect(button("印刷").title).toContain("Marp");
+  });
 
   test("opens package search only for an unhandled shifted shortcut and returns focus on Escape", async () => {
     vi.mocked(open).mockResolvedValue("original.mdpkg");

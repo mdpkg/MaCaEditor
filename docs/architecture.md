@@ -44,6 +44,8 @@ MaCa Editor
 | `lib/fileTree.ts` | フラットパス → ツリー構造 |
 | `lib/markdown.ts` | 相対パス解決（パッケージ外参照を拒否） |
 | `lib/sanitize.ts` | 危険な HTML の除去 |
+| `components/DocumentPreview.tsx` / `MarpPreview.tsx` | 内容由来の Marp 切り替え、隔離 iframe、スライド単位の編集連携 |
+| `lib/marp/` | bounded YAML 判定、公式 Marp Core の描画、既存パッケージリソースとの接続、限定通信 |
 | `lib/tauri.ts` | Tauri コマンド呼び出し |
 | `components/` | FileTree / Editor / Preview / Toolbar / StatusBar / DrawingEditor |
 

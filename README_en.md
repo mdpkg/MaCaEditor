@@ -2,6 +2,8 @@
 
 # MaCa Editor
 
+Marp Markdown with a top-level boolean `marp: true` in its opening YAML frontmatter is automatically shown as slides in preview and split mode. The bundled Marp Core supports the default, gaia and uncover themes, 16:9/4:3, offline MathJax and package images/SVG backgrounds. Use the previous/next controls to navigate; split mode synchronizes by slide. Document HTML/styles, external resources, presentation mode, slide printing and export are unsupported. See [the example](example/marp-example/slides.md) and [implementation/validation notes](docs/marp-preview.md).
+
 MaCa Editor is a desktop editor for viewing and editing `.mdpkg` files that conform to the [Markdown Package Specification (mdpkg specification)](https://github.com/mdpkg/mdpkg-spec).
 
 The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown document editing and SVG-based drawing in a single application, allowing you to manage text, images, diagrams, and attachments together.

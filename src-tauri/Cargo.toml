@@ -15,6 +15,9 @@ tauri-build = { version = "2", features = [] }
 [patch.crates-io]
 # RUSTSEC-2024-0429: upstream VariantStrIter fix backported to GTK3's glib line.
 glib = { path = "vendor/glib" }
+# WebView2 injects initialization scripts into every frame. Honor Wry's existing
+# main-frame-only flag so opaque preview frames receive neither Tauri nor IPC.
+wry = { path = "vendor/wry" }
 
 [dependencies]
 tauri = { version = "2", features = [] }
