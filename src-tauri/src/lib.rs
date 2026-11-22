@@ -2,6 +2,8 @@ pub mod ai;
 pub mod atomic_save;
 mod bounded_io;
 pub mod commands;
+mod document_access;
+mod editor_preferences;
 pub mod folder_document;
 mod folder_export;
 pub mod folder_watcher;
@@ -83,6 +85,9 @@ pub fn run() {
         .manage(history_transfer::HistoryUpload::default())
         .setup(|app| {
             use tauri::Manager;
+            app.manage(document_access::DocumentAccess::load(
+                app.path().app_local_data_dir()?.join("approved-documents.json"),
+            ).with_private_roots(vec![app.path().app_data_dir()?, app.path().app_config_dir()?]));
             if let Ok(database) = history_storage::history_database(app.handle()) {
                 app.manage(history_maintenance::HistoryMaintenance::start(database));
             }
@@ -110,12 +115,14 @@ pub fn run() {
             if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
                 use tauri_plugin_fs::FsExt;
                 for path in paths {
-                    if path.is_file() { let _ = webview.fs_scope().allow_file(path); }
+                    if path.is_dir() { let _ = webview.fs_scope().allow_directory(path, true); }
+                    else if path.is_file() { let _ = webview.fs_scope().allow_file(path); }
                 }
             }
         })
-        .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            editor_preferences::read_editor_preferences,
+            editor_preferences::save_editor_preferences,
             commands::open_package,
             commands::open_folder,
             commands::create_empty_folder,

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_fs::FsExt;
 
 use crate::ai::error::AiError;
 use crate::atomic_save::atomic_save;
@@ -79,7 +78,7 @@ pub struct ImportedImage {
 
 #[tauri::command]
 pub fn read_image(window: tauri::Window, path: String) -> Result<ImportedImage, String> {
-    ensure_selected_path(&window.fs_scope(), Path::new(&path))?;
+    crate::document_access::require_selected(&window, Path::new(&path))?;
     read_image_at(path)
 }
 
@@ -106,22 +105,16 @@ pub fn set_image_drop_enabled(app: tauri::AppHandle, enabled: bool) {
 
 #[tauri::command]
 pub fn read_attachment(window: tauri::Window, path: String) -> Result<ImportedImage, String> {
-    ensure_selected_path(&window.fs_scope(), Path::new(&path))?;
+    crate::document_access::require_selected(&window, Path::new(&path))?;
     read_imported_file(&PathBuf::from(path))
 }
 
 #[tauri::command]
 pub fn save_attachment(window: tauri::Window, path: String, base64: String) -> Result<(), String> {
-    ensure_selected_path(&window.fs_scope(), Path::new(&path))?;
+    crate::document_access::require_selected(&window, Path::new(&path))?;
     save_attachment_at(path, base64)
 }
 
-fn ensure_selected_path(scope: &tauri::fs::Scope, path: &Path) -> Result<(), String> {
-    if !path.is_absolute() || !scope.is_allowed(path) {
-        return Err("file access requires selecting or dropping the file first".into());
-    }
-    Ok(())
-}
 
 fn save_attachment_at(path: String, base64: String) -> Result<(), String> {
     if base64.len() as u64 > MAX_FILE_BYTES.div_ceil(3) * 4 {
@@ -170,7 +163,8 @@ fn encode_base64(data: &[u8]) -> String {
 
 /// `.mdpkg` を開く Tauri コマンド。
 #[tauri::command]
-pub async fn open_package(app: AppHandle, path: String) -> Result<PackageInfo, String> {
+pub async fn open_package(app: AppHandle, window: tauri::Window, path: String) -> Result<PackageInfo, String> {
+    crate::document_access::require_document(&window, Path::new(&path), false)?;
     let database = history_database(&app);
     tokio::task::spawn_blocking(move || open_package_at(Path::new(&path), database))
         .await
@@ -206,9 +200,11 @@ fn open_package_at(path: &Path, database: Result<PathBuf, String>) -> Result<Pac
 #[tauri::command]
 pub async fn open_folder(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     with_edit_history: Option<bool>,
 ) -> Result<PackageInfo, String> {
+    crate::document_access::require_document(&window, Path::new(&path), true)?;
     let database = with_edit_history
         .unwrap_or(false)
         .then(|| history_database(&app));
@@ -231,9 +227,11 @@ fn open_folder_at(
 }
 
 #[tauri::command]
-pub fn create_empty_folder(path: String) -> Result<PackageInfo, String> {
-    let loaded = crate::folder_document::create_empty_folder(&PathBuf::from(path))
+pub fn create_empty_folder(window: tauri::Window, path: String) -> Result<PackageInfo, String> {
+    crate::document_access::require_selected(&window, Path::new(&path))?;
+    let loaded = crate::folder_document::create_empty_folder(&PathBuf::from(&path))
         .map_err(|e| e.to_string())?;
+    crate::document_access::remember_created(&window, Path::new(&path), true);
     folder_package_info(loaded)
 }
 
@@ -258,21 +256,26 @@ fn folder_package_info(
 #[tauri::command]
 pub async fn save_package(
     app: AppHandle,
+    window: tauri::Window,
     request: SaveRequest,
     uploads: State<'_, HistoryUpload>,
     edit_history_upload: Option<String>,
 ) -> Result<SaveOutcome, String> {
+    crate::document_access::require_document(&window, Path::new(&request.path), false)?;
+    let destination = request.path.clone();
     let save = prioritize_history_save(&app);
     let database = history_database(&app);
     let uploaded = edit_history_upload
         .map(|token| uploads.take(&token))
         .transpose();
-    tokio::task::spawn_blocking(move || {
+    let outcome = tokio::task::spawn_blocking(move || {
         let _save = save;
         save_package_at(request, database, uploaded)
     })
     .await
-    .map_err(|error| format!("package save task failed: {error}"))?
+    .map_err(|error| format!("package save task failed: {error}"))??;
+    crate::document_access::remember_created(&window, Path::new(&destination), false);
+    Ok(outcome)
 }
 
 fn save_package_at(
@@ -306,10 +309,12 @@ fn save_package_at(
 #[tauri::command]
 pub async fn save_folder(
     app: AppHandle,
+    window: tauri::Window,
     request: FolderSaveRequest,
     uploads: State<'_, HistoryUpload>,
     edit_history_upload: Option<String>,
 ) -> Result<SaveOutcome, String> {
+    crate::document_access::require_document(&window, Path::new(&request.path), true)?;
     let save = prioritize_history_save(&app);
     let database = history_database(&app);
     let uploaded = edit_history_upload
@@ -359,12 +364,14 @@ fn save_folder_at(
 #[tauri::command]
 pub async fn clear_saved_edit_history(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     kind: String,
 ) -> Result<saved_history::ClearOutcome, String> {
     if !matches!(kind.as_str(), "package" | "folder") {
         return Err("unsupported edit history document kind".into());
     }
+    crate::document_access::require_document(&window, Path::new(&path), kind == "folder")?;
     let database = history_database(&app)?;
     let write = app.try_state::<crate::history_maintenance::HistoryMaintenance>()
         .map(|maintenance| maintenance.begin_write());
@@ -566,7 +573,15 @@ impl HistoryWrite {
 }
 
 #[tauri::command]
-pub fn export_package(request: SaveRequest) -> Result<(), String> {
+pub fn export_package(window: tauri::Window, request: SaveRequest) -> Result<(), String> {
+    crate::document_access::require_selected(&window, Path::new(&request.path))?;
+    let destination = request.path.clone();
+    export_package_at(request)?;
+    crate::document_access::remember_created(&window, Path::new(&destination), false);
+    Ok(())
+}
+
+fn export_package_at(request: SaveRequest) -> Result<(), String> {
     let manifest = parse_manifest(&request.manifest)?;
     let files = parse_files(request.files)?;
     crate::folder_document::validate_document(&manifest, &files).map_err(|e| e.to_string())?;
@@ -607,7 +622,14 @@ fn decode_base64(data: &str) -> Result<Vec<u8>, String> {
 
 /// 新規 Markdown Package を作成する Tauri コマンド。
 #[tauri::command]
-pub fn create_new_package(path: String) -> Result<(), String> {
+pub fn create_new_package(window: tauri::Window, path: String) -> Result<(), String> {
+    crate::document_access::require_selected(&window, Path::new(&path))?;
+    create_new_package_at(path.clone())?;
+    crate::document_access::remember_created(&window, Path::new(&path), false);
+    Ok(())
+}
+
+fn create_new_package_at(path: String) -> Result<(), String> {
     let manifest_json = r#"{
         "format": "mdpkg",
         "version": "2.0",
@@ -626,7 +648,15 @@ pub fn create_new_package(path: String) -> Result<(), String> {
 
 /// フォルダから `.mdpkg` を作成する Tauri コマンド。
 #[tauri::command]
-pub fn import_folder(folder: String, dest: String) -> Result<(), String> {
+pub fn import_folder(window: tauri::Window, folder: String, dest: String) -> Result<(), String> {
+    crate::document_access::require_document(&window, Path::new(&folder), true)?;
+    crate::document_access::require_selected(&window, Path::new(&dest))?;
+    import_folder_at(folder, dest.clone())?;
+    crate::document_access::remember_created(&window, Path::new(&dest), false);
+    Ok(())
+}
+
+fn import_folder_at(folder: String, dest: String) -> Result<(), String> {
     let loaded = crate::folder_document::load_folder(Path::new(&folder)).map_err(|e| e.to_string())?;
     let zip = write_package(&loaded.manifest, &loaded.files).map_err(|e| e.to_string())?;
     atomic_save(Path::new(&dest), &zip).map_err(|e| e.to_string())
@@ -634,7 +664,15 @@ pub fn import_folder(folder: String, dest: String) -> Result<(), String> {
 
 /// `.mdpkg` をフォルダへ展開する Tauri コマンド。
 #[tauri::command]
-pub fn export_folder(package_path: String, dest: String) -> Result<(), String> {
+pub fn export_folder(window: tauri::Window, package_path: String, dest: String) -> Result<(), String> {
+    crate::document_access::require_document(&window, Path::new(&package_path), false)?;
+    crate::document_access::require_selected(&window, Path::new(&dest))?;
+    export_folder_at(package_path, dest.clone())?;
+    crate::document_access::remember_created(&window, Path::new(&dest), true);
+    Ok(())
+}
+
+fn export_folder_at(package_path: String, dest: String) -> Result<(), String> {
     let data = read_file(Path::new(&package_path), MAX_DOCUMENT_BYTES).map_err(|e| e.to_string())?;
     let loaded = load_package(&data).map_err(|e| e.to_string())?;
     crate::folder_export::export(&loaded, Path::new(&dest))
@@ -834,9 +872,9 @@ pub fn setup(app: &mut tauri::App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{import_folder, read_image_at};
+    use super::{import_folder_at, read_image_at};
     use super::{
-        create_new_package, export_folder, export_package, read_imported_file, save_attachment_at,
+        create_new_package_at, export_folder_at, export_package_at, read_imported_file, save_attachment_at,
         FileContent, SaveRequest,
     };
     use super::{
@@ -885,11 +923,11 @@ mod tests {
         let source = dir.join("source");
         crate::folder_document::create_empty_folder(&source).unwrap();
         let destination = dir.join("out.mdpkg");
-        import_folder(source.to_string_lossy().into_owned(), destination.to_string_lossy().into_owned()).unwrap();
+        import_folder_at(source.to_string_lossy().into_owned(), destination.to_string_lossy().into_owned()).unwrap();
         let bytes = std::fs::read(&destination).unwrap();
         assert_eq!(crate::package_loader::load_package(&bytes).unwrap().files.len(), 1);
         std::fs::write(source.join("manifest.json"), r#"{"format":"other","version":"2.0","entrypoint":"index.md"}"#).unwrap();
-        assert!(import_folder(source.to_string_lossy().into_owned(), destination.to_string_lossy().into_owned()).is_err());
+        assert!(import_folder_at(source.to_string_lossy().into_owned(), destination.to_string_lossy().into_owned()).is_err());
         assert_eq!(std::fs::read(&destination).unwrap(), bytes);
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -1017,7 +1055,7 @@ mod tests {
     #[test]
     fn creates_a_v2_package_with_index_entrypoint() {
         let path = temporary_attachment_path().with_extension("mdpkg");
-        create_new_package(path.to_string_lossy().into_owned()).unwrap();
+        create_new_package_at(path.to_string_lossy().into_owned()).unwrap();
         let loaded = crate::package_loader::load_package(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(loaded.manifest.version, "2.0");
         assert_eq!(loaded.manifest.entrypoint, "index.md");
@@ -1066,7 +1104,7 @@ mod tests {
                 base64: None,
             }],
         };
-        export_package(request).unwrap();
+        export_package_at(request).unwrap();
         let bytes = std::fs::read(&path).unwrap();
         let loaded = crate::package_loader::load_package(&bytes).unwrap();
         assert_eq!(loaded.manifest.entrypoint, "README.md");
@@ -1077,7 +1115,7 @@ mod tests {
     fn export_folder_includes_manifest_json() {
         let package_path = temporary_attachment_path().with_extension("mdpkg");
         let dest = temporary_attachment_path().with_extension("folder");
-        export_package(SaveRequest {
+        export_package_at(SaveRequest {
             edit_history: None,
             path: package_path.to_string_lossy().into_owned(),
             manifest: serde_json::json!({
@@ -1093,7 +1131,7 @@ mod tests {
         })
         .unwrap();
 
-        export_folder(
+        export_folder_at(
             package_path.to_string_lossy().into_owned(),
             dest.to_string_lossy().into_owned(),
         )

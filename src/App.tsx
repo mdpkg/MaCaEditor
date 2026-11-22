@@ -600,7 +600,7 @@ export default function App() {
     }
   }, [doc, selectedPath]);
 
-  const openDocument = async (path: string, kind: RecentDocument["kind"], editOnOpen = false) => {
+  const openDocument = async (path: string, kind: RecentDocument["kind"], editOnOpen = false, selectedAgain = false): Promise<void> => {
     const sequence = ++openSequenceRef.current;
     try {
       const info = await (kind === "package" ? openPackage(path) : openFolder(path, true));
@@ -637,7 +637,19 @@ export default function App() {
       setMermaidPath(null);
       setMathJaxPath(null);
       setStatus(`${path} を開きました`);
-    } catch (reason) { reportError(kind === "folder" ? uiText("Open folder") : uiText("Open package"), reason); }
+    } catch (reason) {
+      if (!selectedAgain && sequence === openSequenceRef.current &&
+          String(reason).includes("file access requires selecting or dropping the file first")) {
+        const selected = await openDialog(kind === "folder"
+          ? { directory: true, recursive: true, defaultPath: path }
+          : { defaultPath: path, filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }] });
+        if (typeof selected === "string" && sequence === openSequenceRef.current) {
+          await openDocument(selected, kind, editOnOpen, true);
+        }
+        return;
+      }
+      reportError(kind === "folder" ? uiText("Open folder") : uiText("Open package"), reason);
+    }
   };
 
   const handleOpen = async (editOnOpen = false) => {
@@ -646,14 +658,14 @@ export default function App() {
   };
 
   const handleOpenFolder = async () => {
-    const path = await openDialog({ directory: true });
+    const path = await openDialog({ directory: true, recursive: true });
     if (typeof path === "string") await openDocument(path, "folder");
   };
 
   const handleStartWithEmptyFolder = async () => {
     if (!await confirmReplaceDirtyDocument()) return;
     const approvedDocument = documentRef.current;
-    const parent = await openDialog({ directory: true });
+    const parent = await openDialog({ directory: true, recursive: true });
     if (typeof parent !== "string") return;
     const requestedName = await ask({
       title: uiText("Create folder"), label: uiText("Folder name"), initialValue: "untitled", confirmLabel: uiText("Create"),
@@ -900,7 +912,7 @@ export default function App() {
   const handleImport = async () => {
     if (!await confirmReplaceDirtyDocument()) return;
     const approvedDocument = documentRef.current;
-    const folder = await openDialog({ directory: true });
+    const folder = await openDialog({ directory: true, recursive: true });
     if (typeof folder === "string") {
       const dest = await saveDialog({
         filters: [{ name: "Markdown パッケージ", extensions: ["mdpkg"] }],
@@ -941,7 +953,7 @@ export default function App() {
 
   const handleExport = async () => {
     if (!doc || doc.origin.kind !== "package") return;
-    const folder = await openDialog({ directory: true });
+    const folder = await openDialog({ directory: true, recursive: true });
     if (typeof folder === "string") {
       try {
         await exportFolder(doc.origin.path, folder);
