@@ -8,6 +8,12 @@ This file covers the direct runtime dependencies declared in package.json.
 MIT-licensed software
 ---------------------
 
+@marp-team/marp-core 4.4.0
+Copyright (c) 2018 Marp team (marp-team@marp.app)
+
+css-tree 3.2.1
+Copyright (C) 2016-2026 by Roman Dvornov
+
 @codemirror/lang-markdown 6.3.4
 Copyright (C) 2018-2021 by Marijn Haverbeke
 <marijn@haverbeke.berlin> and others

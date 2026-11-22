@@ -1,0 +1,7 @@
+{
+  "format": "mdpkg",
+  "version": "2.0",
+  "entrypoint": "slides.md",
+  "description": "Marp preview: standard themes, offline math and package SVG",
+  "resources": []
+}

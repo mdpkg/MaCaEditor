@@ -30,6 +30,7 @@ async function fixture(t, options = {}) {
 
 test("standard themes, 4:3/16:9, MathJax, sanitized SVG and backgrounds render offline at high DPI", async (t) => {
   const page = await fixture(t, { deviceScaleFactor: 2 });
+  await page.context().setOffline(true);
   const requests = [];
   page.on("request", (request) => { if (/^https?:/.test(request.url())) requests.push(request.url()); });
   for (const theme of ["default", "gaia", "uncover"]) {
