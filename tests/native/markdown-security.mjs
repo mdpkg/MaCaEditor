@@ -145,6 +145,7 @@ try {
       ["export_package", { request }], ["import_folder", { folder, dest: unselected }],
       ["export_folder", { packagePath: unselected, dest: unselected + "-export" }],
       ["watch_folder", { path: unselected + "-folder" }],
+      ["clear_saved_edit_history", { path: unselected, kind: "package" }],
       ["read_image", { path: unselected }], ["read_attachment", { path: unselected }], ["save_attachment", { path: unselected, base64: "eA==" }],
       ["plugin:store|load", { path: unselected, options: {} }],
       ["save_attachment", { path: appData + "/approved-documents.json", base64: "e30=" }],
