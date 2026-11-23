@@ -12,7 +12,7 @@ MaCa Editorは、[Markdown Package Specification（mdpkg仕様）](https://githu
 
 Windows x64 用の `.exe` または `.msi`、macOS Apple Silicon 用の `.dmg`、Linux x86-64 用の AppImage・`.deb`・`.rpm` を配布しています。[MaCa Editor 最新版のダウンロード](https://github.com/mdpkg/MaCaEditor/releases/latest)
 
-v2.5.0 では Marp スライドプレビューに対応しました。`marp: true` の Markdown を自動でスライド表示し、数式、パッケージ内画像・SVG、スライド単位のスクロール同期を利用できます。[v2.5.0 リリースノート](docs/releases/v2.5.0.md)
+v2.5.1 では Markdown のリンク・SVG 表示、アプリ全体の CSP、文書ファイルのアクセス認可を強化しました。従来の「最近使った文書」は、初回に再選択が必要になる場合があります。[v2.5.1 リリースノート](docs/releases/v2.5.1.md)
 
 ## 主な機能
 
