@@ -14,7 +14,7 @@ The name **MaCa** comes from **Ma**rkdown and **Ca**nvas. It combines Markdown d
 
 Installers are available for Windows x64 (`.exe` or `.msi`), macOS on Apple Silicon (`.dmg`), and Linux x86-64 (AppImage, `.deb`, or `.rpm`). [Download the latest MaCa Editor release](https://github.com/mdpkg/MaCaEditor/releases/latest)
 
-Version 2.5.0 adds automatic Marp slide previews for Markdown with `marp: true`, including math, package images/SVG and slide-level scroll synchronization. The instructions below use the Japanese labels shown in the app. [v2.5.0 release notes (Japanese)](docs/releases/v2.5.0.md)
+Version 2.5.1 hardens Markdown links, SVG rendering, application CSP and document file authorization. Existing recent documents may require native re-selection once. The instructions below use the Japanese labels shown in the app. [v2.5.1 release notes (Japanese)](docs/releases/v2.5.1.md)
 
 ## Features
 
