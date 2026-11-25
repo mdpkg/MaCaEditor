@@ -3,7 +3,7 @@ import type { ComponentProps } from "react";
 import type { AiTaskKind } from "../lib/aiSelection";
 import type { HistoryDirection, TextEditGroup } from "../lib/editHistory";
 
-interface Props extends Pick<ComponentProps<typeof CodeEditor>, "onImagePaste" | "onImagePasteError"> {
+interface Props extends Pick<ComponentProps<typeof CodeEditor>, "onImagePaste" | "onImagePasteError" | "chachaSession" | "chachaFileId" | "chachaBlocked"> {
   value: string;
   onChange: (value: string, group?: TextEditGroup) => void;
   onHistory?: (direction: HistoryDirection) => void;
@@ -22,7 +22,7 @@ interface Props extends Pick<ComponentProps<typeof CodeEditor>, "onImagePaste" |
   diagnosticRanges?: Array<{ from: number; to: number }>;
 }
 
-export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onImagePaste, onImagePasteError, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges }: Props) {
+export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onSelectionChange, onSave, vimMode = false, onAiSelection, onPackagePathDrop, onImagePaste, onImagePasteError, onMarkdownLinkOpen, initialCursorPosition, initialScrollTop, onScrollTopChange, navigation, onNavigationComplete, diagnosticRanges, chachaSession, chachaFileId, chachaBlocked }: Props) {
   return (
     <CodeEditor
       className="markdown-editor"
@@ -46,6 +46,9 @@ export function MarkdownEditor({ value, onChange, onHistory, onCursorChange, onS
       navigation={navigation}
       onNavigationComplete={onNavigationComplete}
       diagnosticRanges={diagnosticRanges}
+      chachaSession={chachaSession}
+      chachaFileId={chachaFileId}
+      chachaBlocked={chachaBlocked}
     />
   );
 }

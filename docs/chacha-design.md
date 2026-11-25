@@ -118,3 +118,29 @@ IME/補完/検索/モーダル/Vim 中は処理しない。専用展開・削除
 - UI への自動送信接続はまだ行わない。
 - 旧設定とのマージ後に既存の64KiB読込上限を超えるケースを Red→Green で修正。
   保存前に総サイズを検証し、通常のエディタ設定が読めないファイルを作らない。
+
+## Phase 4：CodeMirror・吹き出し
+
+- CodeEditor の Compartment にドメイン専用 ViewPlugin/StateField/StateEffect を追加し、
+  MarkdownEditor 経由で注入できるようにする。Appの有効化UIへの接続は次フェーズ。
+- `gutter({side:"after"})` は有効中52pxを維持。24pxボタン2個。コメントの出現・削除で幅を変えない。
+  GutterMarkerを段落位置に配置し、展開時のみTooltipを生成。出力はtextContentのみ。
+- CMガターの既定 `aria-hidden=true` は右側の茶々入れコンテナだけ解除し、左ガターは維持する。
+  到着時はfocus/selection/scroll/本文/履歴を変更しない。明示キーボード展開時のみnoteへfocusし、
+  Esc/削除でeditorへ戻す。本文にリンクや画像を生成せず、到着時の自動読み上げも行わない。
+- EscはPrec.lowestのDOMハンドラでIMEイベント自体も検証。既存keymap・検索・補完・Vimを優先。
+  Vim有効時のeditor Escは扱わず、専用Mod-Alt-Enter/Mod-Alt-Backspaceを提供する。
+  明示展開したnote内のEsc/専用削除キーも処理する。
+- 画面外判定はCMのvisibleRanges/lineBlockAtとscroll位置を使用。update中のcoordsAtPosを避ける。
+  refresh dispatchはmicrotaskへ遅延し、destroy後のdispatch・listener・timerを残さない。
+- 最終ユーザー変更の逆写像で対象の旧/新raw段落を比較し、全段落削除で隣の未編集段落を送らない。
+  controlled同期は編集量をリセット。IMEはcomposition確定時に集計する。
+- ブラウザでrandomUUID未提供の環境を検出。getRandomValuesでRFC4122 v4を構成する代替を追加。
+- TDD: 新規フロント10件、実ブラウザ6件。IMEキー、ガターのA11y隠蔽、note内削除キー、
+  UUID互換性をRed→Greenで修正。ライト/ダーク、900px/360px幅、Vim、補完/検索、
+  焦点/選択/スクロール/折返し不変、plain text、画面外破棄を確認し、スクリーンショットも目視確認。
+- 全体並列検証で設定テストの開発サーバー起動が
+  30秒を超えたため、既存のVite build+IIFE fixture方式に揃えた。製品の検証項目は維持する。
+- 範囲外でも見出し・段落境界などが変われば、抽出文脈の整合性を再検証する。
+  通常の範囲外の文字入力では全文を再解析せず、位置追従を維持。要求/コメントがない間は
+  再検証用の文書スナップショットを保持しない。

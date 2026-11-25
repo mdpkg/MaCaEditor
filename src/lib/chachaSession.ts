@@ -8,7 +8,25 @@ import { buildChachaMessages, CHACHA_FREQUENCIES, normalizeChachaSettings, type 
 import { ChachaTrigger } from "./chachaTrigger";
 
 export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal }) => Promise<string>;
-interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean }
+interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean; targetEdited?(context: ChachaContext): boolean }
+function requestId(): string {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+function mayChangeStructure(before: string, after: string, changes: ChangeDesc): boolean {
+  let structural = false;
+  changes.iterChangedRanges((from, to, fromNew, toNew) => {
+    const start = from === 0 ? 0 : before.lastIndexOf("\n", from - 1) + 1;
+    const end = before.indexOf("\n", from), line = before.slice(start, end < 0 ? undefined : end);
+    const indent = /^\s*/.exec(line)![0].length;
+    structural ||= /[\r\n`~#<>*_=+\[\]\-]/.test(before.slice(from, to) + after.slice(fromNew, toNew))
+      || !line.trim() || /^\s*[<#`~>]/.test(line) || (indent >= 4 && from <= start + indent);
+  });
+  return structural;
+}
 export interface ChachaSnapshot {
   enabled: boolean; paused: boolean; reason: "auth" | "rate" | "failures" | "manual" | "connection" | null;
   phase: "idle" | "requesting" | "pending" | "collapsed" | "expanded";
@@ -22,6 +40,7 @@ export class ChachaSession {
   private binding?: Binding;
   private settings: ChachaSettings;
   private context?: ChachaContext;
+  private contextSource?: string;
   private abort?: AbortController;
   private generation = 0;
   private transportGeneration?: number;
@@ -43,7 +62,7 @@ export class ChachaSession {
   private clearTimer() { if (this.timer !== undefined) clearTimeout(this.timer); this.timer = undefined; }
   private invalidate() {
     this.generation++; this.abort?.abort(); this.abort = undefined;
-    this.context = undefined; this.deadline = Infinity; this.clearTimer();
+    this.context = undefined; this.contextSource = undefined; this.deadline = Infinity; this.clearTimer();
     this.emit({ phase: "idle", comment: undefined });
   }
   attach(binding: Binding) {
@@ -73,12 +92,17 @@ export class ChachaSession {
     if (this.disposed || !this.snapshot.enabled || this.snapshot.paused) return;
     this.lastEdit = Date.now(); this.trigger.edit(edit.amount, edit.position, this.lastEdit); this.pulse();
   }
+  resetEdits() { this.trigger.resetEdits(); }
   changed(changes: ChangeDesc) {
     this.lastEdit = Date.now();
     if (this.trigger.position !== undefined) this.trigger.position = changes.mapPos(this.trigger.position, 1);
     if (!this.context) return;
-    const mapped = mapChachaContext(this.context, changes, this.binding?.source());
+    const source = this.binding!.source();
+    const mapped = mapChachaContext(this.context, changes, source);
     if (!mapped) { this.invalidate(); return; }
+    if (this.contextSource !== undefined && mayChangeStructure(this.contextSource, source, changes)
+      && extractChachaContext(source, mapped.anchor.from)?.key !== mapped.key) { this.invalidate(); return; }
+    this.contextSource = source;
     this.context = mapped;
     if (this.snapshot.comment) this.emit({ comment: { ...this.snapshot.comment, context: mapped } });
   }
@@ -123,17 +147,17 @@ export class ChachaSession {
     const delay = this.trigger.delay(now);
     if (delay === null || binding.blocked()) return;
     if (delay > 0) { this.arm(delay); return; }
-    const context = extractChachaContext(binding.source(), this.trigger.position!);
+    const source = binding.source(), context = extractChachaContext(source, this.trigger.position!);
     const file = JSON.stringify([binding.file, this.revision]);
-    if (!context || this.trigger.seen(file, context.key)) { this.trigger.resetEdits(); return; }
-    this.context = context; this.trigger.sent(file, context.key, now);
+    if (!context || binding.targetEdited?.(context) === false || this.trigger.seen(file, context.key)) { this.trigger.resetEdits(); return; }
+    this.context = context; this.contextSource = source; this.trigger.sent(file, context.key, now);
     const generation = ++this.generation, abort = new AbortController(); this.abort = abort;
     this.transportGeneration = generation;
     this.deadline = now + 60000; this.emit({ phase: "requesting", comment: undefined }); this.arm(60000);
     const messages = buildChachaMessages(this.settings.prompt, context.text);
     void Promise.resolve().then(() => {
       if (generation !== this.generation || abort.signal.aborted) throw { kind: "cancelled" };
-      return this.transport({ requestId: crypto.randomUUID(), messages, signal: abort.signal });
+      return this.transport({ requestId: requestId(), messages, signal: abort.signal });
     }).then((raw) => {
       if (generation !== this.generation || this.disposed) return;
       this.abort = undefined;
