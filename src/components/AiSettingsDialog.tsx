@@ -90,7 +90,7 @@ export function AiSettingsDialog({ onClose }: Props) {
   };
 
   return (
-    <Dialog onClose={onClose} title={uiText("AI Settings")} initialFocus={closeButtonRef}>
+    <Dialog className="about-dialog ai-settings-dialog" onClose={onClose} title={uiText("AI Settings")} initialFocus={closeButtonRef}>
       <label>
         {uiText("Provider")}<select
           value={config.provider}
