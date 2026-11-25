@@ -1,0 +1,140 @@
+import assert from "node:assert/strict";
+import { before, after, test } from "node:test";
+import { createServer } from "vite";
+import { chromium } from "playwright";
+import { join } from "node:path";
+
+let server, browser;
+before(async () => {
+  server = await createServer({ server: { host: "127.0.0.1", port: 0, strictPort: false } });
+  await server.listen(); browser = await chromium.launch();
+});
+after(async () => { await browser?.close(); await server?.close(); });
+async function fixture(t, width = 1100) {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(120000);
+  const errors = []; page.on("pageerror", (error) => errors.push(error.message));
+  t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
+  await page.addInitScript(() => {
+    let nextCallback = 1;
+    const callbacks = new Map();
+    const state = window.__chachaTest = {
+      requests: [], saves: [], preferences: {}, connection: { endpoint: "http://127.0.0.1:9/v1", model: "fixture-reader", revision: "one" },
+      nextPath: "F:/fixture/a.mdpkg",
+      connectionUnavailable: false,
+    };
+    const source = "---\ntitle: PRIVATE-FRONTMATTER\n---\n\n# 茶々入れ検証\n\n前の段落\n\n対象\n\n後の段落\n\n```\nPRIVATE-CODE\n```\n\n遠い段落";
+    const packageInfo = () => ({ manifest: { version: "2.0", entrypoint: "index.md" }, entrypoint: "index.md", files: [
+      { path: "index.md", is_text: true, base64: null, content: source }, { path: "guide.md", is_text: true, base64: null, content: "別のMarkdown" },
+    ] });
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+    window.__TAURI_INTERNALS__ = {
+      metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+      transformCallback(callback) { const id = nextCallback++; callbacks.set(id, callback); return id; },
+      unregisterCallback(id) { callbacks.delete(id); }, convertFileSrc(path) { return path; },
+      async invoke(command, args) {
+        if (command === "plugin:event|listen") return nextCallback++;
+        if (command === "plugin:dialog|open") return state.nextPath;
+        if (command === "open_package") return packageInfo();
+        if (command === "read_editor_preferences") return structuredClone(state.preferences);
+        if (command === "save_editor_preferences") { Object.assign(state.preferences, structuredClone(args.preferences)); return; }
+        if (command === "has_ai_configuration") return true;
+        if (command === "chacha_connection") { if (state.connectionUnavailable) throw { kind: "connection" }; return structuredClone(state.connection); }
+        if (command === "load_ai_config") return { provider: "OpenAiCompatible", base_url: state.connection.endpoint, model: state.connection.model, api_key: null, temperature: 0.7, max_output_tokens: 4096, connect_timeout_seconds: 10, request_timeout_seconds: 300 };
+        if (command === "save_ai_config") { state.connection = { endpoint: args.config.base_url, model: args.config.model, revision: "changed" }; return; }
+        if (command === "ai_chacha") {
+          assertConnection(args);
+          state.requests.push(structuredClone(args));
+          return JSON.stringify({ type: "reaction", comment: args.request.messages[1].content.includes("辛口") ? "辛口の反応です。" : "読んでいるよ。" });
+        }
+        if (command === "cancel_ai_request") return false;
+        if (command === "save_package") { state.saves.push(structuredClone(args.request)); return {}; }
+        return null;
+      },
+    };
+    function assertConnection(args) { if (args.expectedConnection !== state.connection.revision) throw { kind: "connection" }; }
+  });
+  await page.goto(server.resolvedUrls.local[0]);
+  await page.locator(".empty-state").getByRole("button", { name: "開く", exact: true }).click();
+  await page.locator(".cm-content").waitFor();
+  await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+  return page;
+}
+const requests = (page) => page.evaluate(() => window.__chachaTest.requests);
+async function write(page) {
+  await page.locator(".cm-line").filter({ hasText: /^対象/ }).click();
+  await page.keyboard.press("End"); await page.keyboard.insertText("書".repeat(100));
+}
+test("実Appは明示同意からだけ送信し、人格保存・停止再開・文書切替と保存データの分離を保つ", async (t) => {
+  const page = await fixture(t);
+  await write(page); await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  const consent = page.getByRole("dialog", { name: "この文書で茶々入れを有効化", exact: true }); await consent.waitFor();
+  assert.match(await consent.textContent(), /2,000文字/); assert.match(await consent.textContent(), /120秒/); assert.match(await consent.textContent(), /料金/);
+  assert.equal(await consent.getByRole("button", { name: "キャンセル", exact: true }).evaluate((button) => button === document.activeElement), true);
+  await consent.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await page.clock.fastForward(120000); assert.equal((await requests(page)).length, 0);
+  await write(page); await page.clock.runFor(5050);
+  const expand = page.getByRole("button", { name: "茶々入れコメントを展開", exact: true }); await expand.waitFor();
+  let sent = await requests(page); assert.equal(sent.length, 1); assert.equal(sent[0].expectedConnection, "one");
+  const documentText = JSON.parse(sent[0].request.messages[2].content);
+  assert.match(documentText.target, /^対象/); assert.equal(documentText.previous, "前の段落"); assert.equal(documentText.next, "後の段落");
+  assert.ok(!JSON.stringify(sent).includes("PRIVATE")); assert.ok(!JSON.stringify(sent).includes("F:/fixture"));
+  assert.equal(await page.locator(".cm-content").evaluate((element) => element === document.activeElement), true);
+  await expand.click(); await page.clock.runFor(50); await page.locator(".cm-chacha-tooltip").getByText("読んでいるよ。", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "AI", exact: true }).click(); await page.getByRole("menuitem", { name: "AI 設定", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "AI 設定", exact: true });
+  await settings.getByRole("textbox", { name: /読者の人格/ }).fill("辛口の読者"); assert.equal((await requests(page)).length, 1);
+  await settings.getByRole("button", { name: "茶々入れ設定を保存", exact: true }).click();
+  await settings.getByText("茶々入れ設定を保存しました。", { exact: true }).waitFor();
+  await settings.getByRole("button", { name: "閉じる", exact: true }).click();
+  await write(page); await page.clock.runFor(120000); sent = await requests(page);
+  assert.equal(sent.length, 2); assert.match(sent[1].request.messages[1].content, /辛口の読者/);
+  await page.getByRole("button", { name: "茶々入れを一時停止", exact: true }).click();
+  await write(page); await page.clock.fastForward(180000); assert.equal((await requests(page)).length, 2);
+  await page.getByRole("button", { name: "茶々入れを再開", exact: true }).click(); await page.clock.fastForward(120000);
+  assert.equal((await requests(page)).length, 2);
+  await page.locator(".cm-content").focus(); await page.keyboard.press("Control+s");
+  await page.waitForFunction(() => window.__chachaTest.saves.length === 1);
+  const saved = await page.evaluate(() => window.__chachaTest.saves[0]);
+  assert.ok(!JSON.stringify(saved).includes("chacha")); assert.ok(!JSON.stringify(saved).includes("読んでいるよ"));
+  await page.getByRole("button", { name: "AI", exact: true }).click(); await page.getByRole("menuitem", { name: "AI 設定", exact: true }).click();
+  const connectionSettings = page.getByRole("dialog", { name: "AI 設定", exact: true });
+  await connectionSettings.getByRole("textbox", { name: "ベース URL", exact: true }).fill("http://127.0.0.1:10/v1");
+  await connectionSettings.getByRole("button", { name: "保存", exact: true }).click();
+  await connectionSettings.getByText("保存しました。", { exact: true }).waitFor();
+  assert.match(await connectionSettings.textContent(), /AI 接続設定が変わりました/);
+  await connectionSettings.getByRole("button", { name: "閉じる", exact: true }).click();
+  await write(page); await page.clock.fastForward(120000); assert.equal((await requests(page)).length, 2);
+  await page.locator(".cm-content").focus(); await page.keyboard.press("Control+s"); await page.waitForFunction(() => window.__chachaTest.saves.length === 2);
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  const changedConsent = page.getByRole("dialog", { name: "この文書で茶々入れを有効化", exact: true });
+  assert.match(await changedConsent.textContent(), /127\.0\.0\.1:10/);
+  await changedConsent.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await page.clock.fastForward(120000); assert.equal((await requests(page)).length, 2);
+  await page.locator('[data-path="guide.md"]').click();
+  assert.equal(await page.getByRole("button", { name: "茶々入れを一時停止", exact: true }).count(), 1);
+  await page.evaluate(() => { window.__chachaTest.nextPath = "F:/fixture/b.mdpkg"; });
+  await page.getByRole("button", { name: "ファイル", exact: true }).click(); await page.getByRole("menuitem", { name: "開く", exact: true }).click();
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).waitFor();
+  assert.equal((await requests(page)).length, 2);
+});
+test("狭い実Appでも同意ダイアログは画面内に収まりステータスバーの透明度を継承しない", async (t) => {
+  const page = await fixture(t, 360);
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  const consent = page.getByRole("dialog", { name: "この文書で茶々入れを有効化", exact: true }); await consent.waitFor();
+  const rect = await consent.boundingBox(); assert.ok(rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= 360 && rect.y + rect.height <= 900);
+  assert.equal(await consent.evaluate((element) => !!element.closest(".status-bar")), false);
+  if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, "chacha-app-consent-360.png") });
+  await consent.getByRole("button", { name: "キャンセル", exact: true }).click(); assert.equal((await requests(page)).length, 0);
+});
+test("接続未設定の案内が狭い画面の執筆領域を押しつぶさずAI設定へ進める", async (t) => {
+  const page = await fixture(t, 360);
+  await page.evaluate(() => { window.__chachaTest.connectionUnavailable = true; });
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  const setup = page.getByRole("button", { name: "AI 設定を開く", exact: true }); await setup.waitFor();
+  const status = await page.locator(".status-bar").boundingBox(); assert.ok(status.height <= 64, JSON.stringify(status));
+  const box = await setup.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 360, JSON.stringify(box));
+  await setup.click(); await page.getByRole("dialog", { name: "AI 設定", exact: true }).waitFor();
+  assert.equal((await requests(page)).length, 0);
+});

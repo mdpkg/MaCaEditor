@@ -20,6 +20,7 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps --only-shell chromium
       - run: npm run test:browser
+      - run: npm run test:chacha-app
       - run: npm run build
 
   rust-windows:

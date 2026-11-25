@@ -51,7 +51,7 @@ export function ChachaControls({ runtime, settings, compact = false, onOpenAiSet
     <span className={compact ? "chacha-status" : "chacha-controls"}>
       {!compact && <span>{label}</span>}
       <button type="button" disabled={!runtime || preparing} onClick={toggle}
-        title={explanation || (state.enabled ? state.paused ? "再開" : "一時停止" : "現在の文書だけで有効化")}
+        title={message || explanation || (state.enabled ? state.paused ? "再開" : "一時停止" : "現在の文書だけで有効化")}
         aria-haspopup={!state.enabled ? "dialog" : undefined}
         aria-label={compact ? state.enabled ? state.paused ? "茶々入れを再開" : "茶々入れを一時停止" : "茶々入れをこの文書で有効化" : undefined}>
         {compact ? label : state.enabled ? state.paused ? "再開" : "一時停止" : "この文書で有効化"}
@@ -59,7 +59,9 @@ export function ChachaControls({ runtime, settings, compact = false, onOpenAiSet
       {!compact && state.enabled && <button type="button" onClick={() => runtime?.session.disable()}>無効化</button>}
       {!compact && explanation && <span className="chacha-reason">{explanation}</span>}
       {!compact && runtime?.connection.current && <span className="chacha-reason">有効化時の接続先：{runtime.connection.current.endpoint} / {runtime.connection.current.model}</span>}
-      {message && <span className="chacha-reason">{message}{onOpenAiSettings && !state.enabled && <button type="button" onClick={onOpenAiSettings}>AI 設定を開く</button>}</span>}
+      {message && (compact ? <span title={message}>
+        {onOpenAiSettings && !state.enabled ? <button type="button" onClick={onOpenAiSettings}>AI 設定を開く</button> : state.enabled ? "待機期間中" : "設定を確認"}
+      </span> : <span className="chacha-reason">{message}{onOpenAiSettings && !state.enabled && <button type="button" onClick={onOpenAiSettings}>AI 設定を開く</button>}</span>)}
     </span>
     {confirmation && confirmation.runtime === runtime && createPortal(<Dialog className="about-dialog ai-settings-dialog chacha-enable-dialog" title="この文書で茶々入れを有効化" initialFocus={cancelRef} onClose={() => setConfirmation(undefined)}>
       <p>執筆中の文章を LLM へ自動送信します。現在の文書パッケージでのみ有効になり、文書を閉じると解除されます。</p>
