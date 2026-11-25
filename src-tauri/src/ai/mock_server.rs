@@ -49,7 +49,7 @@ impl MockOpenAiServer {
         format!("http://{}/v1", self.addr)
     }
 
-    fn request_count(&self) -> usize {
+    pub(crate) fn request_count(&self) -> usize {
         self.requests.load(Ordering::Relaxed)
     }
 }

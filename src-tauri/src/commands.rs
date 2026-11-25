@@ -855,6 +855,36 @@ pub async fn ai_edit_diagram(
     ).await
 }
 
+/// Bounded, stateless automatic reactions using the saved connection/key.
+#[tauri::command]
+pub fn chacha_connection(app: AppHandle) -> Result<crate::ai::chacha::ChachaConnection, crate::ai::chacha::ChachaFailure> {
+    use crate::ai::chacha::{ChachaConnection, ChachaFailure, connection_revision};
+    let config = load_ai_config(app).map_err(|_| ChachaFailure::new("connection"))?;
+    Ok(ChachaConnection { revision: connection_revision(&config)?, endpoint: config.base_url, model: config.model })
+}
+
+#[tauri::command]
+pub async fn ai_chacha(
+    app: AppHandle,
+    state: tauri::State<'_, crate::ai::commands::AiStreamState>,
+    request_id: String,
+    request: crate::ai::types::AiRequest,
+    expected_connection: String,
+) -> Result<String, crate::ai::chacha::ChachaFailure> {
+    use crate::ai::chacha::{ChachaFailure, execute_cancellable, validate_request, try_enter, connection_revision};
+    validate_request(&request)?;
+    uuid::Uuid::parse_str(&request_id).map_err(|_| ChachaFailure::new("invalid"))?;
+    let config = load_ai_config(app.clone()).map_err(|_| ChachaFailure::new("connection"))?;
+    if connection_revision(&config)? != expected_connection { return Err(ChachaFailure::new("connection")); }
+    let _permit = try_enter()?;
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, config.api_key.as_deref()).with_model(config.model);
+    let connect = Duration::from_secs(config.connect_timeout_seconds.unwrap_or(10).min(60));
+    let result = execute_cancellable(state.registry.clone(), request_id, Duration::from_secs(60), provider.complete_chacha(request, connect)).await;
+    let current = load_ai_config(app).map_err(|_| ChachaFailure::new("connection"))?;
+    if connection_revision(&current)? != expected_connection { return Err(ChachaFailure::new("connection")); }
+    result
+}
+
 /// request ID を指定して実行中の AI ストリームをキャンセルする Tauri コマンド。
 /// 存在しない ID は idempotent に成功扱いする。
 #[tauri::command]

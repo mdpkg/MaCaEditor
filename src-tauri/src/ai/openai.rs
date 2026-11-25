@@ -32,6 +32,32 @@ pub struct OpenAiCompatibleProvider {
 }
 
 impl OpenAiCompatibleProvider {
+    /// A bounded, one-shot request. Explicit AI actions retain their existing retry policy.
+    pub async fn complete_chacha(&self, mut request: AiRequest, connect_timeout: Duration) -> Result<String, super::chacha::ChachaFailure> {
+        use super::chacha::{ChachaFailure, validate_request};
+        validate_request(&request)?;
+        request.max_output_tokens = Some(256);
+        let body = self.to_openai_request(&self.model, &request, false).map_err(|_| ChachaFailure::new("invalid"))?;
+        let response = tokio::time::timeout(connect_timeout, self.http.post(self.config.url("/chat/completions"))
+            .headers(self.config.headers()).query(&self.config.query()).json(&body).send()).await
+            .map_err(|_| ChachaFailure::new("timeout"))?.map_err(|_| ChachaFailure::new("transport"))?;
+        if !response.status().is_success() {
+            let kind = match response.status().as_u16() { 401 | 403 => "auth", 429 => "rate", _ => "transport" };
+            let retry_after = response.headers().get(reqwest::header::RETRY_AFTER).and_then(|header| header.to_str().ok())
+                .filter(|value| value.len() <= 128).map(str::to_owned);
+            return Err(ChachaFailure { kind, retry_after });
+        }
+        if response.content_length().is_some_and(|size| size > 8192) { return Err(ChachaFailure::new("invalid")); }
+        let mut response = response; let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| ChachaFailure::new("transport"))? {
+            if bytes.len() + chunk.len() > 8192 { return Err(ChachaFailure::new("invalid")); }
+            bytes.extend_from_slice(&chunk);
+        }
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| ChachaFailure::new("invalid"))?;
+        value.pointer("/choices/0/message/content").and_then(serde_json::Value::as_str)
+            .filter(|text| text.len() <= 4096).map(str::to_owned).ok_or_else(|| ChachaFailure::new("invalid"))
+    }
+
     pub fn new(base_url: &str, api_key: Option<&str>) -> Self {
         let mut config = async_openai::config::OpenAIConfig::new();
         config = config.with_api_base(base_url);
