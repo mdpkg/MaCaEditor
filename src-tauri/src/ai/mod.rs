@@ -1,4 +1,5 @@
 pub mod cancel;
+pub mod chacha;
 pub mod capability;
 pub mod commands;
 pub mod config;

@@ -161,6 +161,8 @@ pub fn run() {
             commands::ai_selection_action,
             commands::ai_document_chat,
             commands::ai_edit_diagram,
+            commands::ai_chacha,
+            commands::chacha_connection,
             commands::cancel_ai_request,
         ])
         .run({
