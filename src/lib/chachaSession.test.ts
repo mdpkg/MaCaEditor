@@ -151,3 +151,9 @@ test("randomUUIDを提供しないWebViewでも安全なUUIDで通信できる",
     expect(vi.mocked(h.transport).mock.calls[0][0].requestId).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
   } finally { vi.unstubAllGlobals(); }
 });
+test.each([[0, "# 新しい章\n\n"], [5, "新しい文章"]] as const)("送信範囲外の構文変更 %i でも文脈が変われば表示済みコメントを失効する", async (position, insert) => {
+  const h = setup(); h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000);
+  expect(h.session.snapshot.phase).toBe("collapsed");
+  h.change(position, position, insert);
+  expect(h.session.snapshot.phase).toBe("idle");
+});
