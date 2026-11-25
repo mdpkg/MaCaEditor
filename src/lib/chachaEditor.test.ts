@@ -31,6 +31,7 @@ test("未展開はボタンだけ、明示展開はプレーンテキスト、�
   await vi.advanceTimersByTimeAsync(5000);
   expect(h.transport).toHaveBeenCalledOnce();
   expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れコメントを展開"]')).not.toBeNull();
+  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れコメントを展開"]')!.closest('[aria-hidden="true"]')).toBeNull();
   expect(h.view.dom.querySelector(".cm-chacha-tooltip")).toBeNull();
   expect(expandChachaComment(h.view)).toBe(true); await vi.advanceTimersByTimeAsync(30);
   expect(h.view.dom.querySelector(".cm-chacha-tooltip")?.textContent).toContain("<img src=https://example.invalid>読者の声");
@@ -71,4 +72,14 @@ test("専用キーはIME入力を優先し、明示展開・削除をキーボ�
   await vi.advanceTimersByTimeAsync(30); expect(h.session.snapshot.phase).toBe("expanded");
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: 8, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
   expect(h.session.snapshot.phase).toBe("idle");
+});
+test("IME未確定の大量編集では送信せず、確定文字数だけを集計する", async () => {
+  const h = setup();
+  h.view.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  h.view.dispatch({ changes: { from: 2, insert: "a".repeat(200) }, userEvent: "input.type.compose" });
+  await vi.advanceTimersByTimeAsync(10000); expect(h.transport).not.toHaveBeenCalled();
+  h.view.dispatch({ changes: { from: 2, to: 202, insert: "日".repeat(50) }, userEvent: "input.type.compose" });
+  h.view.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  await vi.advanceTimersByTimeAsync(5000); expect(h.transport).not.toHaveBeenCalled();
+  h.write(); await vi.advanceTimersByTimeAsync(5000); expect(h.transport).toHaveBeenCalledOnce();
 });

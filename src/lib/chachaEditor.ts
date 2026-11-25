@@ -67,7 +67,8 @@ export function createChachaExtension(session: ChachaSession, options: {
           const text = document.createElement("p"); text.textContent = comment.comment;
           dom.append(text, button("茶々入れコメントを削除", "×", () => { dismissChachaComment(view); }));
           dom.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && !event.isComposing && !view.composing && !modal()) {
+            const dismiss = event.key === "Escape" || (event.key === "Backspace" && (event.ctrlKey || event.metaKey) && event.altKey);
+            if (dismiss && !event.isComposing && event.keyCode !== 229 && !view.composing && !modal()) {
               event.preventDefault(); event.stopPropagation(); dismissChachaComment(view);
             }
           });
@@ -82,6 +83,8 @@ export function createChachaExtension(session: ChachaSession, options: {
     private composing = false;
     private readonly edits = new ChachaEdits();
     private lastChange?: { before: Text; changes: ChangeSet };
+    private gutterParent?: HTMLElement;
+    private previousHidden: string | null = null;
     private readonly unsubscribe: () => void;
     private readonly detach: () => void;
     private readonly pulse = () => session.pulse();
@@ -108,7 +111,15 @@ export function createChachaExtension(session: ChachaSession, options: {
     }
     private updateDisplay() {
       if (this.queued || !this.alive) return; this.queued = true;
-      queueMicrotask(() => { this.queued = false; if (this.alive) this.view.dispatch({ effects: refresh.of(session.snapshot), annotations: Transaction.addToHistory.of(false) }); });
+      queueMicrotask(() => {
+        this.queued = false; if (!this.alive) return;
+        this.view.dispatch({ effects: refresh.of(session.snapshot), annotations: Transaction.addToHistory.of(false) });
+        const gutter = this.view.dom.querySelector<HTMLElement>(".cm-chacha-gutter"), parent = gutter?.parentElement;
+        if (parent) {
+          if (this.gutterParent !== parent) { this.gutterParent = parent; this.previousHidden = parent.getAttribute("aria-hidden"); }
+          parent.removeAttribute("aria-hidden"); gutter!.setAttribute("role", "group"); gutter!.setAttribute("aria-label", "茶々入れコメント");
+        }
+      });
     }
     update(update: ViewUpdate) {
       if (update.docChanged) {
@@ -133,6 +144,7 @@ export function createChachaExtension(session: ChachaSession, options: {
     }
     destroy() {
       this.alive = false; this.unsubscribe(); this.detach(); controls.delete(this.view);
+      if (this.gutterParent && this.previousHidden !== null) this.gutterParent.setAttribute("aria-hidden", this.previousHidden);
       window.removeEventListener("focus", this.pulse); window.removeEventListener("blur", this.pulse);
       document.removeEventListener("visibilitychange", this.pulse);
     }
@@ -158,7 +170,7 @@ export function createChachaExtension(session: ChachaSession, options: {
     "&[data-chacha-enabled=true] .cm-chacha-gutter": { display: "block", width: "52px", minWidth: "52px" },
     ".cm-chacha-buttons": { display: "flex", width: "52px", gap: "2px", justifyContent: "center" },
     ".cm-chacha-buttons button, .cm-chacha-tooltip button": { width: "24px", minWidth: "24px", height: "24px", padding: "0", border: "1px solid var(--border)", borderRadius: "4px", background: "var(--panel)", color: "var(--text)", cursor: "pointer" },
-    ".cm-chacha-tooltip": { maxWidth: "min(320px, calc(100vw - 16px))", maxHeight: "50vh", overflow: "auto", padding: "12px", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "var(--text)", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "6px" },
+    ".cm-chacha-tooltip": { maxWidth: "min(320px, calc(100vw - 16px))", maxHeight: "50vh", overflow: "auto", padding: "12px", font: "14px/1.5 system-ui, sans-serif", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "var(--text)", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "6px" },
     ".cm-chacha-tooltip p": { margin: "0 0 8px" },
   })];
 }
