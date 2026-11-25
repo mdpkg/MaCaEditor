@@ -10,7 +10,7 @@ import { ChachaTrigger } from "./chachaTrigger";
 export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal }) => Promise<string>;
 interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean }
 export interface ChachaSnapshot {
-  enabled: boolean; paused: boolean; reason: "auth" | "rate" | "failures" | "manual" | null;
+  enabled: boolean; paused: boolean; reason: "auth" | "rate" | "failures" | "manual" | "connection" | null;
   phase: "idle" | "requesting" | "pending" | "collapsed" | "expanded";
   comment?: ChachaComment & { context: ChachaContext };
 }
@@ -24,6 +24,7 @@ export class ChachaSession {
   private context?: ChachaContext;
   private abort?: AbortController;
   private generation = 0;
+  private transportGeneration?: number;
   private revision = 0;
   private deadline = Infinity;
   private lastEdit = -Infinity;
@@ -56,7 +57,7 @@ export class ChachaSession {
     this.emit({ enabled: true, paused: waiting, reason: waiting ? "rate" : null });
   }
   disable() { this.invalidate(); this.trigger.resetEdits(); this.emit({ enabled: false, paused: false, reason: null }); }
-  connectionChanged() { this.revision++; this.disable(); }
+  connectionChanged() { this.revision++; this.disable(); this.emit({ reason: "connection" }); }
   pause(reason: ChachaSnapshot["reason"] = "manual") { this.invalidate(); this.trigger.resetEdits(); this.emit({ paused: true, reason }); }
   resume(): boolean {
     if (this.disposed || !this.snapshot.enabled || Date.now() < this.retryUntil) return false;
@@ -87,6 +88,8 @@ export class ChachaSession {
   private arm(delay: number) { this.timer = setTimeout(() => { this.timer = undefined; this.pulse(); }, Math.max(1, delay)); }
   private fail(reason: unknown) {
     const error = reason && typeof reason === "object" ? reason as { kind?: unknown; retry_after?: unknown } : {};
+    if (error.kind === "connection") { this.connectionChanged(); return; }
+    if (error.kind === "timeout") this.transportGeneration = undefined;
     this.invalidate(); this.failures++;
     if (error.kind === "auth") this.pause("auth");
     else if (error.kind === "rate") {
@@ -116,6 +119,7 @@ export class ChachaSession {
       } else if (phase === "collapsed") this.arm(this.deadline - now);
       return;
     }
+    if (this.transportGeneration !== undefined) return;
     const delay = this.trigger.delay(now);
     if (delay === null || binding.blocked()) return;
     if (delay > 0) { this.arm(delay); return; }
@@ -124,6 +128,7 @@ export class ChachaSession {
     if (!context || this.trigger.seen(file, context.key)) { this.trigger.resetEdits(); return; }
     this.context = context; this.trigger.sent(file, context.key, now);
     const generation = ++this.generation, abort = new AbortController(); this.abort = abort;
+    this.transportGeneration = generation;
     this.deadline = now + 60000; this.emit({ phase: "requesting", comment: undefined }); this.arm(60000);
     const messages = buildChachaMessages(this.settings.prompt, context.text);
     void Promise.resolve().then(() => {
@@ -137,6 +142,8 @@ export class ChachaSession {
       this.failures = 0;
       if (!comment) { this.dismiss(); return; }
       this.deadline = Date.now() + 30000; this.emit({ phase: "pending", comment: { ...comment, context: this.context } }); this.pulse();
-    }).catch((error: unknown) => { if (generation === this.generation && !this.disposed) this.fail(error); });
+    }).catch((error: unknown) => { if (generation === this.generation && !this.disposed) this.fail(error); }).finally(() => {
+      if (this.transportGeneration === generation) { this.transportGeneration = undefined; this.pulse(); }
+    });
   }
 }

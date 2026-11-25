@@ -107,3 +107,38 @@ test("無効化して再有効化してもRetry-Afterの待機を迂回しない
   await vi.advanceTimersByTimeAsync(6000);
   expect(h.session.snapshot.paused).toBe(true); expect(h.transport).toHaveBeenCalledOnce();
 });
+test("キャンセル処理が完了するまでは別リクエストを並列実行しない", async () => {
+  const completions: Array<(value: string) => void> = [];
+  const h = setup(vi.fn(() => new Promise<string>((resolve) => completions.push(resolve))));
+  h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000);
+  h.session.pause(); h.session.resume(); h.change(h.target(), h.target(), "新"); h.edit();
+  await vi.advanceTimersByTimeAsync(120000);
+  expect(h.transport).toHaveBeenCalledOnce();
+  completions[0](reply); await vi.advanceTimersByTimeAsync(0);
+  expect(h.transport).toHaveBeenCalledTimes(2); expect(h.session.snapshot.phase).toBe("requesting");
+  completions[1](reply); await vi.advanceTimersByTimeAsync(0); expect(h.session.snapshot.phase).toBe("collapsed");
+});
+test("タイムアウトした旧応答が新しいコメントを置き換えない", async () => {
+  const completions: Array<(value: string) => void> = [];
+  const h = setup(vi.fn(() => new Promise<string>((resolve) => completions.push(resolve))));
+  h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(65000);
+  h.change(h.target(), h.target(), "新"); h.edit(); await vi.advanceTimersByTimeAsync(60000);
+  expect(completions).toHaveLength(2);
+  completions[1]('{"type":"advice","comment":"新しい応答"}'); await vi.advanceTimersByTimeAsync(0);
+  completions[0](reply); await vi.advanceTimersByTimeAsync(0);
+  expect(h.session.snapshot.comment?.comment).toBe("新しい応答");
+});
+test("送信中の人格変更で旧応答を破棄し、同じファイルの再オープンでも復活しない", async () => {
+  let resolve!: (value: string) => void;
+  const h = setup(vi.fn(() => new Promise<string>((done) => { resolve = done; })));
+  h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000);
+  h.session.configure({ prompt: "別の人格", frequency: "standard" }); h.attach("a.md"); resolve(reply);
+  await vi.advanceTimersByTimeAsync(120000);
+  expect(h.session.snapshot.comment).toBeUndefined(); expect(h.transport).toHaveBeenCalledOnce();
+});
+test("バックエンドの接続変更検出では自動送信を無効化し、再有効化を要求する", async () => {
+  const h = setup(vi.fn(async () => { throw { kind: "connection" }; }));
+  h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000);
+  expect(h.session.snapshot.enabled).toBe(false); expect(h.session.snapshot.reason).toBe("connection");
+  expect(h.session.resume()).toBe(false);
+});
