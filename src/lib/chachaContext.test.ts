@@ -43,3 +43,9 @@ test("画像・添付URL・絶対パスやHTMLを送信しない", () => {
   expect(extractChachaContext(source, source.indexOf("C:\\Users"))).toBeNull();
   expect(extractChachaContext(source, source.lastIndexOf("本文"))).toBeNull();
 });
+
+test.each(["参照先：/home/private/secret.txt", "場所（/Users/private/secret）です", "参照先/home/private.txt", "単一ファイル：/secret", "ルート：/"])("区切り記号や日本語に続くPOSIXパス %s を補助文脈にも送らない", (privateText) => {
+  const source = `${privateText}\n\n安全な対象\n\n後の段落`;
+  expect(extractChachaContext(source, 0)).toBeNull();
+  expect(extractChachaContext(source, source.indexOf("安全"))?.text).toEqual({ target: "安全な対象", next: "後の段落" });
+});

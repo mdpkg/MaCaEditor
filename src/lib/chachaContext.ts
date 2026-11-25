@@ -35,9 +35,10 @@ function containsHtml(node: Node): boolean {
 function block(node: Node): Block | null {
   const from = node.position?.start.offset, to = node.position?.end.offset;
   const text = plain(node).trim();
-  // Do not send local absolute paths, including paths written as prose.
+  // Conservatively skip slash-bearing prose too: POSIX paths need not be
+  // separated from Japanese text by whitespace. Link destinations are already removed.
   if (!text || from === undefined || to === undefined || containsHtml(node)
-      || /[a-z]:[\\/]|\\\\|file:\/\/|(?:^|\s)\/[^\s]+/i.test(text)) return null;
+      || text.includes("/") || /[a-z]:\\|\\\\/i.test(text)) return null;
   return { text, range: { from, to } };
 }
 
