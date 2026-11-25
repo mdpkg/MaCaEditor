@@ -1,5 +1,6 @@
 import { uiText } from "../lib/uiText";
 import { Dialog } from "./Dialog";
+import { ChachaSettings } from "./ChachaSettings";
 import { AiErrorFeedback } from "./AiErrorFeedback";
 import { readAiError } from "../lib/aiSelection";
 import { useEffect, useRef, useState } from "react";
@@ -89,7 +90,7 @@ export function AiSettingsDialog({ onClose }: Props) {
   };
 
   return (
-    <Dialog onClose={onClose} title={uiText("AI Settings")} initialFocus={closeButtonRef}>
+    <Dialog className="about-dialog ai-settings-dialog" onClose={onClose} title={uiText("AI Settings")} initialFocus={closeButtonRef}>
       <label>
         {uiText("Provider")}<select
           value={config.provider}
@@ -197,6 +198,7 @@ export function AiSettingsDialog({ onClose }: Props) {
       {status === "connected" && <p className="ai-status ai-status-ok">{uiText("Connection OK.")}</p>}
       {status === "connection-error" && requestError &&
         <AiErrorFeedback className="ai-connection-error" heading={uiText("Connection failed.")} error={requestError} />}
+      <ChachaSettings />
     </Dialog>
   );
 }

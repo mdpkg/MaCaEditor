@@ -1422,6 +1422,12 @@ body {
   margin: 0;
 }
 
+.ai-settings-dialog { box-sizing: border-box; max-height: calc(100dvh - 48px); overflow: auto; min-width: 0; }
+.ai-settings-dialog .about-dialog-actions { flex-wrap: wrap; }
+.chacha-settings { min-width: 0; margin-top: 16px; border: 1px solid var(--border); border-radius: 4px; }
+.chacha-settings textarea, .chacha-settings select { box-sizing: border-box; width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px; }
+.chacha-settings textarea { resize: vertical; min-height: 100px; }
+.chacha-settings button { min-height: 24px; }
 .about-dialog-actions {
   display: flex;
   justify-content: flex-end;
