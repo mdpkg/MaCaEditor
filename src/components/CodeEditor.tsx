@@ -17,6 +17,8 @@ import { markdownLinkAtPosition } from "../lib/markdownLinks";
 import { clipboardBlobToImage, readImageOrTextClipboard } from "../lib/imageImport";
 import { htmlClipboardToMarkdown } from "../lib/htmlClipboard";
 import type { ImportedImage } from "../types";
+import { createChachaExtension } from "../lib/chachaEditor";
+import type { ChachaSession } from "../lib/chachaSession";
 
 interface Props {
   value: string;
@@ -41,6 +43,9 @@ interface Props {
   navigation?: { offset: number; length?: number };
   onNavigationComplete?: () => void;
   diagnosticRanges?: Array<{ from: number; to: number }>;
+  chachaSession?: ChachaSession;
+  chachaFileId?: string;
+  chachaBlocked?: boolean;
 }
 
 const noDiagnosticRanges: NonNullable<Props["diagnosticRanges"]> = [];
@@ -141,6 +146,9 @@ export function CodeEditor({
   navigation,
   onNavigationComplete,
   diagnosticRanges = noDiagnosticRanges,
+  chachaSession,
+  chachaFileId,
+  chachaBlocked = false,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -165,6 +173,9 @@ export function CodeEditor({
   onNavigationCompleteRef.current = onNavigationComplete;
   const diagnosticsCompartmentRef = useRef(new Compartment());
   const highlightTimer = useRef<number | null>(null);
+  const chachaCompartmentRef = useRef(new Compartment());
+  const chachaBlockedRef = useRef(chachaBlocked);
+  chachaBlockedRef.current = chachaBlocked;
   valueRef.current = value;
   onChangeRef.current = onChange;
   onHistoryRef.current = onHistory;
@@ -304,6 +315,7 @@ export function CodeEditor({
       ...(language === "markdown" ? [markdown()] : []),
       EditorView.lineWrapping,
       diagnosticsCompartmentRef.current.of([]),
+      chachaCompartmentRef.current.of([]),
       navigationHighlight,
       ...(ariaLabel ? [EditorView.contentAttributes.of({ "aria-label": uiText(ariaLabel) })] : []),
       EditorView.updateListener.of((update) => {
@@ -432,6 +444,16 @@ export function CodeEditor({
       viewRef.current = null;
     };
   }, [language]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: chachaCompartmentRef.current.reconfigure(language === "markdown" && chachaSession
+      ? createChachaExtension(chachaSession, { file: chachaFileId, blocked: () => chachaBlockedRef.current,
+        controlled: (transaction) => transaction.annotation(controlledChange) === true }) : []) });
+  }, [language, chachaSession, chachaFileId]);
+
+  useEffect(() => { chachaSession?.pulse(); });
 
   useEffect(() => {
     const view = viewRef.current;

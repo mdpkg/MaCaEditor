@@ -8,7 +8,7 @@ import { buildChachaMessages, CHACHA_FREQUENCIES, normalizeChachaSettings, type 
 import { ChachaTrigger } from "./chachaTrigger";
 
 export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal }) => Promise<string>;
-interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean }
+interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean; targetEdited?(context: ChachaContext): boolean }
 export interface ChachaSnapshot {
   enabled: boolean; paused: boolean; reason: "auth" | "rate" | "failures" | "manual" | "connection" | null;
   phase: "idle" | "requesting" | "pending" | "collapsed" | "expanded";
@@ -73,6 +73,7 @@ export class ChachaSession {
     if (this.disposed || !this.snapshot.enabled || this.snapshot.paused) return;
     this.lastEdit = Date.now(); this.trigger.edit(edit.amount, edit.position, this.lastEdit); this.pulse();
   }
+  resetEdits() { this.trigger.resetEdits(); }
   changed(changes: ChangeDesc) {
     this.lastEdit = Date.now();
     if (this.trigger.position !== undefined) this.trigger.position = changes.mapPos(this.trigger.position, 1);
@@ -125,7 +126,7 @@ export class ChachaSession {
     if (delay > 0) { this.arm(delay); return; }
     const context = extractChachaContext(binding.source(), this.trigger.position!);
     const file = JSON.stringify([binding.file, this.revision]);
-    if (!context || this.trigger.seen(file, context.key)) { this.trigger.resetEdits(); return; }
+    if (!context || binding.targetEdited?.(context) === false || this.trigger.seen(file, context.key)) { this.trigger.resetEdits(); return; }
     this.context = context; this.trigger.sent(file, context.key, now);
     const generation = ++this.generation, abort = new AbortController(); this.abort = abort;
     this.transportGeneration = generation;
