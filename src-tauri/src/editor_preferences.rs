@@ -80,6 +80,7 @@ fn merge_and_save(path: &Path, values: &serde_json::Map<String, serde_json::Valu
     let mut existing = read(path)?;
     existing.extend(values.clone());
     let bytes = serde_json::to_vec(&existing).map_err(|error| error.to_string())?;
+    if bytes.len() > 64 * 1024 { return Err("editor preferences exceed 64 KiB".into()); }
     std::fs::create_dir_all(path.parent().ok_or("invalid settings path")?)
         .map_err(|error| error.to_string())?;
     crate::atomic_save::atomic_save(path, &bytes).map_err(|error| error.to_string())
@@ -88,6 +89,17 @@ fn merge_and_save(path: &Path, values: &serde_json::Map<String, serde_json::Valu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn oversized_merged_preferences_do_not_corrupt_existing_editor_settings() {
+        let root = std::env::temp_dir().join(format!("maca-settings-bound-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap(); let path = root.join("settings.json");
+        let original = serde_json::json!({"legacy":"x".repeat(60000),"vimMode":true});
+        std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+        let result = save(&path, serde_json::json!({"chachaPreferences":{"prompt":"a".repeat(10000),"frequency":"standard"}}));
+        assert!(result.is_err());
+        assert_eq!(serde_json::Value::Object(read(&path).unwrap()), original);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn chacha_preferences_are_independent_validated_and_never_store_consent() {
         let root = std::env::temp_dir().join(format!("maca-chacha-{}", uuid::Uuid::new_v4()));
