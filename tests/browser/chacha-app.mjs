@@ -22,6 +22,7 @@ async function fixture(t, width = 1100) {
       requests: [], saves: [], preferences: {}, connection: { endpoint: "http://127.0.0.1:9/v1", model: "fixture-reader", revision: "one" },
       nextPath: "F:/fixture/a.mdpkg",
       connectionUnavailable: false,
+      mode: "normal", pending: [],
     };
     const source = "---\ntitle: PRIVATE-FRONTMATTER\n---\n\n# 茶々入れ検証\n\n前の段落\n\n対象\n\n後の段落\n\n```\nPRIVATE-CODE\n```\n\n遠い段落";
     const packageInfo = () => ({ manifest: { version: "2.0", entrypoint: "index.md" }, entrypoint: "index.md", files: [
@@ -45,6 +46,8 @@ async function fixture(t, width = 1100) {
         if (command === "ai_chacha") {
           assertConnection(args);
           state.requests.push(structuredClone(args));
+          if (state.mode === "offline") throw { kind: "transport" };
+          if (state.mode === "delayed") return new Promise((resolve) => state.pending.push(resolve));
           return JSON.stringify({ type: "reaction", comment: args.request.messages[1].content.includes("辛口") ? "辛口の反応です。" : "読んでいるよ。" });
         }
         if (command === "cancel_ai_request") return false;
@@ -137,4 +140,44 @@ test("接続未設定の案内が狭い画面の執筆領域を押しつぶさ�
   const box = await setup.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 360, JSON.stringify(box));
   await setup.click(); await page.getByRole("dialog", { name: "AI 設定", exact: true }).waitFor();
   assert.equal((await requests(page)).length, 0);
+});
+
+async function enable(page) {
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  await page.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+}
+test("遅延中も編集を続けられ、キャンセルを無視した旧応答はファイル再訪後も表示しない", async (t) => {
+  const page = await fixture(t); await enable(page);
+  await page.evaluate(() => { window.__chachaTest.mode = "delayed"; });
+  await write(page); await page.clock.runFor(5050);
+  await page.waitForFunction(() => window.__chachaTest.requests.length === 1);
+  await page.keyboard.insertText("遅延中も通常の入力を続ける。");
+  await page.clock.runFor(65000);
+  await page.locator('[data-path="guide.md"]').click();
+  await page.locator('[data-path="index.md"]').dblclick();
+  await page.evaluate(() => { window.__chachaTest.pending.splice(0).forEach((resolve) => resolve('{"type":"reaction","comment":"表示してはいけない旧応答"}')); });
+  await page.clock.runFor(200000);
+  assert.match(await page.locator(".cm-content").innerText(), /遅延中も通常の入力を続ける。/);
+  assert.equal(await page.locator(".cm-chacha-buttons button").count(), 0);
+  assert.equal((await requests(page)).length, 1);
+  await page.keyboard.press("Control+s");
+  await page.waitForFunction(() => window.__chachaTest.saves.length === 1);
+  assert.doesNotMatch(await page.evaluate(() => JSON.stringify(window.__chachaTest.saves)), /表示してはいけない旧応答|chacha/i);
+});
+test("LLM停止時も編集・保存でき、3回失敗で静かに停止し自動再試行や編集の積み残しをしない", async (t) => {
+  const page = await fixture(t); await enable(page);
+  await page.evaluate(() => { window.__chachaTest.mode = "offline"; });
+  for (let i = 0; i < 3; i++) {
+    await write(page); await page.clock.runFor(i === 0 ? 5050 : 120050);
+    await page.waitForFunction((count) => window.__chachaTest.requests.length === count, i + 1);
+  }
+  await page.getByRole("button", { name: "茶々入れを再開", exact: true }).waitFor();
+  await write(page); await page.clock.fastForward(3600000);
+  assert.equal((await requests(page)).length, 3);
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  assert.equal(await page.locator(".cm-chacha-buttons button").count(), 0);
+  assert.ok((await page.locator(".cm-content").innerText()).includes("書".repeat(400)));
+  await page.keyboard.press("Control+s"); await page.waitForFunction(() => window.__chachaTest.saves.length === 1);
+  await page.getByRole("button", { name: "茶々入れを再開", exact: true }).click();
+  await page.clock.fastForward(3600000); assert.equal((await requests(page)).length, 3);
 });

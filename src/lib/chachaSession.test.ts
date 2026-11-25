@@ -157,3 +157,17 @@ test.each([[0, "# 新しい章\n\n"], [5, "新しい文章"]] as const)("送信�
   h.change(position, position, insert);
   expect(h.session.snapshot.phase).toBe("idle");
 });
+
+test("文書を100回開閉しても単一タイマーを守り、破棄後に要求や通知が残らない", async () => {
+  for (let i = 0; i < 100; i++) {
+    let finish!: (value: string) => void;
+    const h = setup(vi.fn(() => new Promise<string>((resolve) => { finish = resolve; })));
+    const listener = vi.fn(); h.session.subscribe(listener);
+    h.session.enable(); h.edit(); expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    h.session.dispose(); const notifications = listener.mock.calls.length;
+    finish(reply); await vi.advanceTimersByTimeAsync(0);
+    expect(h.transport).toHaveBeenCalledOnce(); expect(h.session.snapshot.comment).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(notifications); expect(vi.getTimerCount()).toBe(0);
+  }
+});
