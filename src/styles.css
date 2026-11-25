@@ -1427,6 +1427,11 @@ body {
 .chacha-settings { min-width: 0; margin-top: 16px; border: 1px solid var(--border); border-radius: 4px; }
 .chacha-settings textarea, .chacha-settings select { box-sizing: border-box; width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px; }
 .chacha-settings textarea { resize: vertical; min-height: 100px; }
+.chacha-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chacha-reason { flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
+.chacha-status { display: inline-flex; flex-wrap: wrap; align-content: center; min-width: 0; gap: 2px 4px; }
+.chacha-status button { min-height: 24px; white-space: nowrap; }
+.shortcut-dialog { box-sizing: border-box; max-height: calc(100dvh - 48px); overflow: auto; }
 .chacha-settings button { min-height: 24px; }
 .about-dialog-actions {
   display: flex;

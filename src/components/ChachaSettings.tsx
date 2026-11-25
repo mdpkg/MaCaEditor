@@ -1,8 +1,8 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { loadChachaPreferences, saveChachaPreferences } from "../lib/chachaPreferences";
 import { DEFAULT_CHACHA_PROMPT, normalizeChachaSettings, type ChachaSettings as Settings } from "../lib/chachaSettings";
 
-export function ChachaSettings({ onSaved }: { onSaved?: (settings: Settings) => void }) {
+export function ChachaSettings({ onSaved, children }: { onSaved?: (settings: Settings) => void; children?: ReactNode }) {
   const id = useId();
   const [settings, setSettings] = useState(normalizeChachaSettings);
   const [loaded, setLoaded] = useState(false);
@@ -27,6 +27,7 @@ export function ChachaSettings({ onSaved }: { onSaved?: (settings: Settings) => 
   };
   return <fieldset className="chacha-settings" disabled={!loaded || busy}>
     <legend>茶々入れ</legend>
+    {children}
     <p>対象段落と前後各1段落・直近の見出し（合計最大2,000文字）を既存の AI 接続先へ送信します。API 利用料金が発生する場合があります。</p>
     <label htmlFor={`${id}-frequency`}>反応頻度</label>
     <select id={`${id}-frequency`} value={settings.frequency} onChange={(event) => {

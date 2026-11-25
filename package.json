@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:browser": "node --test tests/browser/image-sizing.mjs tests/browser/sanitize.mjs tests/browser/marp.mjs tests/browser/markdown-security.mjs tests/browser/csp.mjs tests/browser/chacha-settings.mjs tests/browser/chacha-editor.mjs",
     "test:webview2": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-markdown-webview2.ps1",
+    "test:chacha-app": "node --test tests/browser/chacha-app.mjs",
     "check:architecture": "node scripts/check-architecture.mjs"
   },
   "dependencies": {

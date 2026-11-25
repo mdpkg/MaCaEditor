@@ -1,4 +1,6 @@
 import { useAppNotifications, errorDetail } from "./hooks/useAppNotifications";
+import { useChachaRuntime } from "./hooks/useChachaRuntime";
+import { ChachaControls } from "./components/ChachaControls";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { useStoredLayoutNumber } from "./lib/layoutPreferences";
 import { uiText } from "./lib/uiText";
@@ -328,6 +330,10 @@ export default function App() {
   useEffect(() => { saveRecentDocuments(recentDocuments); }, [recentDocuments]);
   const originKind = doc?.origin.kind;
   const originPath = doc?.origin.kind === "untitled" ? undefined : doc?.origin.path;
+  const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null);
+  useEffect(() => {
+    if (aiChatOpen || aiSelection || aiDiagramEdit || aiSelectionRunning) chacha.runtime?.session.dismiss();
+  }, [chacha.runtime, aiChatOpen, aiSelection, aiDiagramEdit, aiSelectionRunning]);
   useEffect(() => {
     if (!originPath || (originKind !== "package" && originKind !== "folder")) return;
     const recent: RecentDocument = { path: originPath, kind: originKind };
@@ -2149,6 +2155,9 @@ export default function App() {
                 <SynchronizedScrollView ratio={splitRatio} onRatioChange={setSplitRatio}>
                   <MarkdownEditor
                     key={`${editorSession}:${displayFile.path}`}
+                    chachaSession={displayIsMarkdown ? chacha.runtime?.session : undefined}
+                    chachaFileId={displayFile.path}
+                    chachaBlocked={aiChatOpen || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen || printDialogRef.current}
                     value={displayContent}
                     onChange={(content, group) => recordTextEdit(displayFile.path, editorSession, content, group)}
                     onHistory={applyEditHistory}
@@ -2231,7 +2240,8 @@ export default function App() {
         <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
       )}
       {aiSettingsOpen && (
-        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} />
+        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} onChachaSettingsSaved={chacha.applySettings} onConnectionSaved={chacha.connectionSaved}
+          chachaControls={doc ? <ChachaControls runtime={chacha.runtime} settings={chacha.settings} /> : <p>文書を開くと、この文書だけで茶々入れを有効化できます。</p>} />
       )}
       {aiSelection && (
         <AiSelectionActionDialog
@@ -2348,7 +2358,9 @@ export default function App() {
         onShowErrorDetails={error && error.presentation !== "banner" ? () => {
           showErrorDetails();
         } : undefined}
-      />
+      >
+        {doc && <ChachaControls runtime={chacha.runtime} settings={chacha.settings} compact onOpenAiSettings={() => setAiSettingsOpen(true)} />}
+      </StatusBar>
       {notificationHistoryOpen && (
         <NotificationHistoryDialog entries={notificationHistory} onClose={() => setNotificationHistoryOpen(false)} />
       )}
@@ -2362,7 +2374,7 @@ export default function App() {
           </div>
         </Dialog>
       )}
-      {shortcutsOpen && <Dialog title={uiText("Keyboard shortcuts")} onClose={() => setShortcutsOpen(false)}>
+      {shortcutsOpen && <Dialog className="about-dialog shortcut-dialog" title={uiText("Keyboard shortcuts")} onClose={() => setShortcutsOpen(false)}>
         <dl className="shortcut-list">
           <dt>{uiText("Save")}</dt><dd><kbd>Ctrl/Cmd+S</kbd></dd>
           <dt>{uiText("Find in current document")}</dt><dd><kbd>Ctrl/Cmd+F</kbd></dd>
@@ -2374,6 +2386,8 @@ export default function App() {
           <dt>{uiText("Context menu")}</dt><dd>Shift+F10 / コンテキストメニューキー</dd>
           <dt>{uiText("Close menu or dialog")}</dt><dd>Esc</dd>
           <dt>{uiText("Save in Vim")}</dt><dd><kbd>:w</kbd></dd>
+          <dt>茶々入れを展開</dt><dd><kbd>Ctrl/Cmd+Alt+Enter</kbd></dd>
+          <dt>茶々入れを削除</dt><dd><kbd>Ctrl/Cmd+Alt+Backspace</kbd> / Esc（IME・補完・検索・Vimを優先）</dd>
         </dl>
         <button type="button" onClick={() => setShortcutsOpen(false)}>{uiText("Close")}</button>
       </Dialog>}
