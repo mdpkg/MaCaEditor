@@ -211,6 +211,16 @@ Open **通知履歴** (Notification history) from the status bar to see recent n
 
 Under **AI**, choose **AI を設定する** (Set up AI) or **AI 設定** (AI Settings) to configure an OpenAI-compatible endpoint, model, and API key if required. Use **接続をテスト** to check the connection. Once configured, you can rewrite, summarize, or proofread selected text, ask questions in **AI チャット**, and generate diagrams in the PlantUML and Mermaid editors. Errors show a Japanese summary and the original message under **詳細**.
 
+### Ambient Reader Comments (茶々入れ)
+
+This feature is off by default. Open a document and select **茶々入れ：無効** in the status bar to review the endpoint, text scope, frequency and possible API charges before enabling automatic comments for that document package. It uses your existing AI connection. Closing or changing the document requires consent again.
+
+Click the enabled status to pause, or the paused status to resume. In **AI 設定**, the tea-comment section lets you disable it, select a frequency, and edit the reader's personality and tone. **茶々入れ設定を保存** applies and persists those settings. Closing the dialog discards unsaved edits; restoring the default prompt also requires saving.
+
+After sufficient editing and an input pause, only the edited paragraph, its neighboring paragraphs and nearest heading (up to 2,000 Unicode characters) are sent. A small 💬 appears in the right gutter; its text stays hidden until you open it. You can ignore it and keep writing. Use × to dismiss, `Ctrl+Alt+Enter` (`Cmd+Alt+Enter` on macOS) to expand, and `Ctrl+Alt+Backspace` (`Cmd+Alt+Backspace`) to dismiss. Escape gives priority to IME, completion, search and dialogs. With Vim enabled, use the dedicated shortcuts inside the editor.
+
+Comments and consent never enter saved documents. Connection changes require consent again. See the Japanese [usage and limitations](docs/chacha.md), [design](docs/chacha-design.md), and [verification record](docs/chacha-verification.md) for exact thresholds, failure handling and the scope of testing.
+
 ## Using the Drawing Editor
 
 ### Creating Objects
