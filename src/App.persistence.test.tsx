@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -9,6 +9,10 @@ import { saveEditorPreferences } from "./lib/editorPreferences";
 import * as tauri from "./lib/tauri";
 import type { PackageInfo } from "./types";
 import type { TextEditGroup } from "./lib/editHistory";
+import type { ChachaSession } from "./lib/chachaSession";
+import * as chachaTransport from "./lib/chachaTransport";
+
+vi.mock("./lib/chachaTransport", () => ({ loadChachaConnection: vi.fn(), requestChacha: vi.fn() }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
 vi.mock("./lib/tauri", async (importOriginal) => ({
@@ -60,7 +64,7 @@ vi.mock("./components/MarkdownPreview", () => ({
   </>,
 }));
 vi.mock("./components/MarkdownEditor", () => ({
-  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange, onSelectionChange, navigation }: {
+  MarkdownEditor: ({ value, onChange, initialCursorPosition, initialScrollTop, onCursorChange, onScrollTopChange, onSelectionChange, navigation, chachaSession }: {
     value: string;
     onChange: (value: string, group?: TextEditGroup) => void;
     initialCursorPosition?: number;
@@ -69,14 +73,18 @@ vi.mock("./components/MarkdownEditor", () => ({
     onCursorChange: (position: number) => void;
     onScrollTopChange: (position: number) => void;
     onSelectionChange: (selection: { from: number; to: number; text: string } | null) => void;
-  }) => <textarea value={value} data-cursor={initialCursorPosition} data-scroll={initialScrollTop} data-navigation={JSON.stringify(navigation)}
+    chachaSession?: ChachaSession;
+  }) => {
+    const chacha = useSyncExternalStore(chachaSession?.subscribe ?? (() => () => {}), () => chachaSession?.snapshot);
+    return <textarea value={value} data-chacha-enabled={String(chacha?.enabled ?? false)} data-cursor={initialCursorPosition} data-scroll={initialScrollTop} data-navigation={JSON.stringify(navigation)}
     onClick={(event) => {
       const { selectionStart: from, selectionEnd: to, value } = event.currentTarget;
       onCursorChange(from);
       onSelectionChange(from === to ? null : { from, to, text: value.slice(from, to) });
     }}
     onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}
-    onChange={(event) => onChange(event.currentTarget.value, (event.nativeEvent as CustomEvent<TextEditGroup>).detail)} />,
+    onChange={(event) => onChange(event.currentTarget.value, (event.nativeEvent as CustomEvent<TextEditGroup>).detail)} />;
+  },
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -163,6 +171,29 @@ describe("App persistence", () => {
     await click("ファイル");
     expect(button("印刷").disabled).toBe(true);
     expect(button("印刷").title).toContain("Marp");
+  });
+  test("茶々入れは確認後に現在パッケージだけで有効になり、ファイル切替では維持し別パッケージでは解除する", async () => {
+    const info = documentInfo("Disk"); info.files.push({ path: "guide.md", content: "Guide", is_text: true, base64: null });
+    vi.mocked(open).mockResolvedValue("original.mdpkg"); vi.mocked(tauri.openPackage).mockResolvedValue(info);
+    vi.mocked(tauri.savePackage).mockResolvedValue({});
+    vi.mocked(chachaTransport.loadChachaConnection).mockResolvedValue({ endpoint: "http://local/v1", model: "reader", revision: "one" });
+    await click("開く", container.querySelector(".empty-state")!);
+    await click("茶々入れ：無効");
+    const consent = document.querySelector(".chacha-enable-dialog")!;
+    expect(consent.textContent).toContain("http://local/v1");
+    expect(consent.closest(".status-bar")).toBeNull();
+    await click("自動送信を有効にする", consent); if (!container.querySelector("textarea")) await click("編集");
+    expect(container.querySelector("textarea")?.getAttribute("data-chacha-enabled")).toBe("true");
+    await click("ファイル"); await click("保存");
+    const saved = vi.mocked(tauri.savePackage).mock.calls[0][0];
+    expect(JSON.stringify(saved)).not.toContain("chacha"); expect(saved.files[0].content).toBe("Disk");
+    await act(async () => container.querySelector<HTMLElement>('[data-path="guide.md"]')!.click());
+    if (!container.querySelector("textarea")) await click("編集");
+    expect(container.querySelector("textarea")?.getAttribute("data-chacha-enabled")).toBe("true");
+    vi.mocked(open).mockResolvedValue("other.mdpkg"); vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Other"));
+    await click("ファイル"); await click("開く"); await click("編集");
+    expect(container.querySelector("textarea")?.getAttribute("data-chacha-enabled")).toBe("false");
+    expect(chachaTransport.requestChacha).not.toHaveBeenCalled();
   });
 
   test("opens package search only for an unhandled shifted shortcut and returns focus on Escape", async () => {

@@ -15,12 +15,12 @@ test("接続先・範囲・頻度・料金を確認して明示有効化し、�
   const settings = normalizeChachaSettings(), session = new ChachaSession(settings, request);
   const runtime: ChachaRuntime = { key: "a", session, connection: { current: undefined } };
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
-  const click = async (label: string) => act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === label)!.click());
+  const click = async (label: string) => act(async () => [...document.querySelectorAll("button")].find((button) => button.textContent === label)!.click());
   try {
     await act(async () => root.render(<ChachaControls runtime={runtime} settings={settings} />));
     expect(session.snapshot.enabled).toBe(false); expect(transport.loadChachaConnection).not.toHaveBeenCalled();
     await click("この文書で有効化");
-    const dialog = host.querySelector('[role="dialog"]')!;
+    const dialog = document.querySelector('[role="dialog"]')!;
     for (const text of ["http://local/v1", "reader", "2,000文字", "120秒", "100文字", "5秒", "料金"]) expect(dialog.textContent).toContain(text);
     expect(session.snapshot.enabled).toBe(false);
     await click("キャンセル"); expect(session.snapshot.enabled).toBe(false);
@@ -43,6 +43,6 @@ test("同意画面を準備中に文書が変わったら古い有効化を破�
     await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
     await act(async () => root.render(<ChachaControls runtime={b} settings={settings} />));
     await act(async () => finish({ endpoint: "http://local/v1", model: "reader", revision: "old" }));
-    expect(host.querySelector('[role="dialog"]')).toBeNull(); expect(b.session.snapshot.enabled).toBe(false);
+    expect(document.querySelector('[role="dialog"]')).toBeNull(); expect(b.session.snapshot.enabled).toBe(false);
   } finally { act(() => root.unmount()); a.session.dispose(); b.session.dispose(); host.remove(); }
 });

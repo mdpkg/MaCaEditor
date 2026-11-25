@@ -11,6 +11,18 @@ afterEach(() => {
 });
 
 describe("AiSettingsDialog", () => {
+  test("茶々入れ設定の保存は専用callbackだけへ反映し、接続保存は接続変更callbackを呼ぶ", async () => {
+    vi.spyOn(tauri, "loadAiConfig").mockRejectedValue(new Error("not configured"));
+    const saveConnection = vi.spyOn(tauri, "saveAiConfig").mockResolvedValue();
+    const personality = vi.fn(), connection = vi.fn();
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    await act(async () => root.render(<AiSettingsDialog onClose={() => {}} onChachaSettingsSaved={personality} onConnectionSaved={connection} />));
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "茶々入れ設定を保存")!.click());
+    expect(personality).toHaveBeenCalledOnce(); expect(connection).not.toHaveBeenCalled(); expect(saveConnection).not.toHaveBeenCalled();
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "保存")!.click());
+    expect(connection).toHaveBeenCalledOnce(); expect(personality).toHaveBeenCalledOnce();
+    act(() => root.unmount()); host.remove();
+  });
   test("renders AI settings fields and saves", async () => {
     vi.spyOn(tauri, "loadAiConfig").mockResolvedValue({
       provider: "OpenAiCompatible",

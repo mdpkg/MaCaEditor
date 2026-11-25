@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import type { ChachaRuntime } from "../hooks/useChachaRuntime";
 import { CHACHA_FREQUENCIES, type ChachaSettings } from "../lib/chachaSettings";
 import { loadChachaConnection, type ChachaConnection } from "../lib/chachaTransport";
@@ -60,7 +61,7 @@ export function ChachaControls({ runtime, settings, compact = false, onOpenAiSet
       {!compact && runtime?.connection.current && <span className="chacha-reason">有効化時の接続先：{runtime.connection.current.endpoint} / {runtime.connection.current.model}</span>}
       {message && <span className="chacha-reason">{message}{onOpenAiSettings && !state.enabled && <button type="button" onClick={onOpenAiSettings}>AI 設定を開く</button>}</span>}
     </span>
-    {confirmation && confirmation.runtime === runtime && <Dialog className="about-dialog ai-settings-dialog chacha-enable-dialog" title="この文書で茶々入れを有効化" initialFocus={cancelRef} onClose={() => setConfirmation(undefined)}>
+    {confirmation && confirmation.runtime === runtime && createPortal(<Dialog className="about-dialog ai-settings-dialog chacha-enable-dialog" title="この文書で茶々入れを有効化" initialFocus={cancelRef} onClose={() => setConfirmation(undefined)}>
       <p>執筆中の文章を LLM へ自動送信します。現在の文書パッケージでのみ有効になり、文書を閉じると解除されます。</p>
       <p>接続先：{confirmation.connection.endpoint}<br />モデル：{confirmation.connection.model}</p>
       <p>送信範囲：編集した段落と前後各1段落、直近の見出し（合計最大2,000文字）。他のファイルやチャット履歴は送りません。</p>
@@ -73,6 +74,6 @@ export function ChachaControls({ runtime, settings, compact = false, onOpenAiSet
           confirmation.runtime.connection.current = confirmation.connection; confirmation.runtime.session.enable(); setConfirmation(undefined);
         }}>自動送信を有効にする</button>
       </div>
-    </Dialog>}
+    </Dialog>, document.body)}
   </>;
 }

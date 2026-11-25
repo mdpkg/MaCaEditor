@@ -3,7 +3,8 @@ import { Dialog } from "./Dialog";
 import { ChachaSettings } from "./ChachaSettings";
 import { AiErrorFeedback } from "./AiErrorFeedback";
 import { readAiError } from "../lib/aiSelection";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ChachaSettings as ChachaPreferences } from "../lib/chachaSettings";
 import type { AiConfig, AiError } from "../types";
 import {
   listAiModels,
@@ -14,6 +15,9 @@ import {
 
 interface Props {
   onClose: () => void;
+  onChachaSettingsSaved?: (settings: ChachaPreferences) => void;
+  onConnectionSaved?: () => void | Promise<void>;
+  chachaControls?: ReactNode;
 }
 
 const DEFAULT_CONFIG: AiConfig = {
@@ -27,7 +31,7 @@ const DEFAULT_CONFIG: AiConfig = {
   request_timeout_seconds: 300,
 };
 
-export function AiSettingsDialog({ onClose }: Props) {
+export function AiSettingsDialog({ onClose, onChachaSettingsSaved, onConnectionSaved, chachaControls }: Props) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [config, setConfig] = useState<AiConfig>(DEFAULT_CONFIG);
   const [showKey, setShowKey] = useState(false);
@@ -52,6 +56,7 @@ export function AiSettingsDialog({ onClose }: Props) {
     setBusy(true);
     try {
       await saveAiConfig(config);
+      await onConnectionSaved?.();
       setStatus("saved");
     } catch (reason) {
       setStatus("error");
@@ -198,7 +203,7 @@ export function AiSettingsDialog({ onClose }: Props) {
       {status === "connected" && <p className="ai-status ai-status-ok">{uiText("Connection OK.")}</p>}
       {status === "connection-error" && requestError &&
         <AiErrorFeedback className="ai-connection-error" heading={uiText("Connection failed.")} error={requestError} />}
-      <ChachaSettings />
+      <ChachaSettings onSaved={onChachaSettingsSaved}>{chachaControls}</ChachaSettings>
     </Dialog>
   );
 }
