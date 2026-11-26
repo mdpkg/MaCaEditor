@@ -98,13 +98,13 @@ test("実Appは明示同意からだけ送信し、人格保存・停止再開�
   await consent.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
   await page.clock.fastForward(120000); assert.equal((await requests(page)).length, 0);
   await write(page); await page.clock.runFor(5050);
-  const expand = page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }); await expand.waitFor();
+  const expand = page.getByRole("button", { name: "茶々入れを表示", exact: true }); await expand.waitFor();
   let sent = await requests(page); assert.equal(sent.length, 1); assert.equal(sent[0].expectedConnection, "one");
   const documentText = JSON.parse(sent[0].request.messages[2].content);
   assert.match(documentText.target, /^対象/); assert.equal(documentText.previous, "前の段落"); assert.equal(documentText.next, "後の段落");
   assert.ok(!JSON.stringify(sent).includes("PRIVATE")); assert.ok(!JSON.stringify(sent).includes("F:/fixture"));
   assert.equal(await page.locator(".cm-content").evaluate((element) => element === document.activeElement), true);
-  await expand.click(); await page.clock.runFor(50); await page.locator(".ai-chat-quote").filter({ hasText: "読んでいるよ。" }).waitFor();
+  await expand.click(); await page.clock.runFor(50); await page.locator(".cm-chacha-tooltip").getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click(); await page.locator(".ai-chat-quote").filter({ hasText: "読んでいるよ。" }).waitFor();
   assert.equal(await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).evaluate((el) => el === document.activeElement), true);
   await page.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
   await page.getByRole("button", { name: "AI", exact: true }).click(); await page.getByRole("menuitem", { name: "AI 設定", exact: true }).click();
@@ -373,7 +373,8 @@ test("茶々入れから開いた会話は追加質問まで通信せず生成�
   await write(page); await page.clock.runFor(5050);
   const generated = (await requests(page))[0];
   const source = JSON.parse(generated.request.messages[2].content);
-  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).click();
+  await page.locator(".cm-chacha-tooltip").getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
   await page.locator(".ai-chat-quote").waitFor();
   assert.equal(await page.getByRole("tab").count(), 1);
   assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
@@ -408,7 +409,7 @@ test("実Appは1文字の追加・削除で評価しnone後も30秒待って追�
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await page.keyboard.insertText("一"); await page.clock.runFor(4999); assert.equal((await requests(page)).length, 0);
   await page.clock.runFor(51); assert.equal((await requests(page)).length, 1);
-  assert.equal(await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "茶々入れを表示", exact: true }).count(), 0);
   await page.keyboard.press("Backspace"); await page.clock.runFor(29000); assert.equal((await requests(page)).length, 1);
   await page.clock.runFor(1000); assert.equal((await requests(page)).length, 2);
   assert.equal(JSON.parse((await requests(page))[1].request.messages[2].content).target, "対象");
@@ -422,7 +423,8 @@ test("引用会話は外部接続変更を検出し各セッションの確認�
   await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
   await page.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
   await write(page); await page.clock.runFor(5050);
-  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).click();
+  await page.locator(".cm-chacha-tooltip").getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
   await page.locator(".ai-chat-quote").waitFor();
   await page.evaluate(() => { window.__chachaTest.connection = { endpoint: "https://new.test/v1?secret=hidden", model: "new-reader", revision: "two" }; });
   await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("kept question");
@@ -478,4 +480,27 @@ test("狭幅の操作ヘルプは現行の引用会話とタブ・IME送信操�
   const box = await dialog.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 360); assert.ok(box.y >= 0 && box.y + box.height <= 450);
   if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, "chat-help-360-dark-2x.png") });
   await dialog.getByRole("button", { name: "閉じる", exact: true }).click();
+});
+
+test("チャットを開いたまま茶々入れが発火しアイコン・吹き出しの順で新しい会話へ移る", async (t) => {
+  const page = await fixture(t);
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
+  await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("EXISTING-DRAFT");
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  await page.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await write(page); await page.clock.runFor(5050); assert.equal((await requests(page)).length, 1);
+  const before = await page.locator(".cm-content").textContent();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).click();
+  const bubble = page.locator(".cm-chacha-tooltip"); await bubble.waitFor();
+  assert.match(await bubble.textContent(), /読んでいるよ/); assert.equal(await panel.getByRole("tab").count(), 1);
+  assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+  if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, "chacha-panel-inline.png") });
+  await bubble.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
+  await panel.locator(".ai-chat-quote").waitFor(); assert.equal(await panel.getByRole("tab").count(), 2);
+  assert.equal(await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).evaluate((element) => element === document.activeElement), true);
+  assert.equal(await page.locator(".cm-content").textContent(), before);
+  assert.equal((await requests(page)).length, 1); assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+  await panel.getByRole("tab", { name: "文書相談 1", exact: true }).click();
+  assert.equal(await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).inputValue(), "EXISTING-DRAFT");
 });

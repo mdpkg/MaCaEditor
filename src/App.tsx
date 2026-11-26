@@ -347,7 +347,7 @@ export default function App() {
       chatReturnFocusRef.current = { scope: quote.documentScopeKey, path: quote.path };
       setAiChatOpen(true); setChatInputFocus((value) => value + 1); return true;
     });
-  const automaticChachaSuppressed = aiChatOpen || chat.busy || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen;
+  const automaticChachaSuppressed = chat.busy || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen;
   const chatActivityLabel = chat.phase === "starting" ? "接続中" : chat.phase === "running" ? "生成中" : "停止待ち";
   useEffect(() => {
     chacha.runtime?.session.dismiss();
@@ -2425,7 +2425,7 @@ export default function App() {
           <dt>{uiText("Context menu")}</dt><dd>Shift+F10 / コンテキストメニューキー</dd>
           <dt>{uiText("Close menu or dialog")}</dt><dd>Esc</dd>
           <dt>{uiText("Save in Vim")}</dt><dd><kbd>:w</kbd></dd>
-          <dt>茶々入れから会話を開く</dt><dd><kbd>Ctrl/Cmd+Alt+Enter</kbd>（追加質問まで通信しません）</dd>
+          <dt>茶々入れから会話を開く</dt><dd><kbd>Ctrl/Cmd+Alt+Enter</kbd>で吹き出しを表示後、クリック / Enter / Space（追加質問まで通信しません）</dd>
           <dt>茶々入れを削除</dt><dd><kbd>Ctrl/Cmd+Alt+Backspace</kbd> / Esc（IME・補完・検索・Vimを優先）</dd>
           <dt>チャットのタブを移動・選択</dt><dd>左右 / Home / End でフォーカス、Enter / Space で選択</dd>
           <dt>チャットを送信・改行</dt><dd>Enter / Shift+Enter（IME変換中は送信しません）</dd>
