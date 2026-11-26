@@ -6,9 +6,16 @@ export type ChatConnection = { revision: string; endpoint: string; model: string
 export const CHAT_LIMITS = { sessions: 20, questionCharacters: 10000, draftBytes: 1024 * 1024,
   messages: 200, responseBytes: 64 * 1024, retainedBytes: 8 * 1024 * 1024, requestBytes: 1024 * 1024 } as const;
 export const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
+const immutableTextSizes = new WeakMap<object, number>();
 function textBytes(value: unknown): number {
   if (typeof value === "string") return utf8Bytes(value);
-  if (value && typeof value === "object") return Object.values(value).reduce<number>((sum, item) => sum + textBytes(item), 0);
+  if (value && typeof value === "object") {
+    const cached = immutableTextSizes.get(value);
+    if (cached !== undefined) return cached;
+    const size = Object.values(value).reduce<number>((sum, item) => sum + textBytes(item), 0);
+    immutableTextSizes.set(value, size);
+    return size;
+  }
   return 0;
 }
 export const retainedChatBytes = (state: AiChatSessionsState) => textBytes(state.sessions);
@@ -26,9 +33,11 @@ export type AiChatSession = {
 };
 export type AiChatSessionsState = {
   documentScopeKey: string; sessions: AiChatSession[]; selectedSessionId?: string; nextNumber: number;
-  connection?: ChatConnection; notice?: string;
+  connection?: ChatConnection; connectionError?: string; notice?: string;
 };
-type SessionAction =
+export type SessionAction =
+  | { type: "notice"; message: string }
+  | { type: "connectionError"; message: string }
   | { type: "add"; sessionId: string; path: string }
   | { type: "select" | "delete" | "clear" | "stop"; sessionId: string }
   | { type: "draft"; sessionId: string; value: string }
@@ -54,10 +63,12 @@ export function reduceAiChatSessions(state: AiChatSessionsState, action: AiChatS
 }
 function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction): AiChatSessionsState {
   if (action.documentScopeKey !== state.documentScopeKey) return state;
+  if (action.type === "notice") return { ...state, notice: action.message };
+  if (action.type === "connectionError") return { ...state, connectionError: action.message };
   if (action.type === "connection") {
-    if (state.connection?.revision === action.connection.revision) return state;
+    if (state.connection?.revision === action.connection.revision) return state.connectionError ? { ...state, connectionError: undefined } : state;
     const revision = action.connection.revision;
-    return { ...state, connection: action.connection, sessions: state.sessions.map((session) => ({ ...session,
+    return { ...state, connection: action.connection, connectionError: undefined, sessions: state.sessions.map((session) => ({ ...session,
       approvedConnectionRevision: session.approvedConnectionRevision ?? (session.chat.messages.length ? undefined : revision),
       pendingConnectionConfirmation: (session.approvedConnectionRevision ?? (session.chat.messages.length ? undefined : revision)) !== revision,
       ...(session.owner && !session.terminal ? {

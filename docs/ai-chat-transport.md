@@ -14,3 +14,11 @@ Phase 0（2026-11-26）。通常チャットのUIは単一会話のまま、後�
 自動検証はFake Channel、制御可能なPromise、mock provider、停止したTokio Clockを使用する。実LLMは呼ばない。クライアントの通信終了は接続先内部の推論停止を保証しない。
 
 マルチセッション・文書寿命・接続revision同意・茶々入れ継続・時間制御は後続Phaseで扱う。
+
+Phase 1:
+- App owns the memory-only session controller using documentSessionRef, independent of save destination and panel mounts.
+- RequestOwner identity checks include document scope, session, generation, request ID and terminal state.
+- Session limits: 20 sessions; 10,000 Unicode characters per question; 1MiB UTF-8 draft; 200 messages with two reserved at begin; 64KiB answer; 8MiB total session strings with answer reservation. No truncation, eviction or summarization.
+- chat_connection exposes only origin, model and revision. ai_document_chat accepts the expected revision, reloads and validates saved configuration, then uses that same owned snapshot for provider/model/key/timeouts. Blank saved keys explicitly override environment defaults. No connection credentials are sent from chat UI.
+- Every existing session requires its own confirmation when revision changes. Confirmation alone never sends an LLM request. External changes are checked natively on every send and refreshed on window focus.
+- Tabs, file-operation tracking and visibility-only panel close are introduced in Phase 2. Until then the selected session is presented through the existing single-conversation layout and close still cancels.

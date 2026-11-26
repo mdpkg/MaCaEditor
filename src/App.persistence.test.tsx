@@ -37,6 +37,7 @@ vi.mock("./lib/tauri", async (importOriginal) => ({
   readImage: vi.fn(),
   readAttachment: vi.fn(),
   loadAiConfig: vi.fn(),
+  loadChatConnection: vi.fn(),
   startAiSelectionAction: vi.fn(),
   startAiDiagramEdit: vi.fn(),
   hasAiConfiguration: vi.fn(),
@@ -113,6 +114,7 @@ describe("App persistence", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.mocked(tauri.loadAiConfig).mockRejectedValue(new Error("AI not configured"));
+    vi.mocked(tauri.loadChatConnection).mockRejectedValue(new Error("AI not configured"));
     localStorage.clear();
     vi.mocked(tauri.onNativeFileDrop).mockImplementation(async (callback) => { nativeDrop = callback; return () => {}; });
     vi.mocked(tauri.onFolderChanged).mockImplementation(async (callback) => {

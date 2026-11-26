@@ -5,6 +5,7 @@ import {
   savePackage,
   saveFolder,
   startAiDocumentChat,
+  loadChatConnection,
   startAiStream,
 } from "./tauri";
 import type { AiStreamEvent } from "../types";
@@ -200,14 +201,13 @@ describe("cancelAiRequest", () => {
 describe("startAiDocumentChat", () => {
   test("sends current editor document and conversation to the dedicated command", async () => {
     invokeMock.mockResolvedValue({ request_id: "chat-1", content: "full response" });
-    const requestId = await startAiDocumentChat({ requestId: "chat-1",
-      baseUrl: "http://localhost:11434/v1", apiKey: null, model: "qwen",
+    const requestId = await startAiDocumentChat({ requestId: "chat-1", expectedConnection: "revision",
       filename: "README.md", currentDocument: "unsaved BBB",
       history: [{ role: "User", content: "first" }], question: "next",
     }, () => {});
     expect(requestId).toEqual({ request_id: "chat-1", content: "full response" });
     expect(invokeMock).toHaveBeenCalledWith("ai_document_chat", expect.objectContaining({
-      requestId: "chat-1", filename: "README.md", currentDocument: "unsaved BBB", question: "next",
+      requestId: "chat-1", expectedConnection: "revision", filename: "README.md", currentDocument: "unsaved BBB", question: "next",
       history: [{ role: "User", content: "first" }],
     }));
   });
@@ -281,4 +281,12 @@ describe("large edit history transfer", () => {
     expect(result.edit_history).toBeUndefined();
     expect(result.edit_history_warning).toContain("Incomplete");
   });
+});
+
+
+test("chat loads only safe connection metadata through a dedicated command", async () => {
+  const connection = { endpoint: "http://localhost", model: "model", revision: "rev" };
+  invokeMock.mockResolvedValue(connection);
+  expect(await loadChatConnection()).toEqual(connection);
+  expect(invokeMock).toHaveBeenCalledWith("chat_connection");
 });

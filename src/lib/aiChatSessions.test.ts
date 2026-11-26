@@ -100,3 +100,17 @@ test("reserves two history messages and rejects response overflow", () => {
   expect(state.sessions[0].chat.messages[1].status).toBe("failed");
 });
 
+
+test("total retention protects existing drafts and leaves clear/delete available", () => {
+  let state = createAiChatSessions(scope);
+  for (let n = 0; n < 9; n++) {
+    state = reduceAiChatSessions(state, add(String(n), "index.md"));
+    state = reduceAiChatSessions(state, { type: "draft", documentScopeKey: scope, sessionId: String(n), value: "x".repeat(1024 * 1024) });
+  }
+  expect(state.sessions[8].draft.length).toBe(0);
+  expect(state.sessions[0].draft.length).toBe(1024 * 1024);
+  state = reduceAiChatSessions(state, { type: "clear", documentScopeKey: scope, sessionId: "0" });
+  state = reduceAiChatSessions(state, { type: "delete", documentScopeKey: scope, sessionId: "1" });
+  expect(state.sessions[0].draft).toBe("");
+  expect(state.sessions).toHaveLength(8);
+});

@@ -86,6 +86,12 @@ impl OpenAiCompatibleProvider {
         self
     }
 
+    /// Chat uses only the key from its revision-checked saved snapshot.
+    pub fn with_explicit_api_key(mut self, key: Option<&str>) -> Self {
+        self.config = self.config.with_api_key(key.unwrap_or(""));
+        self
+    }
+
     fn to_openai_request(
         &self,
         model: &str,
@@ -881,5 +887,15 @@ mod tests {
         let error = serde_json::from_str::<serde_json::Value>(body).unwrap_err();
         let mapped = map_openai_error(OpenAIError::JSONDeserialize(error, body.to_string()));
         assert!(matches!(mapped, AiError::InvalidResponse(detail) if detail.ends_with(body)));
+    }
+}
+
+#[cfg(test)]
+mod saved_key_tests {
+    use super::*;
+    #[test]
+    fn explicit_blank_key_overrides_any_prior_or_environment_key() {
+        let provider = OpenAiCompatibleProvider::new("http://localhost/v1", Some("prior-secret")).with_explicit_api_key(None);
+        assert_eq!(provider.config.headers()[reqwest::header::AUTHORIZATION], "Bearer ");
     }
 }

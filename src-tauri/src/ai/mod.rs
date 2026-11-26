@@ -16,3 +16,4 @@ pub mod storage;
 pub mod streaming;
 pub mod structured;
 pub mod types;
+pub mod chat;

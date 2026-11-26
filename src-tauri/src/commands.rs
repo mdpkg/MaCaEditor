@@ -799,32 +799,38 @@ pub async fn ai_selection_action(
 /// 現在編集中の Markdown をコンテキストにした read-only chat を開始する。
 #[tauri::command]
 pub async fn ai_document_chat(
+    app: AppHandle,
     state: tauri::State<'_, crate::ai::commands::AiStreamState>,
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
     request_id: String,
-    base_url: String,
-    api_key: Option<String>,
-    model: String,
+    expected_connection: String,
     filename: String,
     current_document: String,
     history: Vec<crate::ai::types::AiMessage>,
     question: String,
-    connect_timeout_seconds: Option<u64>,
-    request_timeout_seconds: Option<u64>,
 ) -> Result<crate::ai::commands::ChatCompletion, AiError> {
+    crate::ai::chat::validate_chat_input(&filename, &history, &question)?;
+    let config = crate::ai::chat::accept_connection(load_ai_config(app).map_err(|_| AiError::InvalidConfiguration("saved connection unavailable".into()))?, &expected_connection)?;
     let request = crate::ai::prompt::build_document_chat_request(
         &filename, &current_document, &history, &question,
     );
-    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, None)
+        .with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
     crate::ai::commands::run_chat_stream(
         &provider,
         state.registry.clone(),
         request_id,
         move |event| { let _ = channel.send(event); },
         request,
-        connect_timeout_seconds,
-        request_timeout_seconds,
+        config.connect_timeout_seconds,
+        config.request_timeout_seconds,
     ).await
+}
+
+#[tauri::command]
+pub fn chat_connection(app: AppHandle) -> Result<crate::ai::chat::ChatConnection, AiError> {
+    let config = load_ai_config(app).map_err(|_| AiError::InvalidConfiguration("saved connection unavailable".into()))?;
+    crate::ai::chat::chat_connection(&config)
 }
 
 #[tauri::command]
