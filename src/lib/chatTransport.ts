@@ -28,11 +28,11 @@ export class ChatTransport {
     if (physicalSlot) throw new Error("chat busy");
     const slot: Slot = { owner: { ...owner }, valid: true };
     physicalSlot = this.slot = slot;
-    emit();
     let bytes = 0;
     let overflow = false;
     const size = (text: string) => new TextEncoder().encode(text).byteLength;
     try {
+      emit();
       const result = await this.invoke(owner.requestId, (event) => {
         if (event.type === "delta" && event.request_id === owner.requestId && slot.valid) {
           bytes += size(event.content);

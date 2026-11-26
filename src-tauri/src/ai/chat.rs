@@ -54,5 +54,3 @@ mod tests {
         assert!(validate_chat_input("C:/private/file.md", &[], "q").is_err());
     }
 }
-
-
