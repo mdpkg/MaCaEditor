@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { ChatTransport } from "./chatTransport";
+import { ChatTransport, subscribeChatTransport } from "./chatTransport";
 import type { AiStreamEvent } from "../types";
 
 test("keeps the physical slot until command settles even after logical invalidation", async () => {
@@ -41,5 +41,15 @@ test("rejects an oversized final response even if no deltas were delivered", asy
   const id = crypto.randomUUID();
   const transport = new ChatTransport(async () => ({ request_id: id, content: "あ".repeat(22000) }), async () => true);
   await expect(transport.send({ documentScopeKey: "d", sessionId: "s", generation: 0, requestId: id }, () => {})).rejects.toThrow("64 KiB");
+  expect(transport.busy).toBe(false);
+});
+
+
+test("a failing observer cannot strand the physical request slot", async () => {
+  const unsubscribe = subscribeChatTransport(() => { throw new Error("observer failure"); });
+  const id = crypto.randomUUID();
+  const transport = new ChatTransport(async () => ({ request_id: id, content: "answer" }), async () => true);
+  await expect(transport.send({ documentScopeKey: "d", sessionId: "s", generation: 0, requestId: id }, () => {})).rejects.toThrow("observer failure");
+  unsubscribe();
   expect(transport.busy).toBe(false);
 });

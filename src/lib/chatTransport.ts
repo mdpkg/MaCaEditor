@@ -4,6 +4,11 @@ export type RequestOwner = { documentScopeKey: string; sessionId: string; genera
 export type ChatCompletion = { request_id: string; content: string };
 type Slot = { owner: RequestOwner; valid: boolean };
 let physicalSlot: Slot | undefined;
+const listeners = new Set<() => void>();
+export const subscribeChatTransport = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
+export const isChatTransportBusy = () => physicalSlot !== undefined;
+export const chatRequestOwner = () => physicalSlot?.owner;
+const emit = () => listeners.forEach((listener) => listener());
 
 /** The physical slot outlives panels, sessions and document instances. No queue. */
 export class ChatTransport {
@@ -27,6 +32,7 @@ export class ChatTransport {
     let overflow = false;
     const size = (text: string) => new TextEncoder().encode(text).byteLength;
     try {
+      emit();
       const result = await this.invoke(owner.requestId, (event) => {
         if (event.type === "delta" && event.request_id === owner.requestId && slot.valid) {
           bytes += size(event.content);
@@ -42,6 +48,7 @@ export class ChatTransport {
       slot.valid = false;
       if (physicalSlot === slot) physicalSlot = undefined;
       if (this.slot === slot) this.slot = undefined;
+      emit();
     }
   }
 }

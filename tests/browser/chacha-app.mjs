@@ -41,6 +41,7 @@ async function fixture(t, width = 1100) {
         if (command === "save_editor_preferences") { Object.assign(state.preferences, structuredClone(args.preferences)); return; }
         if (command === "has_ai_configuration") return true;
         if (command === "chacha_connection") { if (state.connectionUnavailable) throw { kind: "connection" }; return structuredClone(state.connection); }
+        if (command === "chat_connection") return { ...state.connection, endpoint: new URL(state.connection.endpoint).origin };
         if (command === "load_ai_config") return { provider: "OpenAiCompatible", base_url: state.connection.endpoint, model: state.connection.model, api_key: null, temperature: 0.7, max_output_tokens: 4096, connect_timeout_seconds: 10, request_timeout_seconds: 300 };
         if (command === "save_ai_config") { state.connection = { endpoint: args.config.base_url, model: args.config.model, revision: "changed" }; return; }
         if (command === "ai_chacha") {

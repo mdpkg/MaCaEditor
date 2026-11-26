@@ -18,6 +18,7 @@ import { AboutDialog } from "./components/AboutDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { AiChatPanel } from "./components/AiChatPanel";
+import { useAiChatSessions } from "./hooks/useAiChatSessions";
 import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
 import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
@@ -330,6 +331,11 @@ export default function App() {
   useEffect(() => { saveRecentDocuments(recentDocuments); }, [recentDocuments]);
   const originKind = doc?.origin.kind;
   const originPath = doc?.origin.kind === "untitled" ? undefined : doc?.origin.path;
+  const chat = useAiChatSessions(doc ? String(documentSessionRef.current) : null, (scope, path) => {
+    if (scope !== String(documentSessionRef.current)) return undefined;
+    const file = documentRef.current?.files.find((item) => item.path === path);
+    return file?.is_text && isMarkdownPath(path) ? file.content ?? "" : undefined;
+  });
   const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null);
   useEffect(() => {
     if (aiChatOpen || aiSelection || aiDiagramEdit || aiSelectionRunning) chacha.runtime?.session.dismiss();
@@ -1799,6 +1805,9 @@ export default function App() {
   }, [printTitle]);
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
+  useEffect(() => {
+    if (aiChatOpen && displayFile && displayIsMarkdown) chat.controller?.initialize(displayFile.path);
+  }, [aiChatOpen, chat.controller, displayFile?.path, displayIsMarkdown]);
   const displayIsMarp = useMemo(() => detectMarp(displayContent, displayFile?.path ?? "").marp, [displayContent, displayFile?.path]);
   const displayPreviewUnavailable = /\.(pdf|zip)$/i.test(displayFile?.path ?? "");
   const navigation = navigationTarget?.path === displayFile?.path ? navigationTarget ?? undefined : undefined;
@@ -2226,11 +2235,9 @@ export default function App() {
           )}
           </Suspense>
         </main>
-        {aiChatOpen && displayFile && displayIsMarkdown && (
+        {aiChatOpen && displayFile && displayIsMarkdown && chat.controller && (
           <AiChatPanel
-            key={displayFile.path}
-            filename={displayFile.path}
-            currentDocument={displayContent}
+            controller={chat.controller}
             onOpenAiSettings={() => setAiSettingsOpen(true)}
             onClose={() => setAiChatOpen(false)}
           />
@@ -2240,7 +2247,7 @@ export default function App() {
         <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
       )}
       {aiSettingsOpen && (
-        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} onChachaSettingsSaved={chacha.applySettings} onConnectionSaved={chacha.connectionSaved}
+        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} onChachaSettingsSaved={chacha.applySettings} onConnectionSaved={async () => { await Promise.all([chacha.connectionSaved(), chat.controller?.refreshConnection()]); }}
           chachaControls={doc ? <ChachaControls runtime={chacha.runtime} settings={chacha.settings} /> : <p>文書を開くと、この文書だけで茶々入れを有効化できます。</p>} />
       )}
       {aiSelection && (

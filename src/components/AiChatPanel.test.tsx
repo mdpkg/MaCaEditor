@@ -1,12 +1,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { loadAiConfig, startAiDocumentChat } from "../lib/tauri";
+import { loadChatConnection, startAiDocumentChat, cancelAiRequest } from "../lib/tauri";
 import { AiChatPanel } from "./AiChatPanel";
+import { ChatSessionsController } from "../lib/chatSessionsController";
 
 vi.mock("../lib/tauri", () => ({
   cancelAiRequest: vi.fn(),
-  loadAiConfig: vi.fn(),
+  loadChatConnection: vi.fn(),
   startAiDocumentChat: vi.fn(),
 }));
 
@@ -14,6 +15,7 @@ vi.mock("../lib/tauri", () => ({
 
 let container: HTMLDivElement;
 let root: Root;
+let controller: ChatSessionsController;
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -23,24 +25,22 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => root.unmount());
+  act(() => { root.unmount(); controller?.dispose(); });
   container.remove();
 });
 
 async function openChat(onOpenAiSettings = vi.fn()) {
-  await act(async () => {
-    root.render(<AiChatPanel filename="index.md" currentDocument="Sample"
-      onOpenAiSettings={onOpenAiSettings} onClose={vi.fn()} />);
-  });
+  controller = new ChatSessionsController("doc", { connection: loadChatConnection, document: () => "Sample", send: startAiDocumentChat, cancel: cancelAiRequest });
+  await controller.refreshConnection(); controller.add("index.md");
+  await act(async () => { root.render(<AiChatPanel controller={controller} onOpenAiSettings={onOpenAiSettings} onClose={vi.fn()} />); });
 }
-
 function button(label: string) {
   return [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
 }
 
 test("shows the configuration load error summary and the original in collapsed details", async () => {
   const original = "key must be a string at line 1 column 2";
-  vi.mocked(loadAiConfig).mockRejectedValue(original);
+  vi.mocked(loadChatConnection).mockRejectedValue(original);
   const openSettings = vi.fn();
   await openChat(openSettings);
 
@@ -61,10 +61,8 @@ test.each([
   [" \n\t", "AI から本文が返されませんでした。"],
   ["通常の応答", "通常の応答"],
 ])("shows a message for a completed response with content %j", async (content, displayed) => {
-  vi.mocked(loadAiConfig).mockResolvedValue({
-    provider: "OpenAiCompatible", base_url: "http://localhost:11434/v1", model: "test",
-    api_key: null, temperature: null, max_output_tokens: null,
-    connect_timeout_seconds: null, request_timeout_seconds: null,
+  vi.mocked(loadChatConnection).mockResolvedValue({
+    endpoint: "http://localhost:11434", model: "test", revision: "rev",
   });
   vi.mocked(startAiDocumentChat).mockImplementation(async (request, onEvent) => {
     onEvent({ type: "started", request_id: request.requestId });
@@ -88,7 +86,7 @@ test.each([
 
 
 test("two synchronous send clicks start only one request", async () => {
-  vi.mocked(loadAiConfig).mockResolvedValue({ provider: "OpenAiCompatible", base_url: "http://localhost:11434/v1", model: "test", api_key: null, temperature: null, max_output_tokens: null, connect_timeout_seconds: null, request_timeout_seconds: null });
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost:11434", model: "test", revision: "rev", });
   let resolve!: (value: { request_id: string; content: string }) => void;
   let id = "";
   vi.mocked(startAiDocumentChat).mockImplementation((request) => {
@@ -105,4 +103,38 @@ test("two synchronous send clicks start only one request", async () => {
   await act(async () => resolve({ request_id: id, content: "authoritative" }));
   expect(vi.mocked(startAiDocumentChat)).toHaveBeenCalledOnce();
   expect(container.querySelector(".ai-chat-assistant p")?.textContent).toBe("authoritative");
+});
+
+
+test("clear during connection invalidates before cancellation and suppresses the late answer", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  vi.mocked(cancelAiRequest).mockResolvedValue(false);
+  let finish!: (value: { request_id: string; content: string }) => void;
+  let id = "";
+  vi.mocked(startAiDocumentChat).mockImplementation((request) => { id = request.requestId; return new Promise((resolve) => { finish = resolve; }); });
+  await openChat();
+  const sessionId = controller.getSnapshot().selectedSessionId!;
+  act(() => controller.draft(sessionId, "question"));
+  await act(async () => { void controller.send(sessionId); });
+  expect(button("消去").disabled).toBe(false);
+  act(() => button("消去").click());
+  expect(vi.mocked(cancelAiRequest)).toHaveBeenCalledWith(id);
+  await act(async () => finish({ request_id: id, content: "late" }));
+  expect(container.querySelector(".ai-chat-assistant")).toBeNull();
+});
+
+test("connection confirmation applies only to this session and never sends by itself", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "one" });
+  vi.mocked(startAiDocumentChat).mockImplementation(async (request) => ({ request_id: request.requestId, content: "answer" }));
+  await openChat();
+  const id = controller.getSnapshot().selectedSessionId!;
+  act(() => controller.draft(id, "question"));
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "https://example.test", model: "new", revision: "two" });
+  await act(async () => controller.refreshConnection());
+  expect(button("送信").disabled).toBe(true);
+  act(() => button("この会話の送信先を確認").click());
+  expect(vi.mocked(startAiDocumentChat)).not.toHaveBeenCalled();
+  await act(async () => button("送信").click());
+  expect(vi.mocked(startAiDocumentChat).mock.calls[0][0].expectedConnection).toBe("two");
+  expect(Object.keys(vi.mocked(startAiDocumentChat).mock.calls[0][0])).not.toContain("apiKey");
 });
