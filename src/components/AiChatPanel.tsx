@@ -1,13 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AiChatMessageView } from "./AiChatMessageView";
 import { uiText } from "../lib/uiText";
 import { AiErrorFeedback } from "./AiErrorFeedback";
 import { ErrorDetails } from "./ErrorDetails";
 import { AiChatTabs, chatPanelId, chatTabId } from "./AiChatTabs";
 import type { ActionRequest } from "./ActionDialog";
 import { shouldSendChatKey } from "../lib/aiChat";
-import { CHAT_LIMITS } from "../lib/aiChatSessions";
+import { CHAT_LIMITS, fitsUtf8Limit, utf8Bytes } from "../lib/aiChatSessions";
 import { ChatSessionsController } from "../lib/chatSessionsController";
 import { chatRequestOwner, isChatTransportBusy, subscribeChatTransport } from "../lib/chatTransport";
 
@@ -51,7 +50,7 @@ export function AiChatPanel({ controller, markdownPath, onClose, onOpenAiSetting
     } finally { confirming.current = false; }
   };
   return <aside className="ai-chat-panel" aria-label={uiText("AI Chat")} onKeyDown={(event) => {
-    if (event.key === "Escape" && !event.defaultPrevented && !composing && !event.nativeEvent.isComposing &&
+    if (event.key === "Escape" && !event.defaultPrevented && !composing && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 &&
         !document.querySelector('[role="dialog"][aria-modal="true"]')) { event.preventDefault(); event.stopPropagation(); onClose(); }
   }}>
     <header><strong>{uiText("AI Chat")}</strong><div>
@@ -81,13 +80,8 @@ export function AiChatPanel({ controller, markdownPath, onClose, onOpenAiSetting
         if (list) controller.scroll(session.id, list.scrollTop, list.scrollHeight - list.scrollTop - list.clientHeight < 80);
       }}>
         {session.chat.messages.length === 0 && <p className="ai-chat-empty">{uiText("Ask about the current Markdown document.")}</p>}
-        {session.chat.messages.map((message) => <article key={message.id} className={`ai-chat-message ai-chat-${message.role}`}>
-          <b>{message.role === "user" ? uiText("You") : "AI"}</b>
-          {message.role === "user" ? <p>{message.content}</p> : <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>}
-          {message.status === "complete" && !message.content.trim() && <p role="status">{uiText("AI returned no text.")}</p>}
-          {message.status === "streaming" && <small>{session.phase === "starting" ? "接続中…" : uiText("Generating…")}</small>}
-          {message.status === "cancelled" && <small>{uiText("Cancelled")}</small>}
-        </article>)}
+        {session.chat.messages.map((message) => <AiChatMessageView key={message.id} message={message}
+          starting={message.status === "streaming" && session.phase === "starting"} />)}
         {session.chat.error && <div className="ai-chat-error"><AiErrorFeedback error={session.chat.error} />
           <p>文脈が長すぎる場合は、新しい会話や会話の消去をご利用ください。</p>
           <button disabled={busy || session.pendingConnectionConfirmation || !session.available} onClick={() => void controller.send(session.id, session.lastQuestion)}>{uiText("Retry")}</button>
@@ -95,7 +89,15 @@ export function AiChatPanel({ controller, markdownPath, onClose, onOpenAiSetting
       </div>
       <footer>
         <textarea ref={inputRef} aria-label={uiText("AI Chat message")} value={session.draft} maxLength={CHAT_LIMITS.draftBytes} readOnly={!session.available}
-          disabled={!configured || running} onChange={(event) => controller.draft(session.id, event.target.value)}
+          disabled={!configured || running} onChange={(event) => {
+            if (fitsUtf8Limit(event.target.value, CHAT_LIMITS.draftBytes)) controller.draft(session.id, event.target.value);
+            else { event.currentTarget.value = session.draft; controller.rejectInput(); }
+          }} onPaste={(event) => {
+            const input = event.currentTarget, text = event.clipboardData.getData("text/plain");
+            const start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+            const available = CHAT_LIMITS.draftBytes - utf8Bytes(input.value.slice(0, start)) - utf8Bytes(input.value.slice(end));
+            if (!fitsUtf8Limit(text, available)) { event.preventDefault(); controller.rejectInput(); }
+          }}
           onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
           onKeyDown={(event) => { if (shouldSendChatKey(event.key, event.shiftKey, composing || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) {
             event.preventDefault(); void controller.send(session.id);

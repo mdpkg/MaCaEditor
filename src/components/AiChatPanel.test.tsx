@@ -178,3 +178,63 @@ test("selection changes during delete confirmation cannot delete a different con
   expect(controller.getSnapshot().sessions).toHaveLength(2);
   expect(controller.getSnapshot().sessions[0].draft).toBe("keep");
 });
+
+test("large Unicode paste is rejected before changing the existing draft", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  await openChat(); const id = controller.getSnapshot().selectedSessionId!;
+  act(() => controller.draft(id, "keep"));
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", { value: { getData: () => "😀".repeat(262145) } });
+  act(() => container.querySelector("textarea")!.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(controller.getSnapshot().sessions[0].draft).toBe("keep");
+});
+test("answers do not create image requests or executable HTML and links use the validated external path", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  vi.mocked(startAiDocumentChat).mockImplementation(async (request) => ({ request_id: request.requestId,
+    content: '![external](https://example.test/track.png) <img src=x onerror=alert(1)> [safe](https://example.test/path) [bad](javascript:alert(1))' }));
+  await openChat(); const id = controller.getSnapshot().selectedSessionId!;
+  act(() => controller.draft(id, "question"));
+  await act(async () => controller.send(id));
+  expect(container.querySelector(".ai-chat-assistant img")).toBeNull();
+  const link = container.querySelector<HTMLAnchorElement>('.ai-chat-assistant a[href="https://example.test/path"]')!;
+  expect(link.rel).toContain("noreferrer");
+  expect(container.querySelector('.ai-chat-assistant a[href^="javascript:"]')).toBeNull();
+});
+
+test("deleting the final empty tab returns focus to add without a confirmation", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  const confirm = vi.fn(async () => true); await openChat(vi.fn(), confirm);
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="文書相談 1を削除"]')!.click());
+  expect(confirm).not.toHaveBeenCalled();
+  expect(controller.getSnapshot().sessions).toHaveLength(0);
+  expect(document.activeElement).toBe(container.querySelector('button[aria-label="文書相談を追加"]'));
+  act(() => container.querySelector<HTMLButtonElement>('button[aria-label="文書相談を追加"]')!.click());
+  expect(controller.getSnapshot().sessions[0].title).toBe("文書相談 2");
+  expect(document.activeElement).toBe(container.querySelector("textarea"));
+});
+test("scroll position and follow state are restored independently for each tab", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  await openChat(); const id = controller.getSnapshot().selectedSessionId!;
+  const list = container.querySelector<HTMLDivElement>(".ai-chat-messages")!;
+  Object.defineProperties(list, { scrollHeight: { value: 1000 }, clientHeight: { value: 100 } });
+  act(() => { list.scrollTop = 72; list.dispatchEvent(new Event("scroll", { bubbles: true })); controller.add("guide.md"); });
+  act(() => controller.select(id));
+  expect(controller.getSnapshot().sessions[0].follow).toBe(false);
+  expect(container.querySelector<HTMLDivElement>(".ai-chat-messages")!.scrollTop).toBe(72);
+});
+test("IME Enter never sends and legacy IME Escape does not close the panel", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  await openChat(); const close = vi.fn(), id = controller.getSnapshot().selectedSessionId!;
+  act(() => { controller.draft(id, "question"); root.render(<AiChatPanel controller={controller} markdownPath="index.md" onClose={close} onOpenAiSettings={vi.fn()} />); });
+  const input = container.querySelector("textarea")!;
+  act(() => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+  act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  act(() => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+  act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true })));
+  expect(vi.mocked(startAiDocumentChat)).not.toHaveBeenCalled();
+  act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true })));
+  expect(close).not.toHaveBeenCalled();
+  act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(close).toHaveBeenCalledOnce();
+});

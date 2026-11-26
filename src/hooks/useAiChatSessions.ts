@@ -1,16 +1,14 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatSessionsController } from "../lib/chatSessionsController";
-import { createAiChatSessions } from "../lib/aiChatSessions";
 import { cancelAiRequest, loadChatConnection, startAiDocumentChat } from "../lib/tauri";
 import { readAiError } from "../lib/aiSelection";
-import { chatRequestOwner, isChatTransportBusy, subscribeChatTransport } from "../lib/chatTransport";
+import { isChatTransportBusy, subscribeChatTransport } from "../lib/chatTransport";
 
 export function useAiChatSessions(scope: string | null, document: (scope: string, path: string) => string | undefined) {
   const source = useRef(document); source.current = document;
   const [stored, setStored] = useState<ChatSessionsController>();
   const controller = stored?.scope === scope ? stored : undefined;
-  const empty = useMemo(() => createAiChatSessions(scope ?? "closed"), [scope]);
-  const state = useSyncExternalStore(controller?.subscribe ?? (() => () => {}), controller?.getSnapshot ?? (() => empty));
+  const phase = useSyncExternalStore(controller?.subscribe ?? (() => () => {}), controller?.getActivitySnapshot ?? (() => "idle"));
   const busy = useSyncExternalStore(subscribeChatTransport, isChatTransportBusy);
   useEffect(() => {
     if (scope === null) { setStored(undefined); return; }
@@ -21,5 +19,5 @@ export function useAiChatSessions(scope: string | null, document: (scope: string
     window.addEventListener("focus", refresh);
     return () => { window.removeEventListener("focus", refresh); instance.dispose(); };
   }, [scope]);
-  return { controller, state, busy, owner: chatRequestOwner() };
+  return { controller, phase, busy };
 }

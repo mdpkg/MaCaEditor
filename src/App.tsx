@@ -341,8 +341,7 @@ export default function App() {
   });
   const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null);
   const automaticChachaSuppressed = aiChatOpen || chat.busy || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen;
-  const chatActivity = chat.state.sessions.find((session) => session.id === chat.owner?.sessionId);
-  const chatActivityLabel = chatActivity?.phase === "starting" ? "接続中" : chatActivity?.phase === "running" ? "生成中" : "停止処理中";
+  const chatActivityLabel = chat.phase === "starting" ? "接続中" : chat.phase === "running" ? "生成中" : "停止処理中";
   useEffect(() => {
     chacha.runtime?.session.dismiss();
   }, [chacha.runtime, automaticChachaSuppressed]);

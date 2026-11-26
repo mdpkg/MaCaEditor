@@ -1,6 +1,7 @@
+import { createRequestId } from "./requestId";
 import type { AiError, AiMessage, AiStreamEvent } from "../types";
 import { chatHistory } from "./aiChat";
-import { createAiChatSessions, reduceAiChatSessions, CHAT_LIMITS, utf8Bytes, sameRequest,
+import { createAiChatSessions, reduceAiChatSessions, CHAT_LIMITS, utf8Bytes, sameRequest, validChatQuestion, fitsUtf8Limit,
   type SessionAction, type ChatConnection, type ChatPathChange } from "./aiChatSessions";
 import { ChatTransport, isChatTransportBusy, type ChatCompletion, type RequestOwner } from "./chatTransport";
 export type DocumentChatRequest = { requestId: string; expectedConnection: string; filename: string;
@@ -20,6 +21,7 @@ export class ChatSessionsController {
   private readonly listeners = new Set<() => void>();
   constructor(readonly scope: string, private readonly dependencies: Dependencies) { this.state = createAiChatSessions(scope); }
   getSnapshot = () => this.state;
+  getActivitySnapshot = () => this.state.sessions.find((session) => session.owner)?.phase ?? "idle";
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private dispatch(action: SessionAction) {
     if (this.disposed) return;
@@ -27,9 +29,10 @@ export class ChatSessionsController {
     if (next !== this.state) { this.state = next; this.listeners.forEach((listener) => listener()); }
   }
   private notice(message: string) { this.dispatch({ type: "notice", message }); }
+  rejectInput() { this.notice("下書きは1MiB UTF-8までです。入力前の内容を保持しました。"); }
   initialize(path: string) { if (!this.initialized) { this.initialized = true; this.add(path); } }
   add(path: string): string | undefined {
-    const sessionId = crypto.randomUUID();
+    const sessionId = createRequestId();
     this.dispatch({ type: "add", sessionId, path });
     return this.state.sessions.some((session) => session.id === sessionId) ? sessionId : undefined;
   }
@@ -65,11 +68,18 @@ export class ChatSessionsController {
     const connection = this.state.connection;
     if (this.disposed || !session || !connection || this.state.connectionError || !session.available || session.pendingConnectionConfirmation || isChatTransportBusy()) return;
     const question = (input ?? session.draft).trim();
+    if (!validChatQuestion(question)) { this.notice("質問は空白以外の10,000 Unicode文字までです。"); return; }
     const currentDocument = this.dependencies.document(session.path);
     if (currentDocument === undefined) { this.notice("対象Markdownがありません。この会話からは送信できません。"); return; }
-    const owner: RequestOwner = { documentScopeKey: this.scope, sessionId, generation: session.generation + 1, requestId: crypto.randomUUID() };
+    const owner: RequestOwner = { documentScopeKey: this.scope, sessionId, generation: session.generation + 1, requestId: createRequestId() };
+    const history = chatHistory(session.chat.messages);
+    let remaining = CHAT_LIMITS.requestBytes as number;
+    for (const text of [currentDocument, question, ...history.map((message) => message.content)]) {
+      if (!fitsUtf8Limit(text, remaining)) { this.notice("送信内容が1MiBの上限を超えます。新しい会話や会話の消去をご利用ください。"); return; }
+      remaining -= utf8Bytes(text);
+    }
     const request: DocumentChatRequest = { requestId: owner.requestId, expectedConnection: session.approvedConnectionRevision ?? connection.revision,
-      filename: session.path, currentDocument, history: chatHistory(session.chat.messages), question };
+      filename: session.path, currentDocument, history, question };
     if (utf8Bytes(JSON.stringify(request)) > CHAT_LIMITS.requestBytes) { this.notice("送信内容が1MiBの上限を超えます。新しい会話や会話の消去をご利用ください。"); return; }
     this.dispatch({ type: "begin", owner, question, retry: session.chat.status === "error" && session.lastQuestion === question });
     if (!sameRequest(this.state.sessions.find((item) => item.id === sessionId)?.owner, owner)) return;

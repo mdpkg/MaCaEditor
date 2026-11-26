@@ -8,6 +8,19 @@ export const CHAT_LIMITS = { sessions: 20, questionCharacters: 10000, draftBytes
   messages: 200, responseBytes: 64 * 1024, errorCodeUnits: 4096, errorBytes: 16 * 1024,
   retainedBytes: 8 * 1024 * 1024, requestBytes: 1024 * 1024 } as const;
 export const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
+export const validChatQuestion = (value: string) => !!value.trim() && value.length <= CHAT_LIMITS.questionCharacters * 2 &&
+  Array.from(value).length <= CHAT_LIMITS.questionCharacters;
+/** Check an input limit without allocating an oversized UTF-8 buffer. */
+export function fitsUtf8Limit(value: string, limit: number): boolean {
+  if (limit < 0 || value.length > limit) return false;
+  let bytes = 0;
+  for (const character of value) {
+    const point = character.codePointAt(0)!;
+    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+    if (bytes > limit) return false;
+  }
+  return true;
+}
 const immutableTextSizes = new WeakMap<object, number>();
 function textBytes(value: unknown): number {
   if (typeof value === "string") return utf8Bytes(value);
@@ -118,7 +131,7 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
     return { ...state, sessions, selectedSessionId: state.selectedSessionId === sessionId
       ? sessions[Math.max(0, index - 1)]?.id : state.selectedSessionId };
   }
-  if (action.type === "draft") return utf8Bytes(action.value) > CHAT_LIMITS.draftBytes
+  if (action.type === "draft") return !fitsUtf8Limit(action.value, CHAT_LIMITS.draftBytes)
     ? { ...state, notice: "下書きは1MiB UTF-8までです。" } : update({ ...session, draft: action.value });
   if (action.type === "scroll") return update({ ...session, scrollTop: action.top, follow: action.follow });
   if (action.type === "confirm") return action.revision !== state.connection?.revision ? state : update({ ...session, approvedConnectionRevision: action.revision, pendingConnectionConfirmation: false });
@@ -130,7 +143,7 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
     });
   }
   if (action.type === "begin") {
-    if (!action.question.trim() || Array.from(action.question).length > CHAT_LIMITS.questionCharacters ||
+    if (!validChatQuestion(action.question) ||
         session.chat.messages.length + (action.retry ? 0 : 2) > CHAT_LIMITS.messages) {
       return { ...state, notice: "質問は10,000 Unicode文字、会話は200メッセージまでです。新しい会話や会話の消去をご利用ください。" };
     }
