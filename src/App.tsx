@@ -263,6 +263,7 @@ export default function App() {
     format: "plantuml" | "mermaid"; path: string; session: number;
   } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [chatInputFocus, setChatInputFocus] = useState(0);
   const chatReturnFocusRef = useRef<{ scope: string; path?: string }>();
   const chatPathMovesRef = useRef(new WeakMap<EditHistoryEntry, ChatPathMove[]>());
   const editorCursorsRef = useRef(new Map<string, number>());
@@ -339,7 +340,13 @@ export default function App() {
     const file = documentRef.current?.files.find((item) => item.path === path);
     return file?.is_text && isMarkdownPath(path) ? file.content ?? "" : undefined;
   });
-  const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null);
+  const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null,
+    String(documentSessionRef.current), (quote) => {
+      if (quote.documentScopeKey !== String(documentSessionRef.current) || !chat.controller) return false;
+      if (!chat.controller.addQuote(quote)) { showNotification("会話を追加できません。不要な会話を削除・消去してください。", "warning"); return false; }
+      chatReturnFocusRef.current = { scope: quote.documentScopeKey, path: quote.path };
+      setAiChatOpen(true); setChatInputFocus((value) => value + 1); return true;
+    });
   const automaticChachaSuppressed = aiChatOpen || chat.busy || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen;
   const chatActivityLabel = chat.phase === "starting" ? "接続中" : chat.phase === "running" ? "生成中" : "停止待ち";
   useEffect(() => {
@@ -2257,6 +2264,7 @@ export default function App() {
         </main>
         {aiChatOpen && doc && chat.controller && (
           <AiChatPanel
+            focusInputRequest={chatInputFocus}
             controller={chat.controller}
             markdownPath={displayIsMarkdown ? displayFile?.path : undefined}
             onConfirm={async (request) => (await ask(request)) !== null}

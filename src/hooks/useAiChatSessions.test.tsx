@@ -5,7 +5,7 @@ import { useAiChatSessions } from "./useAiChatSessions";
 import { loadChatConnection, startAiDocumentChat } from "../lib/tauri";
 import type { ChatSessionsController } from "../lib/chatSessionsController";
 import type { AiStreamEvent } from "../types";
-vi.mock("../lib/tauri", () => ({ loadChatConnection: vi.fn(), startAiDocumentChat: vi.fn(), cancelAiRequest: vi.fn(async () => true) }));
+vi.mock("../lib/tauri", () => ({ loadChatConnection: vi.fn(), startAiQuotedChat: vi.fn(), startAiDocumentChat: vi.fn(), cancelAiRequest: vi.fn(async () => true) }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 test("streaming text updates the panel store without rerendering the editor's App owner", async () => {
   vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });

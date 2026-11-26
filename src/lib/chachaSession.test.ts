@@ -7,6 +7,24 @@ const sessions: ChachaSession[] = [];
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => { sessions.splice(0).forEach((s) => s.dispose()); vi.useRealTimers(); });
 const reply = '{"type":"reaction","comment":"読んでいるよ"}';
+test("handoff uses the actual generation snapshot and retains the bubble if session creation fails", async () => {
+  let connection = { endpoint: "https://old.test", model: "old", revision: "one" };
+  let finish!: (raw: string) => void;
+  const handoff = vi.fn(() => false);
+  const transport = vi.fn(() => new Promise<string>((resolve) => { finish = resolve; }));
+  const session = new ChachaSession(normalizeChachaSettings({ prompt: "old persona" }), transport, {
+    capture: () => ({ documentScopeKey: "doc", connection }), onContinue: handoff,
+  }); sessions.push(session);
+  session.attach({ file: "a.md", source: () => "対象", blocked: () => false, visible: () => true });
+  session.enable(); session.edited({ amount: 100, position: 1 }); await vi.advanceTimersByTimeAsync(5000);
+  connection = { endpoint: "https://new.test", model: "new", revision: "two" };
+  finish(reply); await vi.advanceTimersByTimeAsync(0);
+  const id = session.snapshot.comment!.id;
+  expect(session.continue(id)).toBe(false); expect(session.snapshot.phase).toBe("collapsed");
+  expect(handoff).toHaveBeenCalledWith(expect.objectContaining({ commentId: id, personality: "old persona", context: { target: "対象" }, connection: { revision: "one", endpoint: "https://old.test", model: "old" } }));
+  handoff.mockReturnValue(true); expect(session.continue(id)).toBe(true);
+  expect(session.continue(id)).toBe(false); expect(transport).toHaveBeenCalledOnce();
+});
 function setup(transport: ChachaTransport = vi.fn(async () => reply)) {
   let source = "外\n\n前\n\n対象\n\n後\n\n外末尾", blocked = false, visible = true;
   const session = new ChachaSession(normalizeChachaSettings(), transport); sessions.push(session);
@@ -27,7 +45,7 @@ test("初期状態と有効化だけでは送らず、編集とidle後だけ1件
   expect(h.session.snapshot.comment?.comment).toBe("読んでいるよ");
   h.edit(); await vi.advanceTimersByTimeAsync(120000); expect(h.transport).toHaveBeenCalledOnce();
 });
-test("保留は30秒、未展開は表示から180秒で破棄し、展開中は時間だけで消さない", async () => {
+test("保留は30秒、吹き出しは表示から180秒で破棄する", async () => {
   let resolve!: (value: string) => void;
   const h = setup(vi.fn(() => new Promise<string>((r) => { resolve = r; })));
   h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000); h.block(true); resolve(reply);
@@ -35,7 +53,7 @@ test("保留は30秒、未展開は表示から180秒で破棄し、展開中は
   await vi.advanceTimersByTimeAsync(30000); expect(h.session.snapshot.phase).toBe("idle");
   h.block(false); h.change(h.target() + 2, h.target() + 2, "2"); h.edit(); await vi.advanceTimersByTimeAsync(120000); resolve(reply);
   await vi.advanceTimersByTimeAsync(0); expect(h.session.snapshot.phase).toBe("collapsed");
-  h.session.expand(); await vi.advanceTimersByTimeAsync(999999); expect(h.session.snapshot.phase).toBe("expanded");
+  await vi.advanceTimersByTimeAsync(180000); expect(h.session.snapshot.phase).toBe("idle");
   h.session.dismiss(); expect(h.session.snapshot.phase).toBe("idle");
 });
 test("未展開の寿命・画面外への移動ではコメントを破棄する", async () => {

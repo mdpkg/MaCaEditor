@@ -160,6 +160,7 @@ pub fn run() {
             commands::ai_stream,
             commands::ai_selection_action,
             commands::ai_document_chat,
+            commands::ai_continue_chacha,
             commands::chat_connection,
             commands::ai_edit_diagram,
             commands::ai_chacha,

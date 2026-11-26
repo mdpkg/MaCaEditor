@@ -2386,3 +2386,5 @@ body {
   .resize-handle, .results-panel, .preview-diagram-edit, .preview-diagram-error button, .preview-media-edit, .ai-chat-panel { display: none !important; }
   .preview-diagram { break-inside: avoid; }
 }
+.ai-chat-quote { border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.ai-chat-quote-text { white-space: pre-wrap; }

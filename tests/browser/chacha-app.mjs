@@ -45,11 +45,11 @@ async function fixture(t, width = 1100, scale = 1) {
         if (command === "chat_connection") return { ...state.connection, endpoint: new URL(state.connection.endpoint).origin };
         if (command === "load_ai_config") return { provider: "OpenAiCompatible", base_url: state.connection.endpoint, model: state.connection.model, api_key: null, temperature: 0.7, max_output_tokens: 4096, connect_timeout_seconds: 10, request_timeout_seconds: 300 };
         if (command === "save_ai_config") { state.connection = { endpoint: args.config.base_url, model: args.config.model, revision: "changed" }; return; }
-        if (command === "ai_document_chat") {
+        if (command === "ai_document_chat" || command === "ai_continue_chacha") {
           let index = 0;
           const emit = (message) => callbacks.get(args.channel.id)?.({ index: index++, message });
           const record = { requestId: args.requestId, expectedConnection: args.expectedConnection, filename: args.filename,
-            currentDocument: args.currentDocument, history: args.history, question: args.question, fields: Object.keys(args) };
+            currentDocument: args.currentDocument, quote: args.quote, history: args.history, question: args.question, fields: Object.keys(args) };
           state.chatAttempts.push(structuredClone(record));
           try {
             if (args.expectedConnection !== state.connection.revision) throw { kind: "InvalidConfiguration", message: "chat_connection_changed" };
@@ -97,13 +97,15 @@ test("実Appは明示同意からだけ送信し、人格保存・停止再開�
   await consent.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
   await page.clock.fastForward(120000); assert.equal((await requests(page)).length, 0);
   await write(page); await page.clock.runFor(5050);
-  const expand = page.getByRole("button", { name: "茶々入れコメントを展開", exact: true }); await expand.waitFor();
+  const expand = page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }); await expand.waitFor();
   let sent = await requests(page); assert.equal(sent.length, 1); assert.equal(sent[0].expectedConnection, "one");
   const documentText = JSON.parse(sent[0].request.messages[2].content);
   assert.match(documentText.target, /^対象/); assert.equal(documentText.previous, "前の段落"); assert.equal(documentText.next, "後の段落");
   assert.ok(!JSON.stringify(sent).includes("PRIVATE")); assert.ok(!JSON.stringify(sent).includes("F:/fixture"));
   assert.equal(await page.locator(".cm-content").evaluate((element) => element === document.activeElement), true);
-  await expand.click(); await page.clock.runFor(50); await page.locator(".cm-chacha-tooltip").getByText("読んでいるよ。", { exact: true }).waitFor();
+  await expand.click(); await page.clock.runFor(50); await page.locator(".ai-chat-quote").filter({ hasText: "読んでいるよ。" }).waitFor();
+  assert.equal(await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).evaluate((el) => el === document.activeElement), true);
+  await page.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
   await page.getByRole("button", { name: "AI", exact: true }).click(); await page.getByRole("menuitem", { name: "AI 設定", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "AI 設定", exact: true });
   await settings.getByRole("textbox", { name: /読者の人格/ }).fill("辛口の読者"); assert.equal((await requests(page)).length, 1);
@@ -361,4 +363,37 @@ test("チャットは別文書の同じMarkdownパスへ旧履歴や遅延回答
   await page.waitForFunction(() => window.__chachaTest.chatRequests.length === 3);
   assert.deepEqual(await page.evaluate(() => window.__chachaTest.chatRequests[2].history), []);
   assert.equal(await page.getByRole("dialog").count(), 0);
+});
+
+test("茶々入れから開いた会話は追加質問まで通信せず生成時の限定文脈と人格だけを送る", async (t) => {
+  const page = await fixture(t);
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  await page.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await write(page); await page.clock.runFor(5050);
+  const generated = (await requests(page))[0];
+  const source = JSON.parse(generated.request.messages[2].content);
+  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
+  await page.locator(".ai-chat-quote").waitFor();
+  assert.equal(await page.getByRole("tab").count(), 1);
+  assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+  assert.equal((await requests(page)).length, 1);
+  const editorBefore = await page.locator(".cm-content").textContent();
+  await page.getByRole("button", { name: "AI", exact: true }).click();
+  await page.getByRole("menuitem", { name: "AI 設定", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "AI 設定", exact: true });
+  await settings.getByRole("textbox", { name: /読者の人格/ }).fill("NEW-PERSONA");
+  await settings.getByRole("button", { name: "茶々入れ設定を保存", exact: true }).click();
+  await settings.getByText("茶々入れ設定を保存しました。", { exact: true }).waitFor();
+  await settings.getByRole("button", { name: "閉じる", exact: true }).click();
+  await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("詳しく教えて");
+  await page.getByRole("button", { name: "送信", exact: true }).click();
+  await page.getByText("会話の確定回答", { exact: true }).waitFor();
+  const sent = await page.evaluate(() => window.__chachaTest.chatRequests[0]);
+  assert.deepEqual(sent.quote.context, source);
+  assert.ok(sent.quote.personality.includes("親しい友人"));
+  assert.ok(!JSON.stringify(sent).includes("NEW-PERSONA"));
+  assert.ok(!JSON.stringify(sent).includes("PRIVATE"));
+  assert.ok(!sent.fields.includes("currentDocument"));
+  assert.deepEqual(sent.history, []);
+  assert.equal(await page.locator(".cm-content").textContent(), editorBefore);
 });
