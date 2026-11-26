@@ -237,6 +237,9 @@ body {
 .ai-chat-status { font-size: 11px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 700px) {
   .ai-chat-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 15; width: min(340px, 100%); min-width: 0; max-width: 100%; }
+  .status-bar:has(.ai-chat-status) { flex-wrap: wrap; gap: 4px 8px; }
+  .status-bar:has(.ai-chat-status) .status-summary { flex: 1 1 180px; }
+  .ai-chat-status { flex: 0 0 auto; }
 }
 .ai-chat-panel textarea { flex: 1; min-height: 64px; resize: vertical; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); }
 

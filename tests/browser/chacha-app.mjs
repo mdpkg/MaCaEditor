@@ -208,6 +208,7 @@ test("チャットのタブ・対象ファイル・保存先・非Markdown選択
   await toggle.click();
   const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
   await panel.getByRole("tab", { name: "文書相談 1", exact: true }).waitFor();
+  assert.equal(await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).evaluate((element) => element === document.activeElement), true);
   assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
   await page.locator('[data-path="guide.md"]').click();
   await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("CHAT-ONLY-QUESTION-A");
@@ -242,7 +243,8 @@ test("チャットのタブ・対象ファイル・保存先・非Markdown選択
 
 
 test("チャットを閉じた生成中と停止終了待ちは自動茶々入れを抑制し過去の編集を再送しない", async (t) => {
-  const page = await fixture(t);
+  const page = await fixture(t, 360);
+  await page.getByRole("button", { name: "ファイル一覧を開閉", exact: true }).click();
   await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
   await page.getByRole("dialog", { name: "この文書で茶々入れを有効化", exact: true }).getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
   await page.evaluate(() => { window.__chachaTest.chatMode = "delayed"; });
@@ -256,6 +258,10 @@ test("チャットを閉じた生成中と停止終了待ちは自動茶々入�
   await input.fill("SECOND-DRAFT"); assert.equal(await panel.getByRole("button", { name: "送信", exact: true }).isDisabled(), true);
   await panel.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
   await page.locator(".ai-chat-status").waitFor();
+  const indicator = await page.locator(".ai-chat-status").boundingBox();
+  if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, "chat-360-busy.png") });
+  assert.ok(indicator.x >= 0 && indicator.x + indicator.width <= 361);
+  assert.equal(await page.locator(".ai-chat-status").evaluate((element) => element.scrollWidth <= element.clientWidth + 1), true);
   await write(page); await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
   await page.locator(".ai-chat-status").click();
   assert.equal(await input.inputValue(), "SECOND-DRAFT");
@@ -327,3 +333,32 @@ for (const [width, scale] of [[360, 1], [550, 2]]) for (const theme of ["light",
   });
 }
 
+
+
+test("チャットは別文書の同じMarkdownパスへ旧履歴や遅延回答を混入しない", async (t) => {
+  const page = await fixture(t);
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
+  const input = panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true });
+  await input.fill("OLD-DOCUMENT-QUESTION"); await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await panel.getByText("会話の確定回答", { exact: true }).waitFor();
+  await page.evaluate(() => { window.__chachaTest.chatMode = "delayed"; });
+  await input.fill("PENDING-OLD-DOCUMENT"); await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await page.waitForFunction(() => window.__chachaTest.chatPending.length === 1);
+  await page.evaluate(() => { window.__chachaTest.nextPath = "F:/fixture/other.mdpkg"; });
+  await page.getByRole("button", { name: "ファイル", exact: true }).click();
+  await page.getByRole("menuitem", { name: "開く", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.ai-chat-panel .ai-chat-message').length === 0);
+  await panel.getByRole("tab", { name: "文書相談 1", exact: true }).waitFor();
+  assert.equal(await panel.getByRole("tab").count(), 1); assert.equal(await input.inputValue(), "");
+  assert.equal(await panel.getByRole("button", { name: "送信", exact: true }).isDisabled(), true);
+  await input.fill("NEW-DOCUMENT-DRAFT");
+  await page.evaluate(() => { window.__chachaTest.chatPending.shift().finish("STALE-OLD-ANSWER"); window.__chachaTest.chatMode = "normal"; });
+  await page.locator(".ai-chat-status").waitFor({ state: "hidden" });
+  assert.equal(await input.inputValue(), "NEW-DOCUMENT-DRAFT");
+  assert.ok(!(await panel.textContent()).includes("STALE-OLD-ANSWER"));
+  await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await page.waitForFunction(() => window.__chachaTest.chatRequests.length === 3);
+  assert.deepEqual(await page.evaluate(() => window.__chachaTest.chatRequests[2].history), []);
+  assert.equal(await page.getByRole("dialog").count(), 0);
+});

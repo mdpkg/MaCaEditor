@@ -341,7 +341,7 @@ export default function App() {
   });
   const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null);
   const automaticChachaSuppressed = aiChatOpen || chat.busy || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen;
-  const chatActivityLabel = chat.phase === "starting" ? "接続中" : chat.phase === "running" ? "生成中" : "停止処理中";
+  const chatActivityLabel = chat.phase === "starting" ? "接続中" : chat.phase === "running" ? "生成中" : "停止待ち";
   useEffect(() => {
     chacha.runtime?.session.dismiss();
   }, [chacha.runtime, automaticChachaSuppressed]);
@@ -1815,6 +1815,7 @@ export default function App() {
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
   const openAiChat = () => {
     chatReturnFocusRef.current = { scope: String(documentSessionRef.current), path: displayFile?.path };
+    if (displayFile && displayIsMarkdown) chat.controller?.initialize(displayFile.path);
     setAiChatOpen(true);
   };
   const closeAiChat = () => {
@@ -2387,7 +2388,8 @@ export default function App() {
           showErrorDetails();
         } : undefined}
       >
-        {chat.busy && <button className="ai-chat-status" disabled={!doc} onClick={openAiChat}>AIチャット：{chatActivityLabel}（開く）</button>}
+        {chat.busy && <button className="ai-chat-status" disabled={!doc} onClick={openAiChat}
+          aria-label={`AIチャット：${chatActivityLabel}（開く）`} title="AIチャットを開いて停止できます。">AI: {chatActivityLabel}</button>}
         {doc && <ChachaControls runtime={chacha.runtime} settings={chacha.settings} compact onOpenAiSettings={() => setAiSettingsOpen(true)} />}
       </StatusBar>
       {notificationHistoryOpen && (
