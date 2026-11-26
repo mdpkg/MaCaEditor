@@ -72,6 +72,7 @@ mod tests {
     fn config() -> AiConfig { AiConfig::new(AiProviderKind::OpenAiCompatible, "https://user:password@example.test/v1?key=secret".into(), Some("PRIVATE-KEY".into()), "model".into(), None, None, None, None) }
     #[tokio::test]
     async fn chat_bounds_raw_events_and_error_bodies_without_echoing_provider_secrets() {
+        let _guard = crate::ai::commands::CHAT_TEST_LOCK.lock().await;
         use crate::ai::{mock_server::{MockOpenAiServer, Scenario}, openai::OpenAiCompatibleProvider, commands::run_chat_stream, cancel::CancellationRegistry};
         use std::sync::Arc;
         static LARGE: [u8; 70 * 1024] = [b'x'; 70 * 1024];

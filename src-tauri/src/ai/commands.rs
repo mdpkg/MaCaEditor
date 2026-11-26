@@ -17,6 +17,8 @@ pub struct AiStreamState {
 }
 
 static CHAT_SLOT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+#[cfg(test)]
+pub(crate) static CHAT_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 pub const CHAT_RESPONSE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, serde::Serialize)]
@@ -248,11 +250,10 @@ mod tests {
 #[cfg(test)]
 mod chat_completion_tests {
     use super::*;
-    pub(super) static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     use crate::ai::{mock::MockAiProvider, types::{AiMessage, AiRole}};
     #[tokio::test]
     async fn chat_command_returns_the_full_answer_and_releases_registration() {
-        let _guard = TEST_LOCK.lock().await;
+        let _guard = CHAT_TEST_LOCK.lock().await;
         let registry = Arc::new(CancellationRegistry::new());
         let id = uuid::Uuid::new_v4().to_string();
         let result = run_chat_stream(&MockAiProvider::new("full answer"), registry.clone(), id.clone(), |_| {},
@@ -263,7 +264,7 @@ mod chat_completion_tests {
     }
     #[tokio::test]
     async fn early_cancel_does_not_call_provider() {
-        let _guard = TEST_LOCK.lock().await;
+        let _guard = CHAT_TEST_LOCK.lock().await;
         let registry = Arc::new(CancellationRegistry::new());
         let id = uuid::Uuid::new_v4().to_string();
         registry.cancel(&id);
@@ -290,7 +291,7 @@ mod chat_deadline_tests {
     async fn deadline_covers_connection_and_busy_requests_do_not_queue() {
         // A separate local semaphore cannot prove the application-wide exclusion.
         // Wait for other helper tests through their test-only lock.
-        let _guard = super::chat_completion_tests::TEST_LOCK.lock().await;
+        let _guard = CHAT_TEST_LOCK.lock().await;
         let calls = Arc::new(AtomicUsize::new(0));
         let provider = PendingProvider(calls.clone());
         let registry = Arc::new(CancellationRegistry::new());
