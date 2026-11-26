@@ -202,6 +202,7 @@ body {
 }
 
 .main-layout {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -221,7 +222,25 @@ body {
 .ai-chat-message pre { overflow: auto; }
 .ai-chat-message small { opacity: .65; }
 .ai-chat-error { margin: 8px; padding: 8px; border: 1px solid #d73a49; border-radius: 5px; }
-.ai-chat-panel > footer { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
+.ai-chat-panel footer { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
+.ai-chat-content { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.ai-chat-tab-toolbar { display: flex; min-width: 0; gap: 3px; padding: 4px; }
+.ai-chat-tabs { display: flex; flex: 1; overflow-x: auto; min-width: 0; gap: 3px; }
+.ai-chat-tab-item { display: flex; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 5px; }
+.ai-chat-tab { display: flex; align-items: center; gap: 3px; max-width: 210px; min-height: 28px; }
+.ai-chat-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-chat-tab[aria-selected="true"] { font-weight: bold; box-shadow: inset 0 -3px var(--accent); }
+.ai-chat-tab-delete, .ai-chat-tab-add { min-width: 28px; min-height: 28px; }
+.ai-chat-tab-add[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.ai-chat-tab-reason, .ai-chat-request-status { margin: 4px 8px; font-size: 12px; overflow-wrap: anywhere; }
+.ai-chat-panel textarea { min-width: 0; }
+.ai-chat-status { font-size: 11px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 700px) {
+  .ai-chat-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 15; width: min(340px, 100%); min-width: 0; max-width: 100%; }
+  .status-bar:has(.ai-chat-status) { flex-wrap: wrap; gap: 4px 8px; }
+  .status-bar:has(.ai-chat-status) .status-summary { flex: 1 1 180px; }
+  .ai-chat-status { flex: 0 0 auto; }
+}
 .ai-chat-panel textarea { flex: 1; min-height: 64px; resize: vertical; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); }
 
 .sidebar {

@@ -3,10 +3,24 @@ import type { RequestOwner } from "./chatTransport";
 import type { AiError } from "../types";
 
 export type ChatConnection = { revision: string; endpoint: string; model: string };
+export type ChatPathChange = { from: string; to?: string };
 export const CHAT_LIMITS = { sessions: 20, questionCharacters: 10000, draftBytes: 1024 * 1024,
   messages: 200, responseBytes: 64 * 1024, errorCodeUnits: 4096, errorBytes: 16 * 1024,
   retainedBytes: 8 * 1024 * 1024, requestBytes: 1024 * 1024 } as const;
 export const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
+export const validChatQuestion = (value: string) => !!value.trim() && value.length <= CHAT_LIMITS.questionCharacters * 2 &&
+  Array.from(value).length <= CHAT_LIMITS.questionCharacters;
+/** Check an input limit without allocating an oversized UTF-8 buffer. */
+export function fitsUtf8Limit(value: string, limit: number): boolean {
+  if (limit < 0 || value.length > limit) return false;
+  let bytes = 0;
+  for (const character of value) {
+    const point = character.codePointAt(0)!;
+    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+    if (bytes > limit) return false;
+  }
+  return true;
+}
 const immutableTextSizes = new WeakMap<object, number>();
 function textBytes(value: unknown): number {
   if (typeof value === "string") return utf8Bytes(value);
@@ -37,6 +51,7 @@ export type AiChatSessionsState = {
   connection?: ChatConnection; connectionError?: string; notice?: string;
 };
 export type SessionAction =
+  | { type: "paths"; changes: ChatPathChange[] }
   | { type: "notice"; message: string }
   | { type: "connectionError"; message: string }
   | { type: "add"; sessionId: string; path: string }
@@ -58,6 +73,12 @@ export function reduceAiChatSessions(state: AiChatSessionsState, action: AiChatS
   const next = reduceSessions(state, action);
   if (retainedChatBytes(next) + reservedBytes(next) > CHAT_LIMITS.retainedBytes &&
       retainedChatBytes(next) + reservedBytes(next) > retainedChatBytes(state) + reservedBytes(state)) {
+    if (action.type === "paths") return { ...state,
+      sessions: state.sessions.map((session) => session.kind === "document" && session.available &&
+        action.changes.some(({ from }) => session.path === from || session.path.startsWith(`${from}/`))
+        ? { ...session, available: false } : session),
+      notice: "保持量の上限により移動先を保持できない会話を読み取り専用にしました。不要な会話を削除・消去してください。",
+    };
     return { ...state, notice: "会話の保持量が8MiBの上限に達します。不要な会話を削除・消去してください。" };
   }
   return next;
@@ -66,6 +87,18 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
   if (action.documentScopeKey !== state.documentScopeKey) return state;
   if (action.type === "notice") return { ...state, notice: action.message };
   if (action.type === "connectionError") return { ...state, connectionError: action.message };
+  if (action.type === "paths") {
+    let changed = false;
+    const sessions = state.sessions.map((session) => {
+      if (session.kind !== "document" || !session.available) return session;
+      const change = action.changes.find(({ from }) => session.path === from || session.path.startsWith(`${from}/`));
+      if (!change) return session;
+      changed = true;
+      return change.to === undefined ? { ...session, available: false }
+        : { ...session, path: change.to + session.path.slice(change.from.length) };
+    });
+    return changed ? { ...state, sessions } : state;
+  }
   if (action.type === "connection") {
     if (state.connection?.revision === action.connection.revision) return state.connectionError ? { ...state, connectionError: undefined } : state;
     const revision = action.connection.revision;
@@ -98,7 +131,7 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
     return { ...state, sessions, selectedSessionId: state.selectedSessionId === sessionId
       ? sessions[Math.max(0, index - 1)]?.id : state.selectedSessionId };
   }
-  if (action.type === "draft") return utf8Bytes(action.value) > CHAT_LIMITS.draftBytes
+  if (action.type === "draft") return !fitsUtf8Limit(action.value, CHAT_LIMITS.draftBytes)
     ? { ...state, notice: "下書きは1MiB UTF-8までです。" } : update({ ...session, draft: action.value });
   if (action.type === "scroll") return update({ ...session, scrollTop: action.top, follow: action.follow });
   if (action.type === "confirm") return action.revision !== state.connection?.revision ? state : update({ ...session, approvedConnectionRevision: action.revision, pendingConnectionConfirmation: false });
@@ -110,7 +143,7 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
     });
   }
   if (action.type === "begin") {
-    if (!action.question.trim() || Array.from(action.question).length > CHAT_LIMITS.questionCharacters ||
+    if (!validChatQuestion(action.question) ||
         session.chat.messages.length + (action.retry ? 0 : 2) > CHAT_LIMITS.messages) {
       return { ...state, notice: "質問は10,000 Unicode文字、会話は200メッセージまでです。新しい会話や会話の消去をご利用ください。" };
     }

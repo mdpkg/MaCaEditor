@@ -1,3 +1,4 @@
+import { createRequestId } from "./requestId";
 import type { ChangeDesc } from "@codemirror/state";
 import type { AiMessage } from "../types";
 import { extractChachaContext, type ChachaContext } from "./chachaContext";
@@ -9,13 +10,6 @@ import { ChachaTrigger } from "./chachaTrigger";
 
 export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal }) => Promise<string>;
 interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean; targetEdited?(context: ChachaContext): boolean }
-function requestId(): string {
-  if (crypto.randomUUID) return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
-  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
 function mayChangeStructure(before: string, after: string, changes: ChangeDesc): boolean {
   let structural = false;
   changes.iterChangedRanges((from, to, fromNew, toNew) => {
@@ -157,7 +151,7 @@ export class ChachaSession {
     const messages = buildChachaMessages(this.settings.prompt, context.text);
     void Promise.resolve().then(() => {
       if (generation !== this.generation || abort.signal.aborted) throw { kind: "cancelled" };
-      return this.transport({ requestId: requestId(), messages, signal: abort.signal });
+      return this.transport({ requestId: createRequestId(), messages, signal: abort.signal });
     }).then((raw) => {
       if (generation !== this.generation || this.disposed) return;
       this.abort = undefined;

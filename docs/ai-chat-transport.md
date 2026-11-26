@@ -1,26 +1,55 @@
-# AIチャット通信契約
+# AIチャットの状態と通信
 
-Phase 0（2026-11-26）。通常チャットのUIは単一会話のまま、後続のセッション化に先立って通信を分離する。
+通常の文書相談は、作成時の相対パスに紐づくMarkdown全文を送信時点で参照する。茶々入れ用の人格は適用しない。チャットは読み取り専用で、文書の自動編集やTool Callingを提供しない。
 
-- `ai_document_chat` はUIが事前発行したUUIDを受け取り、ストリーム終了まで待つ。成功値は `{ request_id, content }`。確定回答全文を返す。
-- Channelは開始・途中経過の表示に利用する。Channelの終端で回答や送信枠を確定しない。command成功値で途中表示を置き換え、以後のイベントを無視する。
-- `ChatTransport` のアプリ共通の物理送信枠と、nativeのチャット専用Semaphoreは待ち行列を持たない。論理失効後もcommand終了まで物理枠を保持する。
-- 停止・消去・アンマウントは先に論理失効し、その後キャンセルを試す。キャンセル失敗でもnativeの全体期限（既定300秒、最大600秒）が接続開始を含めて有効になる。接続期限は既定10秒、最大60秒。
-- CancellationRegistryは登録前キャンセルと終了済みIDを60秒・最大256件記録する。記録の検査と登録は同一ロック内で行う。上限超過時は古い記録から破棄する。実行中IDの再登録は拒否する。
-- 正常完了した質問・回答の組だけを次回のAPI履歴に含める。停止・失敗・未完了ターンは表示用に保持し、送信履歴から組ごと除外する。手動再試行は最後の失敗回答だけを置き換える。
-- nativeはシリアライズ済み要求を1MiB、回答を64KiB UTF-8に制限する。UIでも途中受信と確定回答の64KiB制限を確認する。
-- 選択範囲AIと図編集の既存の開始時返却契約は変更しない。
+## 会話と文書の寿命
 
-自動検証はFake Channel、制御可能なPromise、mock provider、停止したTokio Clockを使用する。実LLMは呼ばない。クライアントの通信終了は接続先内部の推論停止を保証しない。
+`useAiChatSessions` が `documentSessionRef` をスコープとするメモリ上の `ChatSessionsController` を所有し、純粋reducerでセッション集合を更新する。パネルはストアの表示と操作だけを担当する。Appは生成状態だけを購読し、回答deltaや下書きでエディタ全体を再描画しない。完了済みメッセージのMarkdownも再解析しない。
 
-マルチセッション・文書寿命・接続revision同意・茶々入れ継続・時間制御は後続Phaseで扱う。
+ファイル切替・タブ切替・パネル開閉・本文編集・上書き保存・Save Asでは保持する。文書の破棄・置換・再読込では要求を論理失効し、集合を空にして参照を解放する。Markdown、manifest、mdpkg、設定、保存履歴、Undo/Redo、ログには会話を含めない。
 
-Phase 1:
-- App owns the memory-only session controller using documentSessionRef, independent of save destination and panel mounts.
-- RequestOwner identity checks include document scope, session, generation, request ID and terminal state.
-- Session limits: 20 sessions; 10,000 Unicode characters per question; 1MiB UTF-8 draft; 200 messages with two reserved at begin; 64KiB answer; 8MiB total session strings with answer reservation. No truncation, eviction or summarization.
-- chat_connection exposes only origin, model and revision. ai_document_chat accepts the expected revision, reloads and validates saved configuration, then uses that same owned snapshot for provider/model/key/timeouts. Blank saved keys explicitly override environment defaults. No connection credentials are sent from chat UI.
-- Every existing session requires its own confirmation when revision changes. Confirmation alone never sends an LLM request. External changes are checked natively on every send and refreshed on window focus.
-- Tabs, file-operation tracking and visibility-only panel close are introduced in Phase 2. Until then the selected session is presented through the existing single-conversation layout and close still cancels.
+タブは最大20件。通常名は文書内で単調増加し、最後のタブを削除すると空状態になる。履歴・下書きのある削除と会話消去は既存Dialogで確認し、確認後にcontroller・対象ID・選択状態を再検証する。空の通常タブは確認不要。タブは手動アクティベーション、左右/Home/Endでフォーカス、Enter/Spaceで選択する。
 
-保持量上限付近でもエラーで要求を終端できるように、実行中は回答64KiBに加えてエラー詳細用16KiBも予約する。エラー詳細は4,096 UTF-16コード単位までに制限し、8MiB上限を超える下書きの追加を拒否して既存内容を保護する。
+## ファイルの追従
+
+成功したrename/moveの変更前後パスを、実行時のWeakMapで編集履歴エントリに対応付ける。文書状態を確定した後に通知し、Undoでは逆方向、Redoでは順方向に適用する。履歴・保存形式や永続ファイルIDは追加しない。
+
+削除は読み取り専用にし、復元・同名再作成で再接続しない。ディスクから復元した履歴など移動の識別情報がない場合、消えたパスの会話を読み取り専用にする。保持量の上限で長い移動先を保持できない場合も、旧パスを利用可能なまま残さず読み取り専用にする。履歴と下書きは残す。
+
+## 接続と同意
+
+`chat_connection` は安全なorigin・モデル・revisionだけを返す。接続キー、認証情報、クエリ、フラグメントは表示用情報に含めない。チャットUIは接続先やキーを送信しない。
+
+各会話が確認済みrevisionを持つ。設定変更は要求を論理失効してからキャンセルし、履歴と下書きを保持する。各会話の明示確認だけでは通信しない。ウィンドウのフォーカス復帰で再取得し、各送信時にもnativeが保存設定を読み直してrevisionを照合する。不一致ではHTTPを開始しない。provider/model/key/timeoutには検証済みの同じ所有スナップショットを使い、空の保存キーでも環境変数へフォールバックしない。
+
+## 通信の所有と終端
+
+要求所有者は `documentScopeKey / sessionId / generation / requestId`。反映時はこれらと終端状態を照合する。停止・削除・消去・設定変更・文書破棄は先に論理失効し、その後に物理キャンセルを試す。
+
+`ChatTransport` の物理枠とnativeのチャット専用Semaphoreはアプリ共通で同時1件、待ち行列なし。物理枠はパネルや文書から独立し、command終了だけで解放する。古いfinallyが新しい枠を解放しない。状態通知の例外でも枠を解放する。
+
+UIで開始前に暗号学的UUID v4を発行し、nativeが形式と重複を検証して接続前に登録する。CancellationRegistryは登録前キャンセルと終了済みIDを60秒・最大256件保持し、検査と登録を同一ロックで行う。古い記録から破棄し、実行中IDは上書きしない。
+
+`ai_document_chat` は物理終了まで待ち、成功時に `{ request_id, content }` の確定回答全文を返す。Channelは途中表示だけに使い、終端で回答や物理枠を確定しない。commandの全文で置き換え、後着イベントは無視する。正常完了した質問・回答の組だけをAPI履歴に含め、失敗・停止・未完了は組ごと除外する。再試行は明示操作だけで、最後の失敗回答を置換する。
+
+接続期限は既定10秒・最大60秒、接続開始を含む全体期限は既定300秒・最大600秒。キャンセル送信が失敗してもnative期限で終了する。選択AI・図編集の既存の開始時返却契約は維持する。接続先内部の推論停止までは保証しない。
+
+## 上限と表示
+
+| 対象 | 上限 |
+|---|---:|
+| セッション | 20件 / 文書 |
+| 質問 | 10,000 Unicode文字（コードポイント） |
+| 下書き | 1MiB UTF-8 |
+| 追加入力・回答履歴 | 200メッセージ |
+| 回答 | 64KiB UTF-8 |
+| 全セッションの文字列保持 | 8MiB UTF-8 |
+| シリアライズ済み要求 | 1MiB |
+
+開始前に2メッセージと回答64KiB、エラー詳細用16KiBを予約する。エラー詳細は4,096 UTF-16コード単位まで。保持量にはセッションの履歴・下書き・タイトル・参照先などの文字列を数える。切り詰め・自動削除・要約はせず、拒否時も既存の下書きを保持する。消去・削除・入力を短くする操作は継続できる。
+
+巨大な貼り付けは入力前にUTF-8上限を確認する。IME Enterは送信せず、IME・モーダル・既存操作が優先されるEscを横取りしない。raw HTMLを実行せず、回答の画像を自動取得しない。外部リンクは既存のURL検証経路を通し、明示クリックで開く。
+
+パネル表示中、およびチャットの接続・生成・停止終了待ち中は自動茶々入れを抑制する。抑制の入出時に候補を破棄し、解除後の新規編集から再開する。有効化・同意・手動停止状態は変更しない。
+
+自動検証はFake Clock、Fake Channel、制御可能なPromise、mock provider、実AppのIPC fixtureを用い、実LLMを呼ばない。360pxと200%相当・ライト/ダークをブラウザと画像で確認する。OS固有のIME/WebView2は実機確認と区別する。

@@ -65,3 +65,13 @@ test("late connection mismatch cannot restore a cleared draft", async () => {
   expect(controller.getSnapshot().sessions[0].draft).toBe("");
   expect(controller.getSnapshot().sessions[0].chat.messages).toEqual([]);
 });
+
+test("an oversized question is rejected before reading the bound document", async () => {
+  let reads = 0, sends = 0;
+  const controller = new ChatSessionsController("doc", { connection: async () => connection,
+    document: () => { reads++; return "source"; }, send: async (request) => { sends++; return { request_id: request.requestId, content: "answer" }; }, cancel: async () => false });
+  await controller.refreshConnection(); const id = controller.add("index.md")!;
+  controller.draft(id, "x".repeat(900000)); await controller.send(id);
+  expect(reads).toBe(0); expect(sends).toBe(0);
+  expect(controller.getSnapshot().sessions[0].draft.length).toBe(900000);
+});
