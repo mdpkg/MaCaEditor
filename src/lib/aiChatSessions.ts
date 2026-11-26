@@ -4,7 +4,8 @@ import type { AiError } from "../types";
 
 export type ChatConnection = { revision: string; endpoint: string; model: string };
 export const CHAT_LIMITS = { sessions: 20, questionCharacters: 10000, draftBytes: 1024 * 1024,
-  messages: 200, responseBytes: 64 * 1024, retainedBytes: 8 * 1024 * 1024, requestBytes: 1024 * 1024 } as const;
+  messages: 200, responseBytes: 64 * 1024, errorCodeUnits: 4096, errorBytes: 16 * 1024,
+  retainedBytes: 8 * 1024 * 1024, requestBytes: 1024 * 1024 } as const;
 export const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 const immutableTextSizes = new WeakMap<object, number>();
 function textBytes(value: unknown): number {
@@ -21,7 +22,7 @@ function textBytes(value: unknown): number {
 export const retainedChatBytes = (state: AiChatSessionsState) => textBytes(state.sessions);
 function reservedBytes(state: AiChatSessionsState) {
   return state.sessions.reduce((sum, session) => sum + (session.owner && !session.terminal
-    ? Math.max(0, CHAT_LIMITS.responseBytes - utf8Bytes(session.chat.messages[session.chat.messages.length - 1]?.content ?? "")) : 0), 0);
+    ? CHAT_LIMITS.errorBytes + Math.max(0, CHAT_LIMITS.responseBytes - utf8Bytes(session.chat.messages[session.chat.messages.length - 1]?.content ?? "")) : 0), 0);
 }
 export type AiChatSession = {
   id: string; title: string; kind: "document"; path: string; available: boolean;
@@ -133,6 +134,9 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
   }
   if (action.type === "delta") return update({ ...session, chat: reduceAiChat(session.chat, { type: "delta", requestId, content: action.content }) });
   if (action.type === "complete") return update({ ...session, owner: undefined, terminal: true, phase: "idle", chat: reduceAiChat(session.chat, { type: "completed", requestId, content: action.content }) });
-  if (action.type === "fail") return update({ ...session, owner: undefined, terminal: true, phase: "error", chat: reduceAiChat(session.chat, { type: "error", requestId, error: action.error }) });
+  if (action.type === "fail") {
+    const error = action.error.kind === "Cancelled" ? action.error : { ...action.error, message: action.error.message.slice(0, CHAT_LIMITS.errorCodeUnits) };
+    return update({ ...session, owner: undefined, terminal: true, phase: "error", chat: reduceAiChat(session.chat, { type: "error", requestId, error }) });
+  }
   return state;
 }

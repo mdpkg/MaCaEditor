@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { createAiChatSessions, reduceAiChatSessions } from "./aiChatSessions";
+import { createAiChatSessions, reduceAiChatSessions, retainedChatBytes } from "./aiChatSessions";
 const scope = "document-1";
 const add = (id: string, path: string) => ({ type: "add" as const, documentScopeKey: scope, sessionId: id, path });
 
@@ -113,4 +113,20 @@ test("total retention protects existing drafts and leaves clear/delete available
   state = reduceAiChatSessions(state, { type: "delete", documentScopeKey: scope, sessionId: "1" });
   expect(state.sessions[0].draft).toBe("");
   expect(state.sessions).toHaveLength(8);
+});
+
+
+test("an error at the total retention boundary still terminates the request", () => {
+  let state = createAiChatSessions(scope);
+  for (let n = 0; n < 9; n++) state = reduceAiChatSessions(state, add(String(n), "index.md"));
+  for (let n = 0; n < 7; n++) state = reduceAiChatSessions(state, { type: "draft", documentScopeKey: scope, sessionId: String(n), value: "x".repeat(1024 * 1024) });
+  const owner = { documentScopeKey: scope, sessionId: "7", generation: 1, requestId: "pending" };
+  state = reduceAiChatSessions(state, { type: "begin", documentScopeKey: scope, owner, question: "q" });
+  state = reduceAiChatSessions(state, { type: "delta", documentScopeKey: scope, owner, content: "x".repeat(65536) });
+  const remaining = 8 * 1024 * 1024 - retainedChatBytes(state);
+  state = reduceAiChatSessions(state, { type: "draft", documentScopeKey: scope, sessionId: "8", value: "x".repeat(remaining) });
+  state = reduceAiChatSessions(state, { type: "fail", documentScopeKey: scope, owner, error: { kind: "ServerError", message: "error".repeat(800) } });
+  expect(state.sessions[7].owner).toBeUndefined();
+  expect(state.sessions[7].chat.status).toBe("error");
+  expect(retainedChatBytes(state) <= 8 * 1024 * 1024).toBe(true);
 });

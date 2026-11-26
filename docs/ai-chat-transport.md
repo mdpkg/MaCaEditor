@@ -22,3 +22,5 @@ Phase 1:
 - chat_connection exposes only origin, model and revision. ai_document_chat accepts the expected revision, reloads and validates saved configuration, then uses that same owned snapshot for provider/model/key/timeouts. Blank saved keys explicitly override environment defaults. No connection credentials are sent from chat UI.
 - Every existing session requires its own confirmation when revision changes. Confirmation alone never sends an LLM request. External changes are checked natively on every send and refreshed on window focus.
 - Tabs, file-operation tracking and visibility-only panel close are introduced in Phase 2. Until then the selected session is presented through the existing single-conversation layout and close still cancels.
+
+保持量上限付近でもエラーで要求を終端できるように、実行中は回答64KiBに加えてエラー詳細用16KiBも予約する。エラー詳細は4,096 UTF-16コード単位までに制限し、8MiB上限を超える下書きの追加を拒否して既存内容を保護する。
