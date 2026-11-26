@@ -7,7 +7,7 @@ import { extractChachaContext, type ChachaContext } from "./chachaContext";
 import { mapChachaContext } from "./chachaAnchor";
 import type { ChachaEdit } from "./chachaEdits";
 import { parseChachaResponse, type ChachaComment } from "./chachaResponse";
-import { buildChachaMessages, CHACHA_FREQUENCIES, normalizeChachaSettings, type ChachaSettings } from "./chachaSettings";
+import { buildChachaMessages, CHACHA_TIMING, normalizeChachaSettings, type ChachaSettings } from "./chachaSettings";
 import { ChachaTrigger } from "./chachaTrigger";
 
 export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal; connectionRevision?: string }) => Promise<string>;
@@ -47,12 +47,13 @@ export class ChachaSession {
   private failures = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
+  private wasBlocked = false;
   private readonly listeners = new Set<() => void>();
   constructor(settings: ChachaSettings, private readonly transport: ChachaTransport, private readonly continuation?: {
     capture(): { documentScopeKey: string; connection: ChatConnection } | undefined;
     onContinue(quote: QuotedChat): boolean;
   }) {
-    this.settings = normalizeChachaSettings(settings); this.trigger = new ChachaTrigger(this.settings.frequency);
+    this.settings = normalizeChachaSettings(settings); this.trigger = new ChachaTrigger();
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private emit(patch: Partial<ChachaSnapshot>) {
@@ -83,12 +84,14 @@ export class ChachaSession {
   }
   configure(settings: ChachaSettings) {
     const next = normalizeChachaSettings(settings);
-    if (next.prompt === this.settings.prompt && next.frequency === this.settings.frequency) return;
-    this.revision++; this.settings = next; this.trigger.frequency = next.frequency;
+    if (next.prompt === this.settings.prompt) return;
+    this.revision++; this.settings = next;
     this.invalidate(); this.trigger.resetEdits();
   }
   edited(edit: ChachaEdit) {
     if (this.disposed || !this.snapshot.enabled || this.snapshot.paused) return;
+    if (this.binding?.blocked()) { this.wasBlocked = true; this.trigger.resetEdits(); return; }
+    if (this.wasBlocked) { this.wasBlocked = false; this.trigger.resetEdits(); }
     this.lastEdit = Date.now(); this.trigger.edit(edit.amount, edit.position, this.lastEdit); this.pulse();
   }
   resetEdits() { this.trigger.resetEdits(); }
@@ -132,6 +135,9 @@ export class ChachaSession {
     this.clearTimer();
     const binding = this.binding, now = Date.now();
     if (this.disposed || !binding || !this.snapshot.enabled || this.snapshot.paused) return;
+    const blocked = binding.blocked();
+    if (blocked || blocked !== this.wasBlocked) this.trigger.resetEdits();
+    this.wasBlocked = blocked;
     const phase = this.snapshot.phase;
     if (phase === "requesting") {
       if (now >= this.deadline) this.fail({ kind: "timeout" }); else this.arm(this.deadline - now);
@@ -141,7 +147,7 @@ export class ChachaSession {
       if (!this.context || !binding.visible(this.context.anchor.from) || now >= this.deadline) { this.dismiss(); return; }
       if (phase === "pending") {
         if (extractChachaContext(binding.source(), this.context.anchor.from)?.key !== this.context.key) { this.dismiss(); return; }
-        const idle = this.lastEdit + CHACHA_FREQUENCIES[this.settings.frequency].idle - now;
+        const idle = this.lastEdit + CHACHA_TIMING.idle - now;
         if (!binding.blocked() && idle <= 0) { this.deadline = now + 180000; this.emit({ phase: "collapsed" }); this.arm(180000); }
         else this.arm(Math.min(this.deadline - now, !binding.blocked() && idle > 0 ? idle : Infinity));
       } else if (phase === "collapsed") this.arm(this.deadline - now);
@@ -154,7 +160,7 @@ export class ChachaSession {
     const source = binding.source(), context = extractChachaContext(source, this.trigger.position!);
     const file = JSON.stringify([binding.file, this.revision]);
     if (!context || binding.targetEdited?.(context) === false || this.trigger.seen(file, context.key)) { this.trigger.resetEdits(); return; }
-    this.context = context; this.contextSource = source; this.trigger.sent(file, context.key, now);
+    this.context = context; this.contextSource = source;
     const generation = ++this.generation, abort = new AbortController(); this.abort = abort;
     this.transportGeneration = generation;
     this.deadline = now + 60000; this.emit({ phase: "requesting", comment: undefined }); this.arm(60000);
@@ -165,6 +171,7 @@ export class ChachaSession {
       if (generation !== this.generation || abort.signal.aborted) throw { kind: "cancelled" };
       const metadata = this.continuation?.capture();
       captured = metadata && { documentScopeKey: metadata.documentScopeKey, connection: { ...metadata.connection } };
+      this.trigger.sent(file, context.key, Date.now());
       return this.transport({ requestId, messages, signal: abort.signal, ...(captured ? { connectionRevision: captured.connection.revision } : {}) });
     }).then((raw) => {
       if (generation !== this.generation || this.disposed) return;

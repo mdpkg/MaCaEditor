@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { ChachaRuntime } from "../hooks/useChachaRuntime";
-import { CHACHA_FREQUENCIES, type ChachaSettings } from "../lib/chachaSettings";
+import { CHACHA_TIMING, type ChachaSettings } from "../lib/chachaSettings";
 import { loadChachaConnection, type ChachaConnection } from "../lib/chachaTransport";
 import type { ChachaSnapshot } from "../lib/chachaSession";
 import { Dialog } from "./Dialog";
@@ -16,7 +16,7 @@ const reasons = {
   connection: "AI 接続設定が変わりました。この文書で改めて有効化してください。",
 };
 
-export function ChachaControls({ runtime, settings, compact = false, onOpenAiSettings }: {
+export function ChachaControls({ runtime, compact = false, onOpenAiSettings }: {
   runtime?: ChachaRuntime; settings: ChachaSettings; compact?: boolean; onOpenAiSettings?: () => void;
 }) {
   const state = useSyncExternalStore(runtime?.session.subscribe ?? noSubscribe, () => runtime?.session.snapshot ?? disabled);
@@ -45,7 +45,6 @@ export function ChachaControls({ runtime, settings, compact = false, onOpenAiSet
     else runtime.session.pause();
   };
   const label = `茶々入れ：${state.enabled ? state.paused ? "一時停止" : "有効" : "無効"}`;
-  const preset = CHACHA_FREQUENCIES[settings.frequency];
   const explanation = state.reason ? reasons[state.reason] : "";
   return <>
     <span className={compact ? "chacha-status" : "chacha-controls"}>
@@ -67,7 +66,7 @@ export function ChachaControls({ runtime, settings, compact = false, onOpenAiSet
       <p>執筆中の文章を LLM へ自動送信します。現在の文書パッケージでのみ有効になり、文書を閉じると解除されます。</p>
       <p>接続先：{confirmation.connection.endpoint}<br />モデル：{confirmation.connection.model}</p>
       <p>送信範囲：編集した段落と前後各1段落、直近の見出し（合計最大2,000文字）。他のファイルやチャット履歴は送りません。</p>
-      <p>頻度：連続送信の間隔は最短{preset.interval / 1000}秒、{preset.edits}文字以上の編集と{preset.idle / 1000}秒の入力停止が必要です。初回も編集と入力停止を待ちます。</p>
+      <p>本文の追加・変更・削除後、{CHACHA_TIMING.idle / 1000}秒の入力停止で評価します。最低編集文字数はありません。要求開始の間隔は最短{CHACHA_TIMING.interval / 1000}秒です。初回も編集を待ち、反応がない場合もあります。</p>
       <p>接続先によっては API 利用料金が発生します。コメントを一切操作しなくても執筆を続けられます。</p>
       <div className="about-dialog-actions">
         <button ref={cancelRef} type="button" onClick={() => setConfirmation(undefined)}>キャンセル</button>

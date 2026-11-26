@@ -26,6 +26,17 @@ function setup(source = "対象") {
   const write = () => view.dispatch({ changes: { from: view.state.doc.length, insert: "あ".repeat(100) }, userEvent: "input.type" });
   return { view, session, transport, write, handoff };
 }
+test.each(["input.type", "delete.backward", "input.paste", "undo", "redo"])("a small %s document change is eligible without a count threshold", async (userEvent) => {
+  const h = setup("対象段落");
+  h.view.dispatch({ changes: userEvent.startsWith("delete") ? { from: 1, to: 2 } : { from: 2, to: 3, insert: "改" }, userEvent });
+  await vi.advanceTimersByTimeAsync(4999); expect(h.transport).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1); expect(h.transport).toHaveBeenCalledOnce();
+});
+test("deleting the last character of a paragraph still marks that paragraph as edited", async () => {
+  const h = setup("対象一");
+  h.view.dispatch({ changes: { from: 2, to: 3 }, userEvent: "delete.backward" });
+  await vi.advanceTimersByTimeAsync(5000); expect(h.transport).toHaveBeenCalledOnce();
+});
 test("吹き出しはボタンだけ、明示操作で引用会話を開き本文・選択を変更しない", async () => {
   const h = setup(); h.write();
   const text = h.view.state.doc.toString(), selection = h.view.state.selection.toJSON(), focus = document.activeElement;
@@ -75,13 +86,13 @@ test("専用キーはIME入力を優先し、引用会話をキーボードだ�
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: 8, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
   expect(h.session.snapshot.phase).toBe("idle");
 });
-test("IME未確定の大量編集では送信せず、確定文字数だけを集計する", async () => {
+test("IME未確定では送信せず、確定した短い本文変更を候補にする", async () => {
   const h = setup();
   h.view.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
   h.view.dispatch({ changes: { from: 2, insert: "a".repeat(200) }, userEvent: "input.type.compose" });
   await vi.advanceTimersByTimeAsync(10000); expect(h.transport).not.toHaveBeenCalled();
   h.view.dispatch({ changes: { from: 2, to: 202, insert: "日".repeat(50) }, userEvent: "input.type.compose" });
   h.view.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-  await vi.advanceTimersByTimeAsync(5000); expect(h.transport).not.toHaveBeenCalled();
-  h.write(); await vi.advanceTimersByTimeAsync(5000); expect(h.transport).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(5000); expect(h.transport).toHaveBeenCalledOnce();
+  h.write(); await vi.advanceTimersByTimeAsync(30000); expect(h.transport).toHaveBeenCalledTimes(2);
 });

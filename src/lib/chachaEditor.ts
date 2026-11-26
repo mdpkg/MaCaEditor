@@ -4,7 +4,7 @@ import { searchPanelOpen } from "@codemirror/search";
 import { getCM } from "@replit/codemirror-vim";
 import { ChachaEdits } from "./chachaEdits";
 import { ChachaSession, type ChachaSnapshot } from "./chachaSession";
-import type { ChachaContext } from "./chachaContext";
+import { extractChachaContext, type ChachaContext } from "./chachaContext";
 
 const refresh = StateEffect.define<ChachaSnapshot>();
 const controls = new WeakMap<EditorView, { session: ChachaSession }>();
@@ -88,8 +88,11 @@ export function createChachaExtension(session: ChachaSession, options: {
     }
     private targetEdited(context: ChachaContext) {
       if (!this.lastChange) return false;
-      const inverse = this.lastChange.changes.invertedDesc, { from, to } = context.anchor;
-      return this.lastChange.before.sliceString(inverse.mapPos(from, 1), inverse.mapPos(to, -1)) !== this.view.state.doc.sliceString(from, to);
+      const inverse = this.lastChange.changes.invertedDesc;
+      // Compare whole paragraphs: mapping the new end backwards omits a deleted suffix.
+      // The start's positive association skips a removed preceding paragraph.
+      const previous = extractChachaContext(this.lastChange.before.toString(), inverse.mapPos(context.anchor.from, 1));
+      return previous?.text.target !== context.text.target;
     }
     private updateDisplay() {
       if (this.queued || !this.alive) return; this.queued = true;

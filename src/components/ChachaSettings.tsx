@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { loadChachaPreferences, saveChachaPreferences } from "../lib/chachaPreferences";
-import { DEFAULT_CHACHA_PROMPT, normalizeChachaSettings, type ChachaSettings as Settings } from "../lib/chachaSettings";
+import { DEFAULT_CHACHA_PROMPT, CHACHA_TIMING, normalizeChachaSettings, type ChachaSettings as Settings } from "../lib/chachaSettings";
 
 export function ChachaSettings({ onSaved, children }: { onSaved?: (settings: Settings) => void; children?: ReactNode }) {
   const id = useId();
@@ -29,14 +29,7 @@ export function ChachaSettings({ onSaved, children }: { onSaved?: (settings: Set
     <legend>茶々入れ</legend>
     {children}
     <p>対象段落と前後各1段落・直近の見出し（合計最大2,000文字）を既存の AI 接続先へ送信します。API 利用料金が発生する場合があります。</p>
-    <label htmlFor={`${id}-frequency`}>反応頻度</label>
-    <select id={`${id}-frequency`} value={settings.frequency} onChange={(event) => {
-      setSettings((previous) => ({ ...previous, frequency: event.target.value as Settings["frequency"] })); setStatus("");
-    }}>
-      <option value="restrained">控えめ（300秒・250文字・停止8秒）</option>
-      <option value="standard">標準（120秒・100文字・停止5秒）</option>
-      <option value="frequent">多め（60秒・50文字・停止3秒）</option>
-    </select>
+    <p>本文変更後に{CHACHA_TIMING.idle / 1000}秒停止すると評価し、要求開始の間隔は最短{CHACHA_TIMING.interval / 1000}秒です。旧頻度設定は使用しません。</p>
     <label htmlFor={`${id}-prompt`}>読者の人格・口調（最大10,000文字、空欄は初期値）</label>
     <textarea id={`${id}-prompt`} rows={8} value={settings.prompt} onChange={(event) => {
       setSettings((previous) => ({ ...previous, prompt: event.target.value })); setStatus("");

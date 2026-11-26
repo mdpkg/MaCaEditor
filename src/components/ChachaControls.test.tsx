@@ -21,7 +21,7 @@ test("接続先・範囲・頻度・料金を確認して明示有効化し、�
     expect(session.snapshot.enabled).toBe(false); expect(transport.loadChachaConnection).not.toHaveBeenCalled();
     await click("この文書で有効化");
     const dialog = document.querySelector('[role="dialog"]')!;
-    for (const text of ["http://local/v1", "reader", "2,000文字", "120秒", "100文字", "5秒", "料金"]) expect(dialog.textContent).toContain(text);
+    for (const text of ["http://local/v1", "reader", "2,000文字", "30秒", "最低編集文字数はありません", "5秒", "料金"]) expect(dialog.textContent).toContain(text);
     expect(session.snapshot.enabled).toBe(false);
     await click("キャンセル"); expect(session.snapshot.enabled).toBe(false);
     await click("この文書で有効化"); await click("自動送信を有効にする");
