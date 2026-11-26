@@ -200,7 +200,7 @@ describe("cancelAiRequest", () => {
 describe("startAiDocumentChat", () => {
   test("sends current editor document and conversation to the dedicated command", async () => {
     invokeMock.mockResolvedValue("chat-1");
-    const requestId = await startAiDocumentChat({
+    const requestId = await startAiDocumentChat({ requestId: "chat-1",
       baseUrl: "http://localhost:11434/v1", apiKey: null, model: "qwen",
       filename: "README.md", currentDocument: "unsaved BBB",
       history: [{ role: "User", content: "first" }], question: "next",

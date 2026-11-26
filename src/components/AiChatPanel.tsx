@@ -8,6 +8,7 @@ import { AiErrorFeedback } from "./AiErrorFeedback";
 import { ErrorDetails } from "./ErrorDetails";
 import { chatHistory, createAiChatState, reduceAiChat, shouldSendChatKey } from "../lib/aiChat";
 import { cancelAiRequest, loadAiConfig, startAiDocumentChat } from "../lib/tauri";
+import { ChatTransport } from "../lib/chatTransport";
 
 type Props = { filename: string; currentDocument: string; onClose: () => void; onOpenAiSettings: () => void };
 const nextId = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -21,6 +22,7 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
   const [starting, setStarting] = useState(false);
   const [composing, setComposing] = useState(false);
   const activeRef = useRef<string>();
+  const transportRef = useRef<ChatTransport>();
   const listRef = useRef<HTMLDivElement>(null);
   const lastQuestionRef = useRef("");
 
@@ -29,7 +31,7 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
       setLoadError(reason instanceof Error ? reason.message : String(reason));
     });
   }, []);
-  useEffect(() => () => { if (activeRef.current) void cancelAiRequest(activeRef.current); }, []);
+  useEffect(() => () => { transportRef.current?.invalidate(); activeRef.current = undefined; }, []);
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
@@ -40,40 +42,42 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
   const configured = useMemo(() => config !== null && isAiConfigured(config), [config]);
   const send = async (text = input) => {
     const question = text.trim();
-    if (!question || starting || state.status === "running" || !config || !isAiConfigured(config)) return;
+    if (!question || activeRef.current || transportRef.current?.busy || starting || state.status === "running" || !config || !isAiConfigured(config)) return;
     const history = chatHistory(state.messages);
-    const lastHistory = history[history.length - 1];
-    const retrying = state.status === "error" && lastQuestionRef.current === question &&
-      lastHistory?.role === "User" && lastHistory.content === question;
-    if (retrying) history.pop();
+    const retrying = state.status === "error" && lastQuestionRef.current === question;
+    const requestId = nextId();
+    activeRef.current = requestId;
     lastQuestionRef.current = question;
     setInput(""); setInvokeError(null); setStarting(true);
-    let started = false;
+    dispatch(retrying
+      ? { type: "retry", requestId, assistantId: nextId() }
+      : { type: "submit", requestId, messageId: nextId(), assistantId: nextId(), content: question });
     const onEvent = (event: AiStreamEvent) => {
-      if (event.type === "started") {
-        started = true; activeRef.current = event.request_id;
-        dispatch(retrying
-          ? { type: "retry", requestId: event.request_id, assistantId: nextId() }
-          : { type: "submit", requestId: event.request_id, messageId: nextId(), assistantId: nextId(), content: question });
-      } else if (event.type === "delta") dispatch({ type: "delta", requestId: event.request_id, content: event.content });
-      else if (event.type === "completed") { activeRef.current = undefined; dispatch({ type: "completed", requestId: event.request_id }); }
-      else if (event.type === "cancelled") { activeRef.current = undefined; dispatch({ type: "cancelled", requestId: event.request_id }); }
-      else { activeRef.current = undefined; dispatch({ type: "error", requestId: event.request_id, error: readAiError(event.error) }); }
+      if (event.type === "delta") dispatch({ type: "delta", requestId: event.request_id, content: event.content });
     };
+    const transport = new ChatTransport((id, deliver) => startAiDocumentChat({
+      requestId: id, baseUrl: config.base_url, apiKey: config.api_key, model: config.model,
+      filename, currentDocument, history, question,
+      connectTimeoutSeconds: config.connect_timeout_seconds,
+      requestTimeoutSeconds: config.request_timeout_seconds,
+    }, deliver), cancelAiRequest);
+    transportRef.current = transport;
     try {
-      await startAiDocumentChat({
-        baseUrl: config.base_url, apiKey: config.api_key, model: config.model,
-        filename, currentDocument, history, question,
-        connectTimeoutSeconds: config.connect_timeout_seconds,
-        requestTimeoutSeconds: config.request_timeout_seconds,
-      }, onEvent);
+      const result = await transport.send({ documentScopeKey: "single-chat", sessionId: filename, generation: 0, requestId }, onEvent);
+      if (result && activeRef.current === requestId) dispatch({ type: "completed", requestId, content: result.content });
     } catch (reason) {
-      if (!started) setInvokeError(readAiError(reason));
+      if (activeRef.current === requestId) dispatch({ type: "error", requestId, error: readAiError(reason) });
     } finally {
+      if (activeRef.current === requestId) activeRef.current = undefined;
       setStarting(false);
     }
   };
-  const cancel = async () => { if (activeRef.current) await cancelAiRequest(activeRef.current); };
+  const cancel = async () => {
+    const requestId = activeRef.current;
+    activeRef.current = undefined;
+    transportRef.current?.invalidate();
+    if (requestId) dispatch({ type: "cancelled", requestId });
+  };
   const clear = async () => { await cancel(); activeRef.current = undefined; setInvokeError(null); dispatch({ type: "clear" }); };
   const close = async () => { await cancel(); onClose(); };
   const error = starting ? null : invokeError ?? state.error;
@@ -107,7 +111,7 @@ export function AiChatPanel({ filename, currentDocument, onClose, onOpenAiSettin
       <textarea aria-label={uiText("AI Chat message")} value={input} disabled={!configured || starting || state.status === "running"}
         onChange={(event) => setInput(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
         onKeyDown={(event) => { if (shouldSendChatKey(event.key, event.shiftKey, composing || event.nativeEvent.isComposing)) { event.preventDefault(); void send(); } }} />
-      {state.status === "running" ? <button onClick={() => void cancel()}>{uiText("Cancel")}</button> : <button disabled={!configured || starting || !input.trim()} onClick={() => void send()}>{uiText("Send")}</button>}
+      {state.status === "running" ? <button onClick={() => void cancel()}>{uiText("Cancel")}</button> : <button disabled={!configured || starting || !input.trim()} onClick={() => void send()}>{starting ? "停止処理中…" : uiText("Send")}</button>}
     </footer>
   </aside>;
 }

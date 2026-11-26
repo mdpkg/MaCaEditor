@@ -66,11 +66,11 @@ test.each([
     api_key: null, temperature: null, max_output_tokens: null,
     connect_timeout_seconds: null, request_timeout_seconds: null,
   });
-  vi.mocked(startAiDocumentChat).mockImplementation(async (_request, onEvent) => {
-    onEvent({ type: "started", request_id: "r1" });
-    if (content) onEvent({ type: "delta", request_id: "r1", content });
-    onEvent({ type: "completed", request_id: "r1" });
-    return "r1";
+  vi.mocked(startAiDocumentChat).mockImplementation(async (request, onEvent) => {
+    onEvent({ type: "started", request_id: request.requestId });
+    if (content) onEvent({ type: "delta", request_id: request.requestId, content });
+    onEvent({ type: "completed", request_id: request.requestId });
+    return { request_id: request.requestId, content };
   });
   await openChat();
 
@@ -84,4 +84,25 @@ test.each([
   expect(container.querySelector(".ai-chat-assistant p")?.textContent).toBe(displayed);
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(input.disabled).toBe(false);
+});
+
+
+test("two synchronous send clicks start only one request", async () => {
+  vi.mocked(loadAiConfig).mockResolvedValue({ provider: "OpenAiCompatible", base_url: "http://localhost:11434/v1", model: "test", api_key: null, temperature: null, max_output_tokens: null, connect_timeout_seconds: null, request_timeout_seconds: null });
+  let resolve!: (value: { request_id: string; content: string }) => void;
+  let id = "";
+  vi.mocked(startAiDocumentChat).mockImplementation((request) => {
+    id = request.requestId;
+    return new Promise((done) => { resolve = done; });
+  });
+  await openChat();
+  const input = container.querySelector("textarea")!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "question");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => { const send = button("送信"); send.click(); send.click(); });
+  await act(async () => resolve({ request_id: id, content: "authoritative" }));
+  expect(vi.mocked(startAiDocumentChat)).toHaveBeenCalledOnce();
+  expect(container.querySelector(".ai-chat-assistant p")?.textContent).toBe("authoritative");
 });
