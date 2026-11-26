@@ -1,5 +1,5 @@
 import { Prec, StateEffect, StateField, Transaction, type Extension, type Text, type ChangeSet } from "@codemirror/state";
-import { EditorView, GutterMarker, gutter, keymap, showTooltip, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { EditorView, GutterMarker, gutter, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { searchPanelOpen } from "@codemirror/search";
 import { getCM } from "@replit/codemirror-vim";
 import { ChachaEdits } from "./chachaEdits";
@@ -7,19 +7,17 @@ import { ChachaSession, type ChachaSnapshot } from "./chachaSession";
 import type { ChachaContext } from "./chachaContext";
 
 const refresh = StateEffect.define<ChachaSnapshot>();
-const controls = new WeakMap<EditorView, { session: ChachaSession; focusNext: boolean }>();
+const controls = new WeakMap<EditorView, { session: ChachaSession }>();
 const modal = () => !!document.querySelector('[aria-modal="true"]');
 const restoreFocus = (view: EditorView) => view.contentDOM.focus({ preventScroll: true });
-export function expandChachaComment(view: EditorView, focus = false): boolean {
-  const value = controls.get(view);
-  if (!value) return false;
-  value.focusNext = focus; return value.session.expand();
+export function continueChachaComment(view: EditorView, commentId?: string): boolean {
+  const value = controls.get(view), id = commentId ?? value?.session.snapshot.comment?.id;
+  return !!value && !!id && value.session.continue(id);
 }
 export function dismissChachaComment(view: EditorView): boolean {
   const value = controls.get(view);
-  if (!value || !["collapsed", "expanded"].includes(value.session.snapshot.phase)) return false;
-  const focused = view.dom.querySelector(".cm-chacha-tooltip")?.contains(document.activeElement)
-    || view.dom.querySelector(".cm-chacha-gutter")?.contains(document.activeElement);
+  if (!value || value.session.snapshot.phase !== "collapsed") return false;
+  const focused = view.dom.querySelector(".cm-chacha-gutter")?.contains(document.activeElement);
   value.session.dismiss(); if (focused) restoreFocus(view); return true;
 }
 function button(label: string, text: string, action: (event: MouseEvent) => void): HTMLButtonElement {
@@ -28,14 +26,15 @@ function button(label: string, text: string, action: (event: MouseEvent) => void
   element.addEventListener("click", action); return element;
 }
 class Marker extends GutterMarker {
-  constructor(private readonly expanded: boolean, private readonly spacer = false) { super(); }
-  eq(other: Marker) { return this.expanded === other.expanded && this.spacer === other.spacer; }
+  constructor(private readonly comment?: ChachaSnapshot["comment"], private readonly spacer = false) { super(); }
+  eq(other: Marker) { return this.comment === other.comment && this.spacer === other.spacer; }
   toDOM(view: EditorView) {
     const dom = document.createElement("div"); dom.className = "cm-chacha-buttons";
     if (this.spacer) { dom.style.height = "0"; return dom; }
-    const expand = button("茶々入れコメントを展開", "💬", (event) => { expandChachaComment(view, event.detail === 0); });
-    expand.setAttribute("aria-expanded", String(this.expanded));
-    dom.append(expand, button("茶々入れコメントを削除", "×", () => { dismissChachaComment(view); }));
+    const open = button("茶々入れから会話を開く", "💬", () => { continueChachaComment(view, this.comment?.id); });
+    open.title = this.comment?.comment ?? "";
+    if (this.comment) open.setAttribute("aria-description", this.comment.comment);
+    dom.append(open, button("茶々入れコメントを削除", "×", () => { dismissChachaComment(view); }));
     return dom;
   }
 }
@@ -58,23 +57,6 @@ export function createChachaExtension(session: ChachaSession, options: {
     },
     provide: (field) => [
       EditorView.editorAttributes.compute([field], (state) => ({ "data-chacha-enabled": String(state.field(field).enabled) })),
-      showTooltip.compute([field], (state) => {
-        const value = state.field(field), comment = value.comment;
-        if (value.phase !== "expanded" || !comment) return null;
-        return { pos: comment.context.anchor.from, above: true, create(view) {
-          const dom = document.createElement("div"); dom.className = "cm-chacha-tooltip"; dom.setAttribute("role", "note"); dom.tabIndex = -1;
-          dom.setAttribute("aria-label", `茶々入れ（${{ reaction: "感想", advice: "助言", observation: "指摘" }[comment.type]}）`);
-          const text = document.createElement("p"); text.textContent = comment.comment;
-          dom.append(text, button("茶々入れコメントを削除", "×", () => { dismissChachaComment(view); }));
-          dom.addEventListener("keydown", (event) => {
-            const dismiss = event.key === "Escape" || (event.key === "Backspace" && (event.ctrlKey || event.metaKey) && event.altKey);
-            if (dismiss && !event.isComposing && event.keyCode !== 229 && !view.composing && !modal()) {
-              event.preventDefault(); event.stopPropagation(); dismissChachaComment(view);
-            }
-          });
-          return { dom, mount() { const value = controls.get(view); if (value?.focusNext) { value.focusNext = false; dom.focus({ preventScroll: true }); } } };
-        } };
-      }),
     ],
   });
   const plugin = ViewPlugin.fromClass(class {
@@ -89,7 +71,7 @@ export function createChachaExtension(session: ChachaSession, options: {
     private readonly detach: () => void;
     private readonly pulse = () => session.pulse();
     constructor(private readonly view: EditorView) {
-      controls.set(view, { session, focusNext: false });
+      controls.set(view, { session });
       this.unsubscribe = session.subscribe(() => this.updateDisplay());
       this.detach = session.attach({ file: options.file ?? "current", source: () => view.state.doc.toString(),
         blocked: () => this.blocked(), visible: (position) => {
@@ -102,7 +84,7 @@ export function createChachaExtension(session: ChachaSession, options: {
     }
     private blocked() {
       return this.composing || this.view.composing || !document.hasFocus() || document.visibilityState === "hidden" || modal()
-        || searchPanelOpen(this.view.state) || !!this.view.dom.querySelector(".cm-tooltip:not(.cm-chacha-tooltip), .cm-dialog") || options.blocked?.() === true;
+        || searchPanelOpen(this.view.state) || !!this.view.dom.querySelector(".cm-tooltip, .cm-dialog") || options.blocked?.() === true;
     }
     private targetEdited(context: ChachaContext) {
       if (!this.lastChange) return false;
@@ -152,25 +134,23 @@ export function createChachaExtension(session: ChachaSession, options: {
     compositionstart() { this.compositionStart(); return false; }, compositionend() { this.compositionEnd(); return false; },
     scroll() { session.pulse(); return false; },
   } });
-  return [display, plugin, EditorView.domEventObservers({ keydown(event) { composingKey = event.isComposing || event.keyCode === 229; } }), gutter({ class: "cm-chacha-gutter", side: "after", initialSpacer: () => new Marker(false, true),
+  return [display, plugin, EditorView.domEventObservers({ keydown(event) { composingKey = event.isComposing || event.keyCode === 229; } }), gutter({ class: "cm-chacha-gutter", side: "after", initialSpacer: () => new Marker(undefined, true),
     lineMarker: (view, line) => {
       const value = view.state.field(display), comment = value.comment;
-      return comment && ["collapsed", "expanded"].includes(value.phase) && view.state.doc.lineAt(comment.context.anchor.from).from === line.from
-        ? new Marker(value.phase === "expanded") : null;
+      return comment && value.phase === "collapsed" && view.state.doc.lineAt(comment.context.anchor.from).from === line.from
+        ? new Marker(comment) : null;
     }, lineMarkerChange: (update) => update.startState.field(display) !== update.state.field(display),
   }), Prec.lowest(keymap.of([
-    { key: "Mod-Alt-Enter", run: (view) => !composingKey && !view.composing && !modal() && expandChachaComment(view, true) },
+    { key: "Mod-Alt-Enter", run: (view) => !composingKey && !view.composing && !modal() && continueChachaComment(view) },
     { key: "Mod-Alt-Backspace", run: (view) => !composingKey && !view.composing && !modal() && dismissChachaComment(view) },
   ])), Prec.lowest(EditorView.domEventHandlers({ keydown: (event, view) => {
     if (event.key !== "Escape" || event.isComposing || event.keyCode === 229 || view.composing || modal() || getCM(view)
-      || searchPanelOpen(view.state) || view.dom.querySelector(".cm-tooltip:not(.cm-chacha-tooltip), .cm-dialog")) return false;
+      || searchPanelOpen(view.state) || view.dom.querySelector(".cm-tooltip, .cm-dialog")) return false;
     return dismissChachaComment(view);
   } })), EditorView.theme({
     ".cm-chacha-gutter": { display: "none" },
     "&[data-chacha-enabled=true] .cm-chacha-gutter": { display: "block", width: "52px", minWidth: "52px" },
     ".cm-chacha-buttons": { display: "flex", width: "52px", gap: "2px", justifyContent: "center" },
-    ".cm-chacha-buttons button, .cm-chacha-tooltip button": { width: "24px", minWidth: "24px", height: "24px", padding: "0", border: "1px solid var(--border)", borderRadius: "4px", background: "var(--panel)", color: "var(--text)", cursor: "pointer" },
-    ".cm-chacha-tooltip": { maxWidth: "min(320px, calc(100vw - 16px))", maxHeight: "50vh", overflow: "auto", padding: "12px", font: "14px/1.5 system-ui, sans-serif", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "var(--text)", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "6px" },
-    ".cm-chacha-tooltip p": { margin: "0 0 8px" },
+    ".cm-chacha-buttons button": { width: "24px", minWidth: "24px", height: "24px", padding: "0", border: "1px solid var(--border)", borderRadius: "4px", background: "var(--panel)", color: "var(--text)", cursor: "pointer" },
   })];
 }

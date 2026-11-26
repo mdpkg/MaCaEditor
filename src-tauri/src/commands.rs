@@ -834,6 +834,20 @@ pub fn chat_connection(app: AppHandle) -> Result<crate::ai::chat::ChatConnection
 }
 
 #[tauri::command]
+pub async fn ai_continue_chacha(
+    app: AppHandle, state: tauri::State<'_, crate::ai::commands::AiStreamState>,
+    channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>, request_id: String, expected_connection: String,
+    quote: crate::ai::chat::QuotedContext, history: Vec<crate::ai::types::AiMessage>, question: String,
+) -> Result<crate::ai::commands::ChatCompletion, AiError> {
+    let request = crate::ai::chat::build_quoted_request(&quote, &history, &question)?;
+    let config = crate::ai::chat::accept_connection(load_ai_config(app).map_err(|_| AiError::InvalidConfiguration("saved connection unavailable".into()))?, &expected_connection)?;
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, None)
+        .with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
+    crate::ai::commands::run_chat_stream(&provider, state.registry.clone(), request_id,
+        move |event| { let _ = channel.send(event); }, request, config.connect_timeout_seconds, config.request_timeout_seconds).await
+}
+
+#[tauri::command]
 pub async fn ai_edit_diagram(
     state: tauri::State<'_, crate::ai::commands::AiStreamState>,
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
@@ -864,9 +878,10 @@ pub async fn ai_edit_diagram(
 /// Bounded, stateless automatic reactions using the saved connection/key.
 #[tauri::command]
 pub fn chacha_connection(app: AppHandle) -> Result<crate::ai::chacha::ChachaConnection, crate::ai::chacha::ChachaFailure> {
-    use crate::ai::chacha::{ChachaConnection, ChachaFailure, connection_revision};
+    use crate::ai::chacha::{ChachaConnection, ChachaFailure};
     let config = load_ai_config(app).map_err(|_| ChachaFailure::new("connection"))?;
-    Ok(ChachaConnection { revision: connection_revision(&config)?, endpoint: config.base_url, model: config.model })
+    let safe = crate::ai::chat::chat_connection(&config).map_err(|_| ChachaFailure::new("connection"))?;
+    Ok(ChachaConnection { revision: safe.revision, endpoint: safe.endpoint, model: safe.model })
 }
 
 #[tauri::command]

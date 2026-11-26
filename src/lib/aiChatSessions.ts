@@ -1,6 +1,7 @@
 import { createAiChatState, reduceAiChat, type AiChatState } from "./aiChat";
 import type { RequestOwner } from "./chatTransport";
 import type { AiError } from "../types";
+import { copyQuotedChat, type QuotedChat } from "./quotedChat";
 
 export type ChatConnection = { revision: string; endpoint: string; model: string };
 export type ChatPathChange = { from: string; to?: string };
@@ -39,7 +40,7 @@ function reservedBytes(state: AiChatSessionsState) {
     ? CHAT_LIMITS.errorBytes + Math.max(0, CHAT_LIMITS.responseBytes - utf8Bytes(session.chat.messages[session.chat.messages.length - 1]?.content ?? "")) : 0), 0);
 }
 export type AiChatSession = {
-  id: string; title: string; kind: "document"; path: string; available: boolean;
+  id: string; title: string; kind: "document" | "quote"; path: string; available: boolean; quote?: QuotedChat;
   chat: AiChatState; draft: string; generation: number; lastQuestion: string;
   scrollTop: number; follow: boolean;
   phase: "idle" | "starting" | "running" | "cancelling" | "error";
@@ -55,6 +56,7 @@ export type SessionAction =
   | { type: "notice"; message: string }
   | { type: "connectionError"; message: string }
   | { type: "add"; sessionId: string; path: string }
+  | { type: "addQuote"; sessionId: string; quote: QuotedChat }
   | { type: "select" | "delete" | "clear" | "stop"; sessionId: string }
   | { type: "draft"; sessionId: string; value: string }
   | { type: "scroll"; sessionId: string; top: number; follow: boolean }
@@ -110,6 +112,20 @@ function reduceSessions(state: AiChatSessionsState, action: AiChatSessionsAction
         chat: reduceAiChat(session.chat, { type: "cancelled", requestId: session.owner.requestId }),
       } : {}),
     })) };
+  }
+  if (action.type === "addQuote") {
+    if (action.quote.documentScopeKey !== state.documentScopeKey) return state;
+    const existing = state.sessions.find((item) => item.quote?.commentId === action.quote.commentId);
+    if (existing) return { ...state, selectedSessionId: existing.id };
+    if (state.sessions.length >= CHAT_LIMITS.sessions) return { ...state, notice: "会話は文書あたり20件までです。" };
+    const quote = copyQuotedChat(action.quote);
+    if (!quote) return state;
+    const characters = Array.from(quote.reaction);
+    const session: AiChatSession = { id: action.sessionId, title: `茶々入れ：${characters.slice(0, 20).join("")}${characters.length > 20 ? "…" : ""}`,
+      kind: "quote", path: quote.path, available: true, quote, chat: createAiChatState(), draft: "", generation: 0, lastQuestion: "",
+      scrollTop: 0, follow: true, phase: "idle", approvedConnectionRevision: quote.connection.revision,
+      pendingConnectionConfirmation: !!state.connection && state.connection.revision !== quote.connection.revision };
+    return { ...state, sessions: [...state.sessions, session], selectedSessionId: session.id };
   }
   if (action.type === "add") {
     if (state.sessions.length >= CHAT_LIMITS.sessions) return { ...state, notice: "会話は文書あたり20件までです。" };

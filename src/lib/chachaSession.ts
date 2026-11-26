@@ -1,4 +1,6 @@
 import { createRequestId } from "./requestId";
+import { copyQuotedChat, type QuotedChat } from "./quotedChat";
+import type { ChatConnection } from "./aiChatSessions";
 import type { ChangeDesc } from "@codemirror/state";
 import type { AiMessage } from "../types";
 import { extractChachaContext, type ChachaContext } from "./chachaContext";
@@ -8,7 +10,7 @@ import { parseChachaResponse, type ChachaComment } from "./chachaResponse";
 import { buildChachaMessages, CHACHA_FREQUENCIES, normalizeChachaSettings, type ChachaSettings } from "./chachaSettings";
 import { ChachaTrigger } from "./chachaTrigger";
 
-export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal }) => Promise<string>;
+export type ChachaTransport = (request: { requestId: string; messages: AiMessage[]; signal: AbortSignal; connectionRevision?: string }) => Promise<string>;
 interface Binding { file: string; source(): string; blocked(): boolean; visible(position: number): boolean; targetEdited?(context: ChachaContext): boolean }
 function mayChangeStructure(before: string, after: string, changes: ChangeDesc): boolean {
   let structural = false;
@@ -23,8 +25,8 @@ function mayChangeStructure(before: string, after: string, changes: ChangeDesc):
 }
 export interface ChachaSnapshot {
   enabled: boolean; paused: boolean; reason: "auth" | "rate" | "failures" | "manual" | "connection" | null;
-  phase: "idle" | "requesting" | "pending" | "collapsed" | "expanded";
-  comment?: ChachaComment & { context: ChachaContext };
+  phase: "idle" | "requesting" | "pending" | "collapsed";
+  comment?: ChachaComment & { id: string; context: ChachaContext; quote?: QuotedChat };
 }
 
 /** One instance per open document session, never part of DocumentState/history. */
@@ -46,7 +48,10 @@ export class ChachaSession {
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   private readonly listeners = new Set<() => void>();
-  constructor(settings: ChachaSettings, private readonly transport: ChachaTransport) {
+  constructor(settings: ChachaSettings, private readonly transport: ChachaTransport, private readonly continuation?: {
+    capture(): { documentScopeKey: string; connection: ChatConnection } | undefined;
+    onContinue(quote: QuotedChat): boolean;
+  }) {
     this.settings = normalizeChachaSettings(settings); this.trigger = new ChachaTrigger(this.settings.frequency);
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -100,7 +105,12 @@ export class ChachaSession {
     this.context = mapped;
     if (this.snapshot.comment) this.emit({ comment: { ...this.snapshot.comment, context: mapped } });
   }
-  expand() { if (this.snapshot.phase !== "collapsed") return false; this.deadline = Infinity; this.clearTimer(); this.emit({ phase: "expanded" }); return true; }
+  continue(commentId: string) {
+    const comment = this.snapshot.comment;
+    if (this.disposed || this.snapshot.phase !== "collapsed" || comment?.id !== commentId || !comment.quote) return false;
+    if (!this.continuation?.onContinue(comment.quote)) return false;
+    this.dismiss(); return true;
+  }
   dismiss() { this.invalidate(); this.trigger.resetEdits(); }
   dispose() { this.disposed = true; this.invalidate(); this.binding = undefined; this.listeners.clear(); }
   private arm(delay: number) { this.timer = setTimeout(() => { this.timer = undefined; this.pulse(); }, Math.max(1, delay)); }
@@ -149,9 +159,13 @@ export class ChachaSession {
     this.transportGeneration = generation;
     this.deadline = now + 60000; this.emit({ phase: "requesting", comment: undefined }); this.arm(60000);
     const messages = buildChachaMessages(this.settings.prompt, context.text);
+    const requestId = createRequestId(), personality = this.settings.prompt;
+    let captured: ReturnType<NonNullable<ChachaSession["continuation"]>["capture"]>;
     void Promise.resolve().then(() => {
       if (generation !== this.generation || abort.signal.aborted) throw { kind: "cancelled" };
-      return this.transport({ requestId: createRequestId(), messages, signal: abort.signal });
+      const metadata = this.continuation?.capture();
+      captured = metadata && { documentScopeKey: metadata.documentScopeKey, connection: { ...metadata.connection } };
+      return this.transport({ requestId, messages, signal: abort.signal, ...(captured ? { connectionRevision: captured.connection.revision } : {}) });
     }).then((raw) => {
       if (generation !== this.generation || this.disposed) return;
       this.abort = undefined;
@@ -159,7 +173,10 @@ export class ChachaSession {
       const comment = parseChachaResponse(raw);
       this.failures = 0;
       if (!comment) { this.dismiss(); return; }
-      this.deadline = Date.now() + 30000; this.emit({ phase: "pending", comment: { ...comment, context: this.context } }); this.pulse();
+      const quote = captured && copyQuotedChat({ commentId: requestId, documentScopeKey: captured.documentScopeKey, path: binding.file,
+        context: JSON.parse(messages.find((message) => message.role === "User")!.content), personality,
+        reaction: comment.comment, reactionType: comment.type, connection: captured.connection });
+      this.deadline = Date.now() + 30000; this.emit({ phase: "pending", comment: { ...comment, id: requestId, context: this.context, quote } }); this.pulse();
     }).catch((error: unknown) => { if (generation === this.generation && !this.disposed) this.fail(error); }).finally(() => {
       if (this.transportGeneration === generation) { this.transportGeneration = undefined; this.pulse(); }
     });

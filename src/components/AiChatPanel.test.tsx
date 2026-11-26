@@ -8,7 +8,7 @@ import { ChatSessionsController } from "../lib/chatSessionsController";
 vi.mock("../lib/tauri", () => ({
   cancelAiRequest: vi.fn(),
   loadChatConnection: vi.fn(),
-  startAiDocumentChat: vi.fn(),
+  startAiQuotedChat: vi.fn(), startAiDocumentChat: vi.fn(),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -37,6 +37,23 @@ async function openChat(onOpenAiSettings = vi.fn(), onConfirm = vi.fn(async () =
 function button(label: string) {
   return [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
 }
+test("fixed quotation is plain text, survives clear and asks before deleting the fixed card", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "https://reader.test", model: "reader", revision: "one" });
+  const confirm = vi.fn(async () => false);
+  await openChat(vi.fn(), confirm);
+  await act(async () => { controller.addQuote({ commentId: "comment", documentScopeKey: "doc", path: "a.md",
+    context: { target: "<img src=https://invalid.test>quoted", previous: "previous" }, reaction: "**original**", reactionType: "advice", personality: "old reader",
+    connection: { endpoint: "https://reader.test", model: "reader", revision: "one" } }); });
+  const card = container.querySelector('[aria-label="茶々入れの固定引用"]')!;
+  expect(card.textContent).toContain("<img src=https://invalid.test>quoted");
+  expect(card.querySelector("img,a,script")).toBeNull();
+  expect(card.textContent).toContain("previous"); expect(card.textContent).toContain("old reader");
+  const id = controller.getSnapshot().selectedSessionId!;
+  await act(async () => { controller.draft(id, "draft"); controller.clear(id); });
+  expect(container.querySelector('[aria-label="茶々入れの固定引用"]')).not.toBeNull();
+  await act(async () => { (container.querySelector(`[aria-label="${controller.getSnapshot().sessions[1].title}を削除"]`) as HTMLButtonElement).click(); });
+  expect(confirm).toHaveBeenCalledOnce(); expect(controller.getSnapshot().sessions).toHaveLength(2);
+});
 
 test("shows the configuration load error summary and the original in collapsed details", async () => {
   const original = "key must be a string at line 1 column 2";

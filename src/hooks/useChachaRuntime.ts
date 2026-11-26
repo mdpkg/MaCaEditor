@@ -3,6 +3,7 @@ import { loadChachaPreferences } from "../lib/chachaPreferences";
 import { ChachaSession } from "../lib/chachaSession";
 import { normalizeChachaSettings, type ChachaSettings } from "../lib/chachaSettings";
 import { loadChachaConnection, requestChacha, type ChachaConnection } from "../lib/chachaTransport";
+import type { QuotedChat } from "../lib/quotedChat";
 
 export interface ChachaRuntime {
   key: string;
@@ -10,7 +11,8 @@ export interface ChachaRuntime {
   connection: { current: ChachaConnection | undefined };
 }
 
-export function useChachaRuntime(key: string | null) {
+export function useChachaRuntime(key: string | null, scope?: string, onContinue?: (quote: QuotedChat) => boolean) {
+  const handoff = useRef({ scope, onContinue }); handoff.current = { scope, onContinue };
   const [settings, setSettings] = useState(normalizeChachaSettings);
   const [ready, setReady] = useState(false);
   const [storedRuntime, setRuntime] = useState<ChachaRuntime>();
@@ -27,7 +29,10 @@ export function useChachaRuntime(key: string | null) {
   useEffect(() => {
     if (!key || !ready) { setRuntime(undefined); return; }
     const connection: ChachaRuntime["connection"] = { current: undefined };
-    const session = new ChachaSession(settingsRef.current, (request) => requestChacha({ ...request, connectionRevision: connection.current?.revision ?? "" }));
+    const session: ChachaSession = new ChachaSession(settingsRef.current, (request) => requestChacha({ ...request, connectionRevision: request.connectionRevision ?? connection.current?.revision ?? "" }), {
+      capture: () => connection.current && handoff.current.scope ? { documentScopeKey: handoff.current.scope, connection: connection.current } : undefined,
+      onContinue: (quote) => activeRef.current?.session === session && handoff.current.scope === quote.documentScopeKey && handoff.current.onContinue?.(quote) === true,
+    });
     const instance = { key, session, connection }; setRuntime(instance);
     return () => { if (activeRef.current === instance) activeRef.current = undefined; session.dispose(); };
   }, [key, ready]);

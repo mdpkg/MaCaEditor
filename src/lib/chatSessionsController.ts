@@ -1,4 +1,5 @@
 import { createRequestId } from "./requestId";
+import type { QuotedChat } from "./quotedChat";
 import type { AiError, AiMessage, AiStreamEvent } from "../types";
 import { chatHistory } from "./aiChat";
 import { createAiChatSessions, reduceAiChatSessions, CHAT_LIMITS, utf8Bytes, sameRequest, validChatQuestion, fitsUtf8Limit,
@@ -6,9 +7,11 @@ import { createAiChatSessions, reduceAiChatSessions, CHAT_LIMITS, utf8Bytes, sam
 import { ChatTransport, isChatTransportBusy, type ChatCompletion, type RequestOwner } from "./chatTransport";
 export type DocumentChatRequest = { requestId: string; expectedConnection: string; filename: string;
   currentDocument: string; history: AiMessage[]; question: string };
+export type QuotedChatRequest = { requestId: string; expectedConnection: string; quote: QuotedChat; history: AiMessage[]; question: string };
 type Dependencies = {
   connection(): Promise<ChatConnection>; document(path: string): string | undefined;
   send(request: DocumentChatRequest, deliver: (event: AiStreamEvent) => void): Promise<ChatCompletion>;
+  sendQuote?(request: QuotedChatRequest, deliver: (event: AiStreamEvent) => void): Promise<ChatCompletion>;
   cancel(id: string): Promise<boolean>; error?(reason: unknown): AiError;
 };
 /** Memory-only document owner. The physical transport remains application-scoped. */
@@ -30,7 +33,14 @@ export class ChatSessionsController {
   }
   private notice(message: string) { this.dispatch({ type: "notice", message }); }
   rejectInput() { this.notice("下書きは1MiB UTF-8までです。入力前の内容を保持しました。"); }
-  initialize(path: string) { if (!this.initialized) { this.initialized = true; this.add(path); } }
+  initialize(path: string) { if (!this.initialized) { this.initialized = true; if (!this.state.sessions.length) this.add(path); } }
+  addQuote(quote: QuotedChat): string | undefined {
+    if (this.disposed || quote.documentScopeKey !== this.scope) return;
+    const existing = this.state.sessions.find((item) => item.quote?.commentId === quote.commentId);
+    const sessionId = existing?.id ?? createRequestId();
+    this.dispatch({ type: "addQuote", sessionId, quote });
+    return this.state.sessions.some((item) => item.id === sessionId) ? sessionId : undefined;
+  }
   add(path: string): string | undefined {
     const sessionId = createRequestId();
     this.dispatch({ type: "add", sessionId, path });
@@ -69,21 +79,24 @@ export class ChatSessionsController {
     if (this.disposed || !session || !connection || this.state.connectionError || !session.available || session.pendingConnectionConfirmation || isChatTransportBusy()) return;
     const question = (input ?? session.draft).trim();
     if (!validChatQuestion(question)) { this.notice("質問は空白以外の10,000 Unicode文字までです。"); return; }
-    const currentDocument = this.dependencies.document(session.path);
+    const currentDocument = session.kind === "quote" ? "" : this.dependencies.document(session.path);
     if (currentDocument === undefined) { this.notice("対象Markdownがありません。この会話からは送信できません。"); return; }
     const owner: RequestOwner = { documentScopeKey: this.scope, sessionId, generation: session.generation + 1, requestId: createRequestId() };
     const history = chatHistory(session.chat.messages);
     let remaining = CHAT_LIMITS.requestBytes as number;
-    for (const text of [currentDocument, question, ...history.map((message) => message.content)]) {
+    for (const text of [currentDocument, question, ...(session.quote ? [JSON.stringify(session.quote)] : []), ...history.map((message) => message.content)]) {
       if (!fitsUtf8Limit(text, remaining)) { this.notice("送信内容が1MiBの上限を超えます。新しい会話や会話の消去をご利用ください。"); return; }
       remaining -= utf8Bytes(text);
     }
-    const request: DocumentChatRequest = { requestId: owner.requestId, expectedConnection: session.approvedConnectionRevision ?? connection.revision,
+    const documentRequest: DocumentChatRequest = { requestId: owner.requestId, expectedConnection: session.approvedConnectionRevision ?? connection.revision,
       filename: session.path, currentDocument, history, question };
+    const request = session.quote ? { requestId: owner.requestId, expectedConnection: documentRequest.expectedConnection, quote: session.quote, history, question } : documentRequest;
     if (utf8Bytes(JSON.stringify(request)) > CHAT_LIMITS.requestBytes) { this.notice("送信内容が1MiBの上限を超えます。新しい会話や会話の消去をご利用ください。"); return; }
     this.dispatch({ type: "begin", owner, question, retry: session.chat.status === "error" && session.lastQuestion === question });
     if (!sameRequest(this.state.sessions.find((item) => item.id === sessionId)?.owner, owner)) return;
-    const transport = new ChatTransport((_, deliver) => this.dependencies.send(request, deliver), this.dependencies.cancel);
+    const transport = new ChatTransport((_, deliver) => session.quote
+      ? this.dependencies.sendQuote!(request as QuotedChatRequest, deliver)
+      : this.dependencies.send(request as DocumentChatRequest, deliver), this.dependencies.cancel);
     this.transport = transport;
     try {
       const result = await transport.send(owner, (event) => {

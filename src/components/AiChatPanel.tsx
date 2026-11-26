@@ -38,7 +38,7 @@ export function AiChatPanel({ controller, markdownPath, onClose, onOpenAiSetting
     if (confirming.current) return;
     const owner = controller, before = owner.getSnapshot(), target = before.sessions.find((item) => item.id === id);
     if (!target) return;
-    const hasContent = target.chat.messages.length > 0 || target.draft.length > 0;
+    const hasContent = target.chat.messages.length > 0 || target.draft.length > 0 || (operation === "delete" && !!target.quote);
     confirming.current = true;
     try {
       if (hasContent && !await onConfirm?.({ title: `${target.title}を${operation === "delete" ? "削除" : "消去"}しますか？`,
@@ -69,17 +69,27 @@ export function AiChatPanel({ controller, markdownPath, onClose, onOpenAiSetting
     {state.notice && <div className="ai-chat-error" role="status">{state.notice}</div>}
     {state.sessions.filter((item) => item.id !== session?.id).map((item) => <section key={item.id} hidden role="tabpanel" id={chatPanelId(item.id)} aria-labelledby={chatTabId(item.id)} />)}
     {session ? <section key={session.id} role="tabpanel" id={chatPanelId(session.id)} aria-labelledby={chatTabId(session.id)} className="ai-chat-content">
-      <div className="ai-chat-document" title={session.path}>{session.path} — このMarkdown全体（送信時点）</div>
+      <div className="ai-chat-document" title={session.path}>{session.path} — {session.quote ? "引用時点の限定文脈と固定した人格" : "このMarkdown全体（送信時点）"}</div>
       {!session.available && <p className="ai-chat-error" role="status">対象が削除された、または移動先を追跡できないため、この会話は読み取り専用です。</p>}
       {session.pendingConnectionConfirmation && <div className="ai-chat-error" role="status">
-        接続先が変更されました。この会話の履歴と対象Markdownを表示中の接続先へ送信します。
+        接続先が変更されました。この会話の履歴と{session.quote ? "固定引用・人格" : "対象Markdown"}を表示中の接続先へ送信します。
         <button onClick={() => state.connection && controller.confirm(session.id, state.connection.revision)}>この会話の送信先を確認</button>
       </div>}
       <div className="ai-chat-messages" ref={listRef} onScroll={() => {
         const list = listRef.current;
         if (list) controller.scroll(session.id, list.scrollTop, list.scrollHeight - list.scrollTop - list.clientHeight < 80);
       }}>
-        {session.chat.messages.length === 0 && <p className="ai-chat-empty">{uiText("Ask about the current Markdown document.")}</p>}
+        {session.quote && <article className="ai-chat-quote" aria-label="茶々入れの固定引用">
+          <strong>引用時点の内容：{session.quote.path}</strong>
+          <p className="ai-chat-quote-text">{session.quote.context.target}</p>
+          <p className="ai-chat-quote-text">元の反応（{session.quote.reactionType}）：{session.quote.reaction}</p>
+          <details><summary>送信する補助文脈・人格</summary>
+            {Object.entries(session.quote.context).filter(([key]) => key !== "target").map(([key, value]) => <p key={key} className="ai-chat-quote-text">{key}：{value}</p>)}
+            <p className="ai-chat-quote-text">人格：{session.quote.personality}</p>
+            <p>生成時：{session.quote.connection.endpoint} ／ {session.quote.connection.model}</p>
+          </details>
+        </article>}
+        {!session.quote && session.chat.messages.length === 0 && <p className="ai-chat-empty">{uiText("Ask about the current Markdown document.")}</p>}
         {session.chat.messages.map((message) => <AiChatMessageView key={message.id} message={message}
           starting={message.status === "streaming" && session.phase === "starting"} />)}
         {session.chat.error && <div className="ai-chat-error"><AiErrorFeedback error={session.chat.error} />

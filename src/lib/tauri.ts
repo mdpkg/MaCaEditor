@@ -197,6 +197,11 @@ export function startAiDiagramEdit(options: {
 
 /** 最新の editor 内容と正常な会話履歴を使って document chat を開始する。 */
 export const loadChatConnection = () => invoke<import("./aiChatSessions").ChatConnection>("chat_connection");
+export function startAiQuotedChat(options: import("./chatSessionsController").QuotedChatRequest, onEvent: (event: AiStreamEvent) => void): Promise<{ request_id: string; content: string }> {
+  const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
+  return invoke("ai_continue_chacha", { requestId: options.requestId, expectedConnection: options.expectedConnection,
+    channel, quote: options.quote, history: options.history, question: options.question });
+}
 export function startAiDocumentChat(
   options: import("./chatSessionsController").DocumentChatRequest,
   onEvent: (event: AiStreamEvent) => void,

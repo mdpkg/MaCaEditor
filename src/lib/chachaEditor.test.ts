@@ -2,7 +2,7 @@ import { EditorView, basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
-import { createChachaExtension, expandChachaComment, dismissChachaComment } from "./chachaEditor";
+import { createChachaExtension, continueChachaComment, dismissChachaComment } from "./chachaEditor";
 import { ChachaSession } from "./chachaSession";
 import { normalizeChachaSettings } from "./chachaSettings";
 
@@ -16,27 +16,29 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); vi.spyOn(document, "
 afterEach(() => { cleanup.splice(0).reverse().forEach((f) => f()); vi.restoreAllMocks(); vi.useRealTimers(); document.body.innerHTML = ""; });
 function setup(source = "対象") {
   const transport = vi.fn(async () => '{"type":"reaction","comment":"<img src=https://example.invalid>読者の声"}');
-  const session = new ChachaSession(normalizeChachaSettings(), transport);
+  const handoff = vi.fn(() => true);
+  const session = new ChachaSession(normalizeChachaSettings(), transport, { capture: () => ({ documentScopeKey: "doc", connection: { endpoint: "https://reader.test", model: "reader", revision: "one" } }), onContinue: handoff });
   const host = document.createElement("div"); document.body.append(host);
   const view = new EditorView({ parent: host, doc: source, extensions: [basicSetup, markdown(), createChachaExtension(session)] });
   Object.defineProperty(view.scrollDOM, "clientHeight", { configurable: true, value: 600 });
   view.focus(); session.enable();
   cleanup.push(() => { view.destroy(); session.dispose(); host.remove(); });
   const write = () => view.dispatch({ changes: { from: view.state.doc.length, insert: "あ".repeat(100) }, userEvent: "input.type" });
-  return { view, session, transport, write };
+  return { view, session, transport, write, handoff };
 }
-test("未展開はボタンだけ、明示展開はプレーンテキスト、削除は本文・焦点・選択を変更しない", async () => {
+test("吹き出しはボタンだけ、明示操作で引用会話を開き本文・選択を変更しない", async () => {
   const h = setup(); h.write();
   const text = h.view.state.doc.toString(), selection = h.view.state.selection.toJSON(), focus = document.activeElement;
   await vi.advanceTimersByTimeAsync(5000);
   expect(h.transport).toHaveBeenCalledOnce();
-  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れコメントを展開"]')).not.toBeNull();
-  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れコメントを展開"]')!.closest('[aria-hidden="true"]')).toBeNull();
+  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れから会話を開く"]')).not.toBeNull();
+  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れから会話を開く"]')!.closest('[aria-hidden="true"]')).toBeNull();
   expect(h.view.dom.querySelector(".cm-chacha-tooltip")).toBeNull();
-  expect(expandChachaComment(h.view)).toBe(true); await vi.advanceTimersByTimeAsync(30);
-  expect(h.view.dom.querySelector(".cm-chacha-tooltip")?.textContent).toContain("<img src=https://example.invalid>読者の声");
+  expect(continueChachaComment(h.view)).toBe(true); await vi.advanceTimersByTimeAsync(30);
+  expect(h.view.dom.querySelector(".cm-chacha-tooltip")).toBeNull();
+  expect(h.handoff).toHaveBeenCalledWith(expect.objectContaining({ reaction: "<img src=https://example.invalid>読者の声" }));
   expect(h.view.dom.querySelector(".cm-chacha-tooltip img")).toBeNull();
-  expect(dismissChachaComment(h.view)).toBe(true); await vi.advanceTimersByTimeAsync(0);
+  expect(dismissChachaComment(h.view)).toBe(false); await vi.advanceTimersByTimeAsync(0);
   expect(h.view.state.doc.toString()).toBe(text); expect(h.view.state.selection.toJSON()).toEqual(selection);
   expect(document.activeElement).toBe(focus); expect(h.view.scrollDOM.scrollTop).toBe(0);
 });
@@ -64,12 +66,12 @@ test("段落全体の削除で、後続の未編集段落を送信しない", as
   await vi.advanceTimersByTimeAsync(5000);
   expect(h.view.state.doc.toString()).toBe("未編集"); expect(h.transport).not.toHaveBeenCalled();
 });
-test("専用キーはIME入力を優先し、明示展開・削除をキーボードだけで行える", async () => {
+test("専用キーはIME入力を優先し、引用会話をキーボードだけで開ける", async () => {
   const h = setup(); h.write(); await vi.advanceTimersByTimeAsync(5000);
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, ctrlKey: true, altKey: true, isComposing: true, bubbles: true, cancelable: true }));
   expect(h.session.snapshot.phase).toBe("collapsed");
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
-  await vi.advanceTimersByTimeAsync(30); expect(h.session.snapshot.phase).toBe("expanded");
+  await vi.advanceTimersByTimeAsync(30); expect(h.session.snapshot.phase).toBe("idle"); expect(h.handoff).toHaveBeenCalledOnce();
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: 8, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
   expect(h.session.snapshot.phase).toBe("idle");
 });
