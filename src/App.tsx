@@ -2425,8 +2425,11 @@ export default function App() {
           <dt>{uiText("Context menu")}</dt><dd>Shift+F10 / コンテキストメニューキー</dd>
           <dt>{uiText("Close menu or dialog")}</dt><dd>Esc</dd>
           <dt>{uiText("Save in Vim")}</dt><dd><kbd>:w</kbd></dd>
-          <dt>茶々入れを展開</dt><dd><kbd>Ctrl/Cmd+Alt+Enter</kbd></dd>
+          <dt>茶々入れから会話を開く</dt><dd><kbd>Ctrl/Cmd+Alt+Enter</kbd>（追加質問まで通信しません）</dd>
           <dt>茶々入れを削除</dt><dd><kbd>Ctrl/Cmd+Alt+Backspace</kbd> / Esc（IME・補完・検索・Vimを優先）</dd>
+          <dt>チャットのタブを移動・選択</dt><dd>左右 / Home / End でフォーカス、Enter / Space で選択</dd>
+          <dt>チャットを送信・改行</dt><dd>Enter / Shift+Enter（IME変換中は送信しません）</dd>
+          <dt>チャットを閉じる</dt><dd>入力欄などで Esc。生成は継続し、ステータスバーから再表示できます。</dd>
         </dl>
         <button type="button" onClick={() => setShortcutsOpen(false)}>{uiText("Close")}</button>
       </Dialog>}

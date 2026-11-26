@@ -211,15 +211,27 @@ Open **通知履歴** (Notification history) from the status bar to see recent n
 
 Under **AI**, choose **AI を設定する** (Set up AI) or **AI 設定** (AI Settings) to configure an OpenAI-compatible endpoint, model, and API key if required. Use **接続をテスト** to check the connection. Once configured, you can rewrite, summarize, or proofread selected text, ask questions in **AI チャット**, and generate diagrams in the PlantUML and Mermaid editors. Errors show a Japanese summary and the original message under **詳細**.
 
+### Chat Sessions
+
+Open **AI チャット** to display conversation tabs. On first open, a document consultation is created for the selected Markdown if there are no existing conversations. The ＋ button adds another tab bound to the selected Markdown; selecting another file does not change that target. Each tab keeps its own draft, history and scroll position. Both normal consultations and quoted reader conversations share a limit of 20 sessions per open document.
+
+Normal consultations send the bound Markdown's current full text. Clicking a reader's 💬 creates a quoted conversation using only the context, personality and reaction captured when that comment was generated. Opening either kind does not call the LLM; a question starts communication. Quoted context remains fixed after later source edits or personality changes, and can be inspected in the fixed card.
+
+Closing the panel or changing tabs keeps generation running. Reopen it from the status bar to stop the request. Rename/move and their Undo/Redo follow known file operations; deleted or untraceable normal targets remain read-only, including after restoration. Save As preserves chat sessions. Closing/replacing the document or exiting discards them. Chats never enter document files, application settings or saved edit history.
+
+A changed connection requires separate confirmation for each existing session before sending. A quoted session also requires confirmation if its generation connection differs from the current one. Only one physical chat request may run, including cancellation wait; no queue or automatic parallel chat is added. Chat error details use fixed text without echoing provider bodies, URLs or credentials. Enter sends, Shift+Enter adds a line, and IME composition prevents sending. Arrow/Home/End move tab focus; Enter/Space selects it. See the Japanese [design](docs/ai-chat-design.md) and [transport contract](docs/ai-chat-transport.md) for limits and lifecycle details.
+
 ### Ambient Reader Comments (茶々入れ)
 
-This feature is off by default. Open a document and select **茶々入れ：無効** in the status bar to review the endpoint, text scope, frequency and possible API charges before enabling automatic comments for that document package. It uses your existing AI connection. Closing or changing the document requires consent again.
+This feature is off by default. Open a document and select **茶々入れ：無効** in the status bar to review the saved endpoint, limited text scope, timing and possible API charges before enabling automatic comments. Enabling alone sends nothing. The enabled/paused status lets you pause/resume; AI settings also allow disabling it.
 
-Click the enabled status to pause, or the paused status to resume. In **AI 設定**, the tea-comment section lets you disable it, select a frequency, and edit the reader's personality and tone. **茶々入れ設定を保存** applies and persists those settings. Closing the dialog discards unsaved edits; restoring the default prompt also requires saving.
+There is no minimum edit count. Actual additions, changes, deletions, paste and Undo/Redo become candidates after a five-second editing pause, with at least thirty seconds between request starts. The latest valid candidate is evaluated once after cooldown without requiring another edit. No reaction (`none`), errors and cancellation also keep the cooldown; there are no automatic retries. The old frequency presets have been retired. Only the reader personality persists, with a maximum of 10,000 Unicode code points.
 
-After sufficient editing and an input pause, only the edited paragraph, its neighboring paragraphs and nearest heading (up to 2,000 Unicode characters) are sent. A small 💬 appears in the right gutter; its text stays hidden until you open it. You can ignore it and keep writing. Use × to dismiss, `Ctrl+Alt+Enter` (`Cmd+Alt+Enter` on macOS) to expand, and `Ctrl+Alt+Backspace` (`Cmd+Alt+Backspace`) to dismiss. Escape gives priority to IME, completion, search and dialogs. With Vim enabled, use the dedicated shortcuts inside the editor.
+Only the edited paragraph, neighboring paragraphs and nearest heading are sent, up to 2,000 Unicode code points. Code, frontmatter, HTML and suspected local paths are excluded. Chat visibility, active/cancelling chat requests, IME composition and existing editor/dialog gates suppress automatic comments. Suppressed candidates are discarded; new edits after suppression are required to resume.
 
-Comments and consent never enter saved documents. Connection changes require consent again. See the Japanese [usage and limitations](docs/chacha.md), [design](docs/chacha-design.md), and [verification record](docs/chacha-verification.md) for exact thresholds, failure handling and the scope of testing.
+A 💬 appears without changing your selection or focus. Click it or use `Ctrl+Alt+Enter` (`Cmd+Alt+Enter` on macOS) to open its quoted chat instead of the former popover. No extra request is sent until you ask a question. Use × or `Ctrl/Cmd+Alt+Backspace` to dismiss the bubble. Escape gives priority to IME, completion, search, dialogs and Vim. You can ignore comments and continue writing; silence is a valid reader response.
+
+Comments and consent never enter saved documents. Automatic reader consent resets when the document is replaced/closed or its save origin changes; chat sessions survive Save As. Connection changes require consent again. See the Japanese [usage](docs/chacha.md), [current design](docs/chacha-design.md) and [verification record](docs/chacha-verification.md). Real OS IME/WebView2, assistive technology and subjective long-writing comfort are separate manual checks.
 
 ## Using the Drawing Editor
 

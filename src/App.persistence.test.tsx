@@ -512,6 +512,9 @@ describe("App persistence", () => {
     await click("ヘルプ");
     await click("キーボードショートカット");
     expect(container.querySelector(".shortcut-list")?.textContent).toContain("Ctrl/Cmd+Shift+F");
+    expect(container.querySelector(".shortcut-list")?.textContent).toContain("茶々入れから会話を開く");
+    expect(container.querySelector(".shortcut-list")?.textContent).toContain("チャットのタブ");
+    expect(container.querySelector(".shortcut-list")?.textContent).toContain("Shift+Enter");
     await click("閉じる", container.querySelector(".about-dialog")!);
     vi.mocked(open).mockResolvedValue("original.mdpkg");
     vi.mocked(tauri.openPackage).mockResolvedValue(documentInfo("Original"));
