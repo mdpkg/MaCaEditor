@@ -27,7 +27,7 @@ describe("AI chat state", () => {
     state = reduceAiChat(state, { type: "delta", requestId: "a", content: " stale" });
     state = reduceAiChat(state, { type: "completed", requestId: "a" });
     expect(state.messages[1]).toMatchObject({ content: "partial", status: "cancelled" });
-    expect(chatHistory(state.messages)).toEqual([{ role: "User", content: "hello" }]);
+    expect(chatHistory(state.messages)).toEqual([]);
   });
 
   test("ignores request A after request B becomes active", () => {

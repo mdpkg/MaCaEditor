@@ -71,3 +71,6 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_EventLog",
     "Win32_System_Threading",
 ] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }

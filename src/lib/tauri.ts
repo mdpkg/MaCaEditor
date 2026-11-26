@@ -198,14 +198,16 @@ export function startAiDiagramEdit(options: {
 /** 最新の editor 内容と正常な会話履歴を使って document chat を開始する。 */
 export function startAiDocumentChat(
   options: {
+    requestId: string;
     baseUrl: string; apiKey: string | null; model: string;
     filename: string; currentDocument: string; history: AiRequest["messages"];
     question: string; connectTimeoutSeconds?: number | null; requestTimeoutSeconds?: number | null;
   },
   onEvent: (event: AiStreamEvent) => void,
-): Promise<string> {
+): Promise<{ request_id: string; content: string }> {
   const channel = new Channel<AiStreamEvent>((event) => onEvent(event));
   return invoke("ai_document_chat", {
+    requestId: options.requestId,
     channel,
     baseUrl: options.baseUrl, apiKey: options.apiKey, model: options.model,
     filename: options.filename, currentDocument: options.currentDocument,

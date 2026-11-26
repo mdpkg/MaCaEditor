@@ -801,6 +801,7 @@ pub async fn ai_selection_action(
 pub async fn ai_document_chat(
     state: tauri::State<'_, crate::ai::commands::AiStreamState>,
     channel: tauri::ipc::Channel<crate::ai::types::AiStreamEvent>,
+    request_id: String,
     base_url: String,
     api_key: Option<String>,
     model: String,
@@ -810,16 +811,15 @@ pub async fn ai_document_chat(
     question: String,
     connect_timeout_seconds: Option<u64>,
     request_timeout_seconds: Option<u64>,
-) -> Result<String, AiError> {
+) -> Result<crate::ai::commands::ChatCompletion, AiError> {
     let request = crate::ai::prompt::build_document_chat_request(
         &filename, &current_document, &history, &question,
     );
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&base_url, api_key.as_deref()).with_model(model);
-    let coordinator = crate::ai::streaming::AiStreamCoordinator::with_registry(
-        provider, state.registry.clone(),
-    );
-    crate::ai::commands::run_ai_stream(
-        &coordinator,
+    crate::ai::commands::run_chat_stream(
+        &provider,
+        state.registry.clone(),
+        request_id,
         move |event| { let _ = channel.send(event); },
         request,
         connect_timeout_seconds,

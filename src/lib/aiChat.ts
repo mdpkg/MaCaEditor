@@ -18,7 +18,8 @@ export type AiChatAction =
   | { type: "submit"; requestId: string; messageId: string; assistantId: string; content: string }
   | { type: "retry"; requestId: string; assistantId: string }
   | { type: "delta"; requestId: string; content: string }
-  | { type: "completed" | "cancelled"; requestId: string }
+  | { type: "completed"; requestId: string; content?: string }
+  | { type: "cancelled"; requestId: string }
   | { type: "error"; requestId: string; error: AiError }
   | { type: "clear" };
 
@@ -39,7 +40,7 @@ export function reduceAiChat(state: AiChatState, action: AiChatAction): AiChatSt
   }
   if (action.type === "retry") return {
     messages: [
-      ...state.messages.filter((message) => message.status !== "failed"),
+      ...state.messages.filter((message, index) => index !== state.messages.length - 1 || message.status !== "failed"),
       { id: action.assistantId, role: "assistant", content: "", status: "streaming", requestId: action.requestId },
     ],
     status: "running", activeRequestId: action.requestId,
@@ -56,7 +57,7 @@ export function reduceAiChat(state: AiChatState, action: AiChatAction): AiChatSt
     }) };
   }
   if (action.type === "completed") {
-    return { messages: updateAssistant({ status: "complete" }), status: "idle" };
+    return { messages: updateAssistant({ status: "complete", ...(action.content === undefined ? {} : { content: action.content }) }), status: "idle" };
   }
   if (action.type === "cancelled") {
     return { messages: updateAssistant({ status: "cancelled" }), status: "idle" };
@@ -67,12 +68,17 @@ export function reduceAiChat(state: AiChatState, action: AiChatAction): AiChatSt
   return state;
 }
 
-/** API には user と正常完了した assistant のみを渡す。 */
+/** Only complete user/assistant pairs belong to API history. */
 export function chatHistory(messages: AiChatMessage[]): AiMessage[] {
-  return messages.flatMap((message) => {
-    if (message.role === "assistant" && message.status !== "complete") return [];
-    return [{ role: message.role === "user" ? "User" as const : "Assistant" as const, content: message.content }];
-  });
+  const history: AiMessage[] = [];
+  for (let index = 0; index + 1 < messages.length; index++) {
+    const user = messages[index], assistant = messages[index + 1];
+    if (user.role === "user" && assistant.role === "assistant" && assistant.status === "complete") {
+      history.push({ role: "User", content: user.content }, { role: "Assistant", content: assistant.content });
+      index++;
+    }
+  }
+  return history;
 }
 
 export function canSendChat(input: string, running: boolean, hasMarkdown: boolean, configured: boolean): boolean {
