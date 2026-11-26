@@ -51,7 +51,7 @@ test("保留は30秒、吹き出しは表示から180秒で破棄する", async 
   h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000); h.block(true); resolve(reply);
   await vi.advanceTimersByTimeAsync(0); expect(h.session.snapshot.phase).toBe("pending");
   await vi.advanceTimersByTimeAsync(30000); expect(h.session.snapshot.phase).toBe("idle");
-  h.block(false); h.change(h.target() + 2, h.target() + 2, "2"); h.edit(); await vi.advanceTimersByTimeAsync(120000); resolve(reply);
+  h.block(false); h.change(h.target() + 2, h.target() + 2, "2"); h.edit(); await vi.advanceTimersByTimeAsync(5000); resolve(reply);
   await vi.advanceTimersByTimeAsync(0); expect(h.session.snapshot.phase).toBe("collapsed");
   await vi.advanceTimersByTimeAsync(180000); expect(h.session.snapshot.phase).toBe("idle");
   h.session.dismiss(); expect(h.session.snapshot.phase).toBe("idle");
@@ -92,7 +92,7 @@ test("ファイル切替・設定変更では古い応答が混入せず、変�
   const h = setup(vi.fn(() => new Promise<string>((r) => { resolve = r; })));
   h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000); h.attach("b.md"); resolve(reply);
   await vi.advanceTimersByTimeAsync(0); expect(h.session.snapshot.phase).toBe("idle");
-  h.session.configure({ prompt: "新しい読者", frequency: "frequent" });
+  h.session.configure({ prompt: "新しい読者" });
   await vi.advanceTimersByTimeAsync(120000); expect(h.transport).toHaveBeenCalledOnce();
 });
 test("60秒タイムアウトで破棄し、自動リトライしない", async () => {
@@ -150,7 +150,7 @@ test("送信中の人格変更で旧応答を破棄し、同じファイルの�
   let resolve!: (value: string) => void;
   const h = setup(vi.fn(() => new Promise<string>((done) => { resolve = done; })));
   h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000);
-  h.session.configure({ prompt: "別の人格", frequency: "standard" }); h.attach("a.md"); resolve(reply);
+  h.session.configure({ prompt: "別の人格" }); h.attach("a.md"); resolve(reply);
   await vi.advanceTimersByTimeAsync(120000);
   expect(h.session.snapshot.comment).toBeUndefined(); expect(h.transport).toHaveBeenCalledOnce();
 });

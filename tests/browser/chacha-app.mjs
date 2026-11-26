@@ -66,6 +66,7 @@ async function fixture(t, width = 1100, scale = 1) {
           assertConnection(args);
           state.requests.push(structuredClone(args));
           if (state.mode === "offline") throw { kind: "transport" };
+          if (state.mode === "none") return JSON.stringify({ type: "none" });
           if (state.mode === "delayed") return new Promise((resolve) => state.pending.push(resolve));
           return JSON.stringify({ type: "reaction", comment: args.request.messages[1].content.includes("辛口") ? "辛口の反応です。" : "読んでいるよ。" });
         }
@@ -92,7 +93,7 @@ test("実Appは明示同意からだけ送信し、人格保存・停止再開�
   await write(page); await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
   await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
   const consent = page.getByRole("dialog", { name: "この文書で茶々入れを有効化", exact: true }); await consent.waitFor();
-  assert.match(await consent.textContent(), /2,000文字/); assert.match(await consent.textContent(), /120秒/); assert.match(await consent.textContent(), /料金/);
+  assert.match(await consent.textContent(), /2,000文字/); assert.match(await consent.textContent(), /30秒/); assert.match(await consent.textContent(), /料金/);
   assert.equal(await consent.getByRole("button", { name: "キャンセル", exact: true }).evaluate((button) => button === document.activeElement), true);
   await consent.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
   await page.clock.fastForward(120000); assert.equal((await requests(page)).length, 0);
@@ -396,4 +397,20 @@ test("茶々入れから開いた会話は追加質問まで通信せず生成�
   assert.ok(!sent.fields.includes("currentDocument"));
   assert.deepEqual(sent.history, []);
   assert.equal(await page.locator(".cm-content").textContent(), editorBefore);
+});
+
+test("実Appは1文字の追加・削除で評価しnone後も30秒待って追加編集なしで一度だけ送る", async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => { window.__chachaTest.mode = "none"; });
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  await page.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await page.locator(".cm-line").filter({ hasText: /^対象/ }).click(); await page.keyboard.press("End");
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  await page.keyboard.insertText("一"); await page.clock.runFor(4999); assert.equal((await requests(page)).length, 0);
+  await page.clock.runFor(51); assert.equal((await requests(page)).length, 1);
+  assert.equal(await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).count(), 0);
+  await page.keyboard.press("Backspace"); await page.clock.runFor(29000); assert.equal((await requests(page)).length, 1);
+  await page.clock.runFor(1000); assert.equal((await requests(page)).length, 2);
+  assert.equal(JSON.parse((await requests(page))[1].request.messages[2].content).target, "対象");
+  await page.clock.runFor(120000); assert.equal((await requests(page)).length, 2);
 });

@@ -11,6 +11,7 @@ export class ChachaEdits {
     if (this.composition) return this.finish(after);
     let amount = 0, position = 0;
     changes.iterChanges((fromA, toA, _fromB, toB, inserted) => {
+      if (before.sliceString(fromA, toA) === inserted.toString()) return;
       amount += Array.from(before.sliceString(fromA, toA)).length + Array.from(inserted.toString()).length;
       position = toB;
     });

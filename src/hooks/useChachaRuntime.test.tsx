@@ -9,7 +9,7 @@ import { normalizeChachaSettings } from "../lib/chachaSettings";
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => vi.restoreAllMocks());
 test("設定復元後も既定は無効で、文書切替・再オープン時は同意を引き継がない（StrictMode）", async () => {
-  vi.spyOn(preferences, "loadChachaPreferences").mockResolvedValue({ prompt: "保存された人格", frequency: "frequent" });
+  vi.spyOn(preferences, "loadChachaPreferences").mockResolvedValue({ prompt: "保存された人格" });
   const request = vi.spyOn(transport, "requestChacha").mockResolvedValue('{"type":"none"}');
   let current!: ReturnType<typeof useChachaRuntime>;
   function Harness({ id }: { id: string | null }) { current = useChachaRuntime(id); return <span>{current.runtime?.session.snapshot.enabled ? "on" : "off"}</span>; }
@@ -35,8 +35,8 @@ test("設定保存が遅い初期読込より新しい場合、保存した人�
   try {
     await act(async () => root.render(<Harness />));
     expect(current.runtime).toBeUndefined();
-    await act(async () => current.applySettings({ prompt: "新しい人格", frequency: "standard" }));
-    await act(async () => finish({ prompt: "古い人格", frequency: "restrained" }));
+    await act(async () => current.applySettings({ prompt: "新しい人格" }));
+    await act(async () => finish({ prompt: "古い人格" }));
     expect(current.settings.prompt).toBe("新しい人格"); expect(current.runtime).toBeDefined();
   } finally { act(() => root.unmount()); host.remove(); }
 });

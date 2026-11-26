@@ -45,11 +45,11 @@ fn save(path: &Path, preferences: serde_json::Value) -> Result<(), String> {
         .ok_or("preferences must be an object")?;
     if values.len() == 1 && values.contains_key(CHACHA_KEY) {
         let chacha = values[CHACHA_KEY].as_object().ok_or("invalid chacha preferences")?;
-        if chacha.len() != 2
+        if !(chacha.len() == 1 || (chacha.len() == 2 && chacha.contains_key("frequency")))
             || !chacha.get("prompt").and_then(serde_json::Value::as_str)
                 .is_some_and(|text| text.chars().count() <= 10000)
-            || !chacha.get("frequency").and_then(serde_json::Value::as_str)
-                .is_some_and(|value| matches!(value, "restrained" | "standard" | "frequent"))
+            || chacha.get("frequency").is_some_and(|value| !value.as_str()
+                .is_some_and(|value| matches!(value, "restrained" | "standard" | "frequent")))
         {
             return Err("invalid chacha preferences".into());
         }
@@ -123,6 +123,8 @@ mod tests {
         }
         save(&path, serde_json::json!({"chachaPreferences":{"prompt":"😀".repeat(10000),"frequency":"frequent"}})).unwrap();
         assert_eq!(read(&path).unwrap()["chachaPreferences"]["prompt"].as_str().unwrap().chars().count(), 10000);
+        save(&path, serde_json::json!({"chachaPreferences":{"prompt":"reader without legacy frequency"}})).unwrap();
+        assert_eq!(read(&path).unwrap()["chachaPreferences"].as_object().unwrap().len(), 1);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
