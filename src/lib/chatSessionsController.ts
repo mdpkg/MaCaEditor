@@ -97,6 +97,7 @@ export class ChatSessionsController {
   }
   dispose() {
     for (const session of this.state.sessions) if (session.owner) this.stop(session.id);
+    this.state = createAiChatSessions(this.scope);
     this.disposed = true; this.listeners.clear();
   }
 }

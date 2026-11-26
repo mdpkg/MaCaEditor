@@ -21,7 +21,7 @@ test("controller captures the bound file and ignores completion after document d
   controller.dispose();
   finish({ request_id: requestId, content: "late" });
   await pending;
-  expect(controller.getSnapshot().sessions[0].chat.messages[1].status).toBe("cancelled");
+  expect(controller.getSnapshot().sessions).toEqual([]);
 });
 test("settings changes invalidate before cancellation and require per-session confirmation", async () => {
   let current = connection;
