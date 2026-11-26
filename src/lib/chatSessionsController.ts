@@ -1,7 +1,7 @@
 import type { AiError, AiMessage, AiStreamEvent } from "../types";
 import { chatHistory } from "./aiChat";
 import { createAiChatSessions, reduceAiChatSessions, CHAT_LIMITS, utf8Bytes, sameRequest,
-  type SessionAction, type ChatConnection } from "./aiChatSessions";
+  type SessionAction, type ChatConnection, type ChatPathChange } from "./aiChatSessions";
 import { ChatTransport, isChatTransportBusy, type ChatCompletion, type RequestOwner } from "./chatTransport";
 export type DocumentChatRequest = { requestId: string; expectedConnection: string; filename: string;
   currentDocument: string; history: AiMessage[]; question: string };
@@ -34,6 +34,7 @@ export class ChatSessionsController {
     return this.state.sessions.some((session) => session.id === sessionId) ? sessionId : undefined;
   }
   select(sessionId: string) { this.dispatch({ type: "select", sessionId }); }
+  paths(changes: ChatPathChange[]) { this.dispatch({ type: "paths", changes }); }
   draft(sessionId: string, value: string) { this.dispatch({ type: "draft", sessionId, value }); }
   scroll(sessionId: string, top: number, follow: boolean) { this.dispatch({ type: "scroll", sessionId, top, follow }); }
   confirm(sessionId: string, revision: string) { this.dispatch({ type: "confirm", sessionId, revision }); }
