@@ -29,10 +29,10 @@ afterEach(() => {
   container.remove();
 });
 
-async function openChat(onOpenAiSettings = vi.fn()) {
+async function openChat(onOpenAiSettings = vi.fn(), onConfirm = vi.fn(async () => true)) {
   controller = new ChatSessionsController("doc", { connection: loadChatConnection, document: () => "Sample", send: startAiDocumentChat, cancel: cancelAiRequest });
   await controller.refreshConnection(); controller.add("index.md");
-  await act(async () => { root.render(<AiChatPanel controller={controller} onOpenAiSettings={onOpenAiSettings} onClose={vi.fn()} />); });
+  await act(async () => { root.render(<AiChatPanel controller={controller} markdownPath="index.md" onConfirm={onConfirm} onOpenAiSettings={onOpenAiSettings} onClose={vi.fn()} />); });
 }
 function button(label: string) {
   return [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
@@ -117,7 +117,7 @@ test("clear during connection invalidates before cancellation and suppresses the
   act(() => controller.draft(sessionId, "question"));
   await act(async () => { void controller.send(sessionId); });
   expect(button("消去").disabled).toBe(false);
-  act(() => button("消去").click());
+  await act(async () => button("消去").click());
   expect(vi.mocked(cancelAiRequest)).toHaveBeenCalledWith(id);
   await act(async () => finish({ request_id: id, content: "late" }));
   expect(container.querySelector(".ai-chat-assistant")).toBeNull();
@@ -137,4 +137,44 @@ test("connection confirmation applies only to this session and never sends by it
   await act(async () => button("送信").click());
   expect(vi.mocked(startAiDocumentChat).mock.calls[0][0].expectedConnection).toBe("two");
   expect(Object.keys(vi.mocked(startAiDocumentChat).mock.calls[0][0])).not.toContain("apiKey");
+});
+
+
+test("closing the panel keeps generation alive and other tabs keep independent drafts", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  vi.mocked(cancelAiRequest).mockResolvedValue(true);
+  let finish!: (value: { request_id: string; content: string }) => void;
+  let requestId = "";
+  vi.mocked(startAiDocumentChat).mockImplementation((request) => { requestId = request.requestId; return new Promise((resolve) => { finish = resolve; }); });
+  await openChat();
+  const firstId = controller.getSnapshot().selectedSessionId!;
+  act(() => controller.draft(firstId, "first question"));
+  let pending!: Promise<void>;
+  await act(async () => { pending = controller.send(firstId); });
+  try {
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="文書相談を追加"]')!.click());
+    const secondId = controller.getSnapshot().selectedSessionId!;
+    expect(secondId === firstId).toBe(false);
+    expect(container.querySelector("textarea")?.disabled).toBe(false);
+    act(() => controller.draft(secondId, "second draft"));
+    expect(button("送信").disabled).toBe(true);
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="AI チャットを閉じる"]')!.click());
+    expect(vi.mocked(cancelAiRequest)).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => { finish({ request_id: requestId, content: "background answer" }); await pending; });
+  }
+  expect(controller.getSnapshot().sessions[0].chat.messages[1].content).toBe("background answer");
+  expect(controller.getSnapshot().sessions[1].draft).toBe("second draft");
+});
+test("selection changes during delete confirmation cannot delete a different conversation", async () => {
+  vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
+  let confirm!: (value: boolean) => void;
+  await openChat(vi.fn(), vi.fn(() => new Promise<boolean>((resolve) => { confirm = resolve; })));
+  const firstId = controller.getSnapshot().selectedSessionId!;
+  act(() => { controller.draft(firstId, "keep"); controller.add("guide.md"); });
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="文書相談 1を削除"]')!.click());
+  act(() => controller.select(firstId));
+  await act(async () => confirm(true));
+  expect(controller.getSnapshot().sessions).toHaveLength(2);
+  expect(controller.getSnapshot().sessions[0].draft).toBe("keep");
 });

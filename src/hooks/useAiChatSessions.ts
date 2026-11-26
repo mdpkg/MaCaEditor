@@ -3,7 +3,7 @@ import { ChatSessionsController } from "../lib/chatSessionsController";
 import { createAiChatSessions } from "../lib/aiChatSessions";
 import { cancelAiRequest, loadChatConnection, startAiDocumentChat } from "../lib/tauri";
 import { readAiError } from "../lib/aiSelection";
-import { isChatTransportBusy, subscribeChatTransport } from "../lib/chatTransport";
+import { chatRequestOwner, isChatTransportBusy, subscribeChatTransport } from "../lib/chatTransport";
 
 export function useAiChatSessions(scope: string | null, document: (scope: string, path: string) => string | undefined) {
   const source = useRef(document); source.current = document;
@@ -21,5 +21,5 @@ export function useAiChatSessions(scope: string | null, document: (scope: string
     window.addEventListener("focus", refresh);
     return () => { window.removeEventListener("focus", refresh); instance.dispose(); };
   }, [scope]);
-  return { controller, state, busy };
+  return { controller, state, busy, owner: chatRequestOwner() };
 }

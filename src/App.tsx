@@ -19,6 +19,7 @@ import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { AiSelectionActionDialog } from "./components/AiSelectionActionDialog";
 import { AiChatPanel } from "./components/AiChatPanel";
 import { useAiChatSessions } from "./hooks/useAiChatSessions";
+import { chatHistoryPathChanges, type ChatPathMove } from "./lib/chatFileChanges";
 import { AiDiagramEditDialog } from "./components/AiDiagramEditDialog";
 import { applyDiagramEdit } from "./lib/aiDiagramEditApply";
 import { ThirdPartyLicensesDialog } from "./components/ThirdPartyLicensesDialog";
@@ -262,6 +263,8 @@ export default function App() {
     format: "plantuml" | "mermaid"; path: string; session: number;
   } | null>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
+  const chatReturnFocusRef = useRef<{ scope: string; path?: string }>();
+  const chatPathMovesRef = useRef(new WeakMap<EditHistoryEntry, ChatPathMove[]>());
   const editorCursorsRef = useRef(new Map<string, number>());
   const editorScrollTopsRef = useRef(new Map<string, number>());
   const marpPositionsRef = useRef(new Map<string, MarpPosition>());
@@ -337,9 +340,12 @@ export default function App() {
     return file?.is_text && isMarkdownPath(path) ? file.content ?? "" : undefined;
   });
   const chacha = useChachaRuntime(doc ? `${documentSessionRef.current}:${fileTreeStateKey(doc.origin) ?? "untitled"}` : null);
+  const automaticChachaSuppressed = aiChatOpen || chat.busy || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen;
+  const chatActivity = chat.state.sessions.find((session) => session.id === chat.owner?.sessionId);
+  const chatActivityLabel = chatActivity?.phase === "starting" ? "接続中" : chatActivity?.phase === "running" ? "生成中" : "停止処理中";
   useEffect(() => {
-    if (aiChatOpen || aiSelection || aiDiagramEdit || aiSelectionRunning) chacha.runtime?.session.dismiss();
-  }, [chacha.runtime, aiChatOpen, aiSelection, aiDiagramEdit, aiSelectionRunning]);
+    chacha.runtime?.session.dismiss();
+  }, [chacha.runtime, automaticChachaSuppressed]);
   useEffect(() => {
     if (!originPath || (originKind !== "package" && originKind !== "folder")) return;
     const recent: RecentDocument = { path: originPath, kind: originKind };
@@ -383,7 +389,7 @@ export default function App() {
   const selectedFile: FileInfo | undefined = doc?.files.find(
     (f) => f.path === selectedPath,
   );
-  const recordDocumentOperation = (next: DocumentState, label: string, focus?: EditHistoryFocus) => {
+  const recordDocumentOperation = (next: DocumentState, label: string, focus?: EditHistoryFocus, moves: ChatPathMove[] = []) => {
     const current = documentRef.current;
     if (!current) return;
     const entry = fileHistoryEntry(current, next, label, focus);
@@ -391,6 +397,8 @@ export default function App() {
     typingRef.current = null;
     recordEdit(editHistoryRef.current, entry);
     applyDocumentState(withDocumentDirty(next));
+    if (moves.length) chatPathMovesRef.current.set(entry, moves);
+    chat.controller?.paths(chatHistoryPathChanges(entry, "redo", moves));
     return entry;
   };
   const applyEditHistory = (direction: HistoryDirection, expectedEntry?: EditHistoryEntry) => {
@@ -418,6 +426,7 @@ export default function App() {
       typingRef.current = null;
       history.cursor += undo ? -1 : 1;
       applyDocumentState(next);
+      chat.controller?.paths(chatHistoryPathChanges(entry, direction, chatPathMovesRef.current.get(entry)));
       setSelectedFolder(null);
       setSelectedPath(entry.kind === "text" ? entry.path : focus?.path ?? next.entrypoint);
       if (entry.kind === "files") {
@@ -1495,7 +1504,7 @@ export default function App() {
     const destination = parent ? `${parent}/${renamedName}` : renamedName;
     try {
       const renamed = movePath(doc, path, destination);
-      recordDocumentOperation(renamed, `${path} の名前変更`);
+      recordDocumentOperation(renamed, `${path} の名前変更`, undefined, [{ from: path, to: destination }]);
       setSelectedFolder((current) => current === path ? destination : current?.startsWith(path + "/") ? destination + current.slice(path.length) : current);
       setSelectedPath(destination);
       setMode("preview");
@@ -1515,7 +1524,7 @@ export default function App() {
       const mapPath = (current: string | null) => current === path
         ? destination
         : current?.startsWith(`${path}/`) ? `${destination}${current.slice(path.length)}` : current;
-      const entry = recordDocumentOperation(moved, `${path} の移動`);
+      const entry = recordDocumentOperation(moved, `${path} の移動`, undefined, [{ from: path, to: destination }]);
       setSelectedFolder((current) => mapPath(current));
       setSelectedPath((current) => mapPath(current));
       setDrawingPath((current) => mapPath(current));
@@ -1805,6 +1814,17 @@ export default function App() {
   }, [printTitle]);
   const displayContent = displayFile?.is_text ? displayFile.content ?? "" : "";
   const displayIsMarkdown = displayFile ? isMarkdownPath(displayFile.path) : false;
+  const openAiChat = () => {
+    chatReturnFocusRef.current = { scope: String(documentSessionRef.current), path: displayFile?.path };
+    setAiChatOpen(true);
+  };
+  const closeAiChat = () => {
+    setAiChatOpen(false);
+    const previous = chatReturnFocusRef.current;
+    const editor = previous?.scope === String(documentSessionRef.current) && previous.path === displayFile?.path
+      ? documentAreaRef.current?.querySelector<HTMLElement>(".cm-content") : null;
+    (editor ?? document.getElementById("ai-chat-toggle"))?.focus({ preventScroll: true });
+  };
   useEffect(() => {
     if (aiChatOpen && displayFile && displayIsMarkdown) chat.controller?.initialize(displayFile.path);
   }, [aiChatOpen, chat.controller, displayFile?.path, displayIsMarkdown]);
@@ -1963,8 +1983,8 @@ export default function App() {
         aiSelectionRunning={aiSelectionRunning}
         onAiSelection={handleAiSelection}
         aiChatOpen={aiChatOpen}
-        aiChatEnabled={displayIsMarkdown}
-        onToggleAiChat={() => setAiChatOpen((open) => !open)}
+        aiChatEnabled={!!doc}
+        onToggleAiChat={() => { if (aiChatOpen) closeAiChat(); else openAiChat(); }}
         showToc={showToc}
         onShowTocChange={setShowToc}
         rspressMode={rspressMode}
@@ -2166,7 +2186,7 @@ export default function App() {
                     key={`${editorSession}:${displayFile.path}`}
                     chachaSession={displayIsMarkdown ? chacha.runtime?.session : undefined}
                     chachaFileId={displayFile.path}
-                    chachaBlocked={aiChatOpen || !!aiSelection || !!aiDiagramEdit || aiSelectionRunning || fileTask !== null || aiSettingsOpen || printDialogRef.current}
+                    chachaBlocked={automaticChachaSuppressed || printDialogRef.current}
                     value={displayContent}
                     onChange={(content, group) => recordTextEdit(displayFile.path, editorSession, content, group)}
                     onHistory={applyEditHistory}
@@ -2235,11 +2255,13 @@ export default function App() {
           )}
           </Suspense>
         </main>
-        {aiChatOpen && displayFile && displayIsMarkdown && chat.controller && (
+        {aiChatOpen && doc && chat.controller && (
           <AiChatPanel
             controller={chat.controller}
+            markdownPath={displayIsMarkdown ? displayFile?.path : undefined}
+            onConfirm={async (request) => (await ask(request)) !== null}
             onOpenAiSettings={() => setAiSettingsOpen(true)}
-            onClose={() => setAiChatOpen(false)}
+            onClose={closeAiChat}
           />
         )}
       </div>
@@ -2366,6 +2388,7 @@ export default function App() {
           showErrorDetails();
         } : undefined}
       >
+        {chat.busy && <button className="ai-chat-status" disabled={!doc} onClick={openAiChat}>AIチャット：{chatActivityLabel}（開く）</button>}
         {doc && <ChachaControls runtime={chacha.runtime} settings={chacha.settings} compact onOpenAiSettings={() => setAiSettingsOpen(true)} />}
       </StatusBar>
       {notificationHistoryOpen && (

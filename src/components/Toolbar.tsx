@@ -277,7 +277,7 @@ export function Toolbar({
           </Menu>
         )}
       </div>
-      <button type="button" aria-pressed={aiChatOpen} disabled={!aiChatEnabled} onClick={onToggleAiChat}>{uiText("AI Chat")}</button>
+      <button id="ai-chat-toggle" type="button" aria-pressed={aiChatOpen} disabled={!aiChatEnabled} onClick={onToggleAiChat}>{uiText("AI Chat")}</button>
       <div className="toolbar-menu">
         <button
           type="button"

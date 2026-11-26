@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { AiChatSession } from "../lib/aiChatSessions";
 export const chatTabId = (id: string) => `ai-chat-tab-${id}`;
 export const chatPanelId = (id: string) => `ai-chat-panel-${id}`;
@@ -11,7 +11,10 @@ export function AiChatTabs({ sessions, selectedId, canAdd, focusRequest = 0, onS
   const reasonId = useId();
   const focusId = sessions.some((session) => session.id === focusedId) ? focusedId : selectedId ?? sessions[0]?.id;
   const reason = !canAdd ? "Markdownを選ぶと追加できます。" : sessions.length >= 20 ? "会話は20件までです。不要な会話を削除してください。" : undefined;
-  useEffect(() => setFocusedId(selectedId), [selectedId]);
+  useLayoutEffect(() => {
+    setFocusedId(selectedId);
+    if (selectedId) refs.current.get(selectedId)?.parentElement?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selectedId]);
   useLayoutEffect(() => {
     if (previousFocusRequest.current === focusRequest) return;
     previousFocusRequest.current = focusRequest;

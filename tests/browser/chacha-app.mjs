@@ -10,8 +10,8 @@ before(async () => {
   await server.listen(); browser = await chromium.launch();
 });
 after(async () => { await browser?.close(); await server?.close(); });
-async function fixture(t, width = 1100) {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+async function fixture(t, width = 1100, scale = 1) {
+  const page = await browser.newPage({ viewport: { width, height: Math.round(900 / scale) }, deviceScaleFactor: scale });
   page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(120000);
   const errors = []; page.on("pageerror", (error) => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
@@ -19,14 +19,14 @@ async function fixture(t, width = 1100) {
     let nextCallback = 1;
     const callbacks = new Map();
     const state = window.__chachaTest = {
-      requests: [], saves: [], preferences: {}, connection: { endpoint: "http://127.0.0.1:9/v1", model: "fixture-reader", revision: "one" },
-      nextPath: "F:/fixture/a.mdpkg",
+      requests: [], chatRequests: [], chatAttempts: [], chatPending: [], chatMode: "normal", cancellations: [], saves: [], preferences: {}, connection: { endpoint: "http://127.0.0.1:9/v1", model: "fixture-reader", revision: "one" },
+      nextPath: "F:/fixture/a.mdpkg", savePath: "F:/fixture/saved.mdpkg",
       connectionUnavailable: false,
       mode: "normal", pending: [],
     };
     const source = "---\ntitle: PRIVATE-FRONTMATTER\n---\n\n# 茶々入れ検証\n\n前の段落\n\n対象\n\n後の段落\n\n```\nPRIVATE-CODE\n```\n\n遠い段落";
     const packageInfo = () => ({ manifest: { version: "2.0", entrypoint: "index.md" }, entrypoint: "index.md", files: [
-      { path: "index.md", is_text: true, base64: null, content: source }, { path: "guide.md", is_text: true, base64: null, content: "別のMarkdown" },
+      { path: "index.md", is_text: true, base64: null, content: source }, { path: "guide.md", is_text: true, base64: null, content: "別のMarkdown" }, { path: "notes.txt", is_text: true, base64: null, content: "plain file" },
     ] });
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
     window.__TAURI_INTERNALS__ = {
@@ -36,6 +36,7 @@ async function fixture(t, width = 1100) {
       async invoke(command, args) {
         if (command === "plugin:event|listen") return nextCallback++;
         if (command === "plugin:dialog|open") return state.nextPath;
+        if (command === "plugin:dialog|save") return state.savePath;
         if (command === "open_package") return packageInfo();
         if (command === "read_editor_preferences") return structuredClone(state.preferences);
         if (command === "save_editor_preferences") { Object.assign(state.preferences, structuredClone(args.preferences)); return; }
@@ -44,6 +45,23 @@ async function fixture(t, width = 1100) {
         if (command === "chat_connection") return { ...state.connection, endpoint: new URL(state.connection.endpoint).origin };
         if (command === "load_ai_config") return { provider: "OpenAiCompatible", base_url: state.connection.endpoint, model: state.connection.model, api_key: null, temperature: 0.7, max_output_tokens: 4096, connect_timeout_seconds: 10, request_timeout_seconds: 300 };
         if (command === "save_ai_config") { state.connection = { endpoint: args.config.base_url, model: args.config.model, revision: "changed" }; return; }
+        if (command === "ai_document_chat") {
+          let index = 0;
+          const emit = (message) => callbacks.get(args.channel.id)?.({ index: index++, message });
+          const record = { requestId: args.requestId, expectedConnection: args.expectedConnection, filename: args.filename,
+            currentDocument: args.currentDocument, history: args.history, question: args.question, fields: Object.keys(args) };
+          state.chatAttempts.push(structuredClone(record));
+          try {
+            if (args.expectedConnection !== state.connection.revision) throw { kind: "InvalidConfiguration", message: "chat_connection_changed" };
+            state.chatRequests.push(structuredClone(record));
+            emit({ type: "started", request_id: args.requestId });
+            emit({ type: "delta", request_id: args.requestId, content: "途中の回答" });
+            if (state.chatMode === "delayed") return await new Promise((resolve) => state.chatPending.push({
+              id: args.requestId, finish(content) { resolve({ request_id: args.requestId, content }); },
+            }));
+            return { request_id: args.requestId, content: "会話の確定回答" };
+          } finally { callbacks.get(args.channel.id)?.({ end: true, index }); }
+        }
         if (command === "ai_chacha") {
           assertConnection(args);
           state.requests.push(structuredClone(args));
@@ -51,7 +69,7 @@ async function fixture(t, width = 1100) {
           if (state.mode === "delayed") return new Promise((resolve) => state.pending.push(resolve));
           return JSON.stringify({ type: "reaction", comment: args.request.messages[1].content.includes("辛口") ? "辛口の反応です。" : "読んでいるよ。" });
         }
-        if (command === "cancel_ai_request") return false;
+        if (command === "cancel_ai_request") { state.cancellations.push(args.requestId); return false; }
         if (command === "save_package") { state.saves.push(structuredClone(args.request)); return {}; }
         return null;
       },
@@ -182,3 +200,130 @@ test("LLM停止時も編集・保存でき、3回失敗で静かに停止し自�
   await page.getByRole("button", { name: "茶々入れを再開", exact: true }).click();
   await page.clock.fastForward(3600000); assert.equal((await requests(page)).length, 3);
 });
+
+
+test("チャットのタブ・対象ファイル・保存先・非Markdown選択が独立し保存内容へ混入しない", async (t) => {
+  const page = await fixture(t);
+  const toggle = page.getByRole("button", { name: "AI チャット", exact: true });
+  await toggle.click();
+  const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
+  await panel.getByRole("tab", { name: "文書相談 1", exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+  await page.locator('[data-path="guide.md"]').click();
+  await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("CHAT-ONLY-QUESTION-A");
+  await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await panel.getByText("会話の確定回答", { exact: true }).waitFor();
+  let sent = await page.evaluate(() => window.__chachaTest.chatRequests);
+  assert.equal(sent[0].filename, "index.md"); assert.match(sent[0].currentDocument, /PRIVATE-FRONTMATTER/);
+  assert.ok(!sent[0].fields.includes("apiKey"));
+  await panel.getByRole("button", { name: "文書相談を追加", exact: true }).click();
+  const input = panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true });
+  await input.fill("CHAT-ONLY-DRAFT-B");
+  await panel.getByRole("tab", { name: "文書相談 1", exact: true }).click();
+  assert.equal(await page.locator('[data-path="guide.md"]').getAttribute("aria-selected"), "true");
+  await panel.getByRole("tab", { name: "文書相談 2", exact: true }).click();
+  assert.equal(await input.inputValue(), "CHAT-ONLY-DRAFT-B");
+  await panel.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click(); await toggle.click();
+  assert.equal(await input.inputValue(), "CHAT-ONLY-DRAFT-B");
+  await page.keyboard.press("Control+Shift+s");
+  await page.waitForFunction(() => window.__chachaTest.saves.length === 1);
+  assert.equal(await panel.getByRole("tab").count(), 2);
+  assert.equal(await input.inputValue(), "CHAT-ONLY-DRAFT-B");
+  const saved = await page.evaluate(() => JSON.stringify(window.__chachaTest.saves));
+  assert.ok(!saved.includes("CHAT-ONLY") && !saved.includes("会話の確定回答"));
+  await page.locator('[data-path="notes.txt"]').click();
+  assert.equal(await panel.getByRole("button", { name: "文書相談を追加", exact: true }).getAttribute("aria-disabled"), "true");
+  await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await page.waitForFunction(() => window.__chachaTest.chatRequests.length === 2);
+  sent = await page.evaluate(() => window.__chachaTest.chatRequests);
+  assert.equal(sent[1].filename, "guide.md"); assert.equal(sent[1].currentDocument, "別のMarkdown");
+  assert.deepEqual(sent[1].history, []);
+});
+
+
+test("チャットを閉じた生成中と停止終了待ちは自動茶々入れを抑制し過去の編集を再送しない", async (t) => {
+  const page = await fixture(t);
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  await page.getByRole("dialog", { name: "この文書で茶々入れを有効化", exact: true }).getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await page.evaluate(() => { window.__chachaTest.chatMode = "delayed"; });
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
+  await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("FIRST-QUESTION");
+  await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await page.waitForFunction(() => window.__chachaTest.chatPending.length === 1);
+  await panel.getByRole("button", { name: "文書相談を追加", exact: true }).click();
+  const input = panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true });
+  await input.fill("SECOND-DRAFT"); assert.equal(await panel.getByRole("button", { name: "送信", exact: true }).isDisabled(), true);
+  await panel.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
+  await page.locator(".ai-chat-status").waitFor();
+  await write(page); await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
+  await page.locator(".ai-chat-status").click();
+  assert.equal(await input.inputValue(), "SECOND-DRAFT");
+  await panel.getByRole("button", { name: "生成中の会話へ移動", exact: true }).click();
+  await panel.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
+  await page.evaluate(() => window.__chachaTest.chatPending.shift().finish("FIRST-FULL-ANSWER"));
+  await page.locator(".ai-chat-status").waitFor({ state: "hidden" });
+  await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  await panel.getByText("FIRST-FULL-ANSWER", { exact: true }).waitFor();
+  await panel.getByRole("tab", { name: "文書相談 2", exact: true }).click(); assert.equal(await input.inputValue(), "SECOND-DRAFT");
+  await panel.getByRole("button", { name: "送信", exact: true }).click();
+  await page.waitForFunction(() => window.__chachaTest.chatPending.length === 1);
+  await panel.getByRole("button", { name: "キャンセル", exact: true }).click();
+  await panel.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
+  await write(page); await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
+  await page.evaluate(() => window.__chachaTest.chatPending.shift().finish("IGNORED-LATE-ANSWER"));
+  await page.locator(".ai-chat-status").waitFor({ state: "hidden" });
+  await page.clock.fastForward(150000); assert.equal((await requests(page)).length, 0);
+  await write(page); await page.clock.runFor(5050); await page.waitForFunction(() => window.__chachaTest.requests.length === 1);
+  assert.equal(await page.getByRole("button", { name: "茶々入れを一時停止", exact: true }).count(), 1);
+});
+
+
+test("チャットの参照先は名前変更とUndo／Redoへ追従し削除復元では再接続しない", async (t) => {
+  const page = await fixture(t);
+  await page.locator('[data-path="guide.md"]').click();
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
+  await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("retained draft");
+  await page.locator('[data-path="guide.md"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "名前を変更", exact: true }).click();
+  const rename = page.getByRole("dialog", { name: "guide.md の名前を変更", exact: true });
+  await rename.getByRole("textbox").fill("renamed");
+  await rename.getByRole("button", { name: "名前を変更", exact: true }).click();
+  await panel.locator('[title="renamed.md"]').waitFor();
+  await page.getByRole("button", { name: "ファイル", exact: true }).click();
+  await page.getByRole("menuitem", { name: "元に戻す", exact: true }).click();
+  await panel.locator('[title="guide.md"]').waitFor();
+  await page.getByRole("button", { name: "ファイル", exact: true }).click();
+  await page.getByRole("menuitem", { name: "やり直し", exact: true }).click();
+  await panel.locator('[title="renamed.md"]').waitFor();
+  await page.locator('[data-path="renamed.md"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "削除", exact: true }).click();
+  await page.getByRole("dialog", { name: "renamed.md を削除しますか？", exact: true }).getByRole("button", { name: "削除", exact: true }).click();
+  await panel.getByText(/この会話は読み取り専用/).waitFor();
+  assert.equal(await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).inputValue(), "retained draft");
+  assert.equal(await panel.getByRole("button", { name: "送信", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "ファイル", exact: true }).click();
+  await page.getByRole("menuitem", { name: "元に戻す", exact: true }).click();
+  await page.locator('[data-path="renamed.md"]').waitFor();
+  assert.equal(await panel.getByRole("button", { name: "送信", exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+});
+for (const [width, scale] of [[360, 1], [550, 2]]) for (const theme of ["light", "dark"]) {
+  test(`チャットは${width}px・${scale}倍・${theme}で選択タブと入力を画面内に表示する`, async (t) => {
+    const page = await fixture(t, width, scale); await page.emulateMedia({ colorScheme: theme });
+    await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+    const panel = page.getByRole("complementary", { name: "AI チャット", exact: true });
+    await panel.getByRole("tab").waitFor();
+    for (let n = 0; n < 7; n++) await panel.getByRole("button", { name: "文書相談を追加", exact: true }).click();
+    const rect = await panel.boundingBox(), list = await panel.getByRole("tablist").boundingBox();
+    const selected = await panel.locator('[role="tab"][aria-selected="true"]').boundingBox();
+    assert.ok(rect.x >= 0 && rect.x + rect.width <= width + 1);
+    assert.ok(selected.x >= list.x - 1 && selected.x + selected.width <= list.x + list.width + 1);
+    assert.equal(await panel.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).evaluate((element) => element === document.activeElement), true);
+    assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+    if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, `chat-${width}-${theme}-${scale}x.png`) });
+  });
+}
+
