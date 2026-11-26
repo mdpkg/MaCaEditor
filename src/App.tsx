@@ -2277,7 +2277,7 @@ export default function App() {
         <AboutDialog version={packageInfo.version} onClose={() => setAboutOpen(false)} />
       )}
       {aiSettingsOpen && (
-        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} onChachaSettingsSaved={chacha.applySettings} onConnectionSaved={async () => { await Promise.all([chacha.connectionSaved(), chat.controller?.refreshConnection()]); }}
+        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} onChachaSettingsSaved={chacha.applySettings} onConnectionSaved={async () => { await Promise.all([chacha.connectionSaved(), chat.refreshConnection()]); }}
           chachaControls={doc ? <ChachaControls runtime={chacha.runtime} settings={chacha.settings} /> : <p>文書を開くと、この文書だけで茶々入れを有効化できます。</p>} />
       )}
       {aiSelection && (

@@ -29,6 +29,7 @@ pub struct OpenAiCompatibleProvider {
     config: OpenAIConfig,
     http: reqwest::Client,
     model: String,
+    chat_limits: bool,
 }
 
 impl OpenAiCompatibleProvider {
@@ -70,13 +71,15 @@ impl OpenAiCompatibleProvider {
             config,
             http: reqwest::Client::new(),
             model: "default".to_string(),
+            chat_limits: false,
         }
     }
 
     fn client(&self, last_error: Option<RetryError>) -> Client<OpenAIConfig> {
         let http = self.http.clone();
+        let chat_limits = self.chat_limits;
         let service = service_fn(move |request| {
-            execute_http_request(http.clone(), request, last_error.clone())
+            execute_http_request(http.clone(), request, last_error.clone(), chat_limits)
         });
         Client::build(self.http.clone(), self.config.clone()).with_http_service(service)
     }
@@ -85,6 +88,7 @@ impl OpenAiCompatibleProvider {
         self.model = model.into();
         self
     }
+    pub fn with_chat_limits(mut self) -> Self { self.chat_limits = true; self }
 
     /// Chat uses only the key from its revision-checked saved snapshot.
     pub fn with_explicit_api_key(mut self, key: Option<&str>) -> Self {
@@ -98,6 +102,9 @@ impl OpenAiCompatibleProvider {
         request: &AiRequest,
         stream: bool,
     ) -> Result<CreateChatCompletionRequest, AiError> {
+        if self.chat_limits && model.len() > 1024 * 1024 {
+            return Err(AiError::InvalidConfiguration("chat request exceeds 1 MiB".into()));
+        }
         let mut builder = CreateChatCompletionRequestArgs::default();
         let messages = request
             .messages
@@ -115,7 +122,11 @@ impl OpenAiCompatibleProvider {
         if stream {
             builder.stream(true);
         }
-        builder.build().map_err(|e| AiError::InvalidConfiguration(e.to_string()))
+        let request = builder.build().map_err(|e| AiError::InvalidConfiguration(e.to_string()))?;
+        if self.chat_limits && serde_json::to_vec(&request).map_err(|_| AiError::InvalidConfiguration("invalid chat request".into()))?.len() > 1024 * 1024 {
+            return Err(AiError::InvalidConfiguration("chat request exceeds 1 MiB".into()));
+        }
+        Ok(request)
     }
 }
 
@@ -274,7 +285,7 @@ impl OpenAiCompatibleProvider {
                 .build();
             async { request.map_err(OpenAIError::Reqwest) }
         });
-        let response = execute_http_request(self.http.clone(), factory, last_error)
+        let response = execute_http_request(self.http.clone(), factory, last_error, self.chat_limits)
             .await
             .map_err(map_openai_error)?;
         let status = response.status();
@@ -302,16 +313,71 @@ impl OpenAiCompatibleProvider {
     }
 }
 
+/// Bound wire data before the SSE parser or SDK error-body collection allocates it.
+fn bounded_chat_response(response: reqwest::Response) -> reqwest::Response {
+    let status = response.status(); let version = response.version(); let headers = response.headers().clone();
+    let media = headers.get(reqwest::header::CONTENT_TYPE).and_then(|value| value.to_str().ok())
+        .map(|value| value.split(';').next().unwrap_or("").trim());
+    let events = status.is_success() && media.is_none_or(|value| value.eq_ignore_ascii_case("text/event-stream"));
+    let mut budget = ChatWireBudget { events, bytes: 0, line_content: false, cr: false };
+    let body = reqwest::Body::wrap_stream(response.bytes_stream().map(move |chunk| {
+        let chunk = chunk.map_err(std::io::Error::other)?;
+        budget.consume(&chunk)?;
+        Ok::<_, std::io::Error>(chunk)
+    }));
+    let mut response = tauri::http::Response::new(body);
+    *response.status_mut() = status; *response.version_mut() = version; *response.headers_mut() = headers;
+    response.into()
+}
+struct ChatWireBudget { events: bool, bytes: usize, line_content: bool, cr: bool }
+impl ChatWireBudget {
+    fn consume(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
+        let limit = if self.events { 512 * 1024 } else { 64 * 1024 };
+        for &byte in chunk {
+            self.bytes += 1;
+            if self.bytes > limit { return Err(std::io::Error::other("chat wire response limit exceeded")); }
+            if !self.events { continue; }
+            if byte == b'\r' || (byte == b'\n' && !self.cr) {
+                if !self.line_content { self.bytes = 0; }
+                self.line_content = false;
+            } else if byte != b'\n' { self.line_content = true; }
+            self.cr = byte == b'\r';
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod chat_wire_tests {
+    use super::*;
+    #[test]
+    fn raw_budget_limits_each_event_across_chunks_and_resets_on_sse_line_endings() {
+        for ending in ["\n\n", "\r\n\r\n", "\r\r"] {
+            let mut budget = ChatWireBudget { events: true, bytes: 0, line_content: false, cr: false };
+            for _ in 0..4 {
+                budget.consume(&vec![b'x'; 400 * 1024]).unwrap();
+                for byte in ending.bytes() { budget.consume(&[byte]).unwrap(); }
+            }
+            budget.consume(&vec![b'x'; 400 * 1024]).unwrap();
+            assert!(budget.consume(&vec![b'x'; 200 * 1024]).is_err());
+        }
+        let mut budget = ChatWireBudget { events: false, bytes: 0, line_content: false, cr: false };
+        budget.consume(&vec![b'\n'; 64 * 1024]).unwrap(); assert!(budget.consume(b"x").is_err());
+    }
+}
+
 async fn execute_http_request(
     http: reqwest::Client,
     request: HttpRequestFactory,
     last_error: Option<RetryError>,
+    chat_limits: bool,
 ) -> Result<reqwest::Response, OpenAIError> {
     let service = service_fn(move |request| {
         let transport = ReqwestService::new(http.clone());
         let last_error = last_error.clone();
         async move {
             let response = transport.oneshot(request).await?;
+            let response = if chat_limits { bounded_chat_response(response) } else { response };
             prepare_retryable_response(response, last_error.as_ref()).await
         }
     });

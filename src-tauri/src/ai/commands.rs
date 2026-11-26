@@ -24,6 +24,10 @@ pub struct ChatCompletion {
     pub request_id: String,
     pub content: String,
 }
+pub fn validate_chat_request_id(id: &str) -> Result<(), AiError> {
+    if id.len() == 36 && uuid::Uuid::parse_str(id).is_ok_and(|uuid| uuid.hyphenated().to_string() == id) { return Ok(()); }
+    Err(AiError::InvalidConfiguration("invalid request ID".into()))
+}
 
 /// Unlike selection/diagram commands, chat resolves only after physical completion.
 pub async fn run_chat_stream<P: AiProvider>(
@@ -35,8 +39,7 @@ pub async fn run_chat_stream<P: AiProvider>(
     connect_seconds: Option<u64>,
     request_seconds: Option<u64>,
 ) -> Result<ChatCompletion, AiError> {
-    uuid::Uuid::parse_str(&request_id)
-        .map_err(|_| AiError::InvalidConfiguration("invalid request ID".into()))?;
+    validate_chat_request_id(&request_id)?;
     if serde_json::to_vec(&request).map_err(|_| AiError::InvalidConfiguration("invalid request".into()))?.len() > 1024 * 1024 {
         return Err(AiError::InvalidConfiguration("chat request exceeds 1 MiB".into()));
     }
@@ -72,11 +75,27 @@ pub async fn run_chat_stream<P: AiProvider>(
         }
         Ok(ChatCompletion { request_id: request_id.clone(), content })
     };
-    tokio::select! {
+    let result = tokio::select! {
         biased;
         _ = token.cancelled() => Err(AiError::Cancelled),
         result = tokio::time::timeout(std::time::Duration::from_secs(request_seconds.unwrap_or(300).clamp(1, 600)), operation) =>
-            result.map_err(|_| AiError::Timeout("request timeout".into()))?,
+            result.unwrap_or_else(|_| Err(AiError::Timeout("request timeout".into()))),
+    };
+    result.map_err(safe_chat_error)
+}
+
+/// Chat diagnostics never echo provider bodies, URLs, document data or credentials.
+fn safe_chat_error(error: AiError) -> AiError {
+    macro_rules! safe { ($kind:ident) => { AiError::$kind("chat request failed; review connection settings or retry".into()) }; }
+    match error {
+        AiError::Cancelled => AiError::Cancelled,
+        AiError::InvalidConfiguration(_) => safe!(InvalidConfiguration), AiError::ConnectionFailed(_) => safe!(ConnectionFailed),
+        AiError::AuthenticationFailed(_) => safe!(AuthenticationFailed), AiError::InvalidProject(_) => safe!(InvalidProject),
+        AiError::PermissionDenied(_) => safe!(PermissionDenied), AiError::ModelNotFound(_) => safe!(ModelNotFound),
+        AiError::RateLimited(_) => safe!(RateLimited), AiError::QuotaExceeded(_) => safe!(QuotaExceeded),
+        AiError::Timeout(_) => safe!(Timeout), AiError::ServerError(_) => safe!(ServerError),
+        AiError::InvalidResponse(_) => safe!(InvalidResponse), AiError::StreamInterrupted(_) => safe!(StreamInterrupted),
+        AiError::Unknown(_) => safe!(Unknown),
     }
 }
 
@@ -129,6 +148,14 @@ mod tests {
     use crate::ai::mock::MockAiProvider;
     use crate::ai::types::{AiMessage, AiRole};
     use std::sync::Mutex;
+    #[test]
+    fn chat_request_ids_require_bounded_canonical_uuids() {
+        let id = uuid::Uuid::new_v4().to_string();
+        assert!(validate_chat_request_id(&id).is_ok());
+        assert!(validate_chat_request_id(&id.replace('-', "")).is_err());
+        assert!(validate_chat_request_id(&format!("urn:uuid:{id}")).is_err());
+        assert!(validate_chat_request_id(&"x".repeat(1000000)).is_err());
+    }
 
     fn sample_request() -> AiRequest {
         AiRequest::new(vec![AiMessage::new(AiRole::User, "hi")])

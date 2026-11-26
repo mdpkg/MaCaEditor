@@ -7,6 +7,20 @@ import type { ChatSessionsController } from "../lib/chatSessionsController";
 import type { AiStreamEvent } from "../types";
 vi.mock("../lib/tauri", () => ({ loadChatConnection: vi.fn(), startAiQuotedChat: vi.fn(), startAiDocumentChat: vi.fn(), cancelAiRequest: vi.fn(async () => true) }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+test("a saved-settings callback refreshes the current document after a scope replacement", async () => {
+  let revision = "one";
+  vi.mocked(loadChatConnection).mockImplementation(async () => ({ endpoint: "https://reader.test", model: "reader", revision }));
+  let current!: ReturnType<typeof useAiChatSessions>;
+  function Harness({ scope }: { scope: string }) { current = useAiChatSessions(scope, () => "source"); return null; }
+  const container = document.createElement("div"), root = createRoot(container);
+  await act(async () => root.render(<Harness scope="old" />));
+  const savedCallback = current.refreshConnection, old = current.controller!;
+  await act(async () => root.render(<Harness scope="new" />));
+  revision = "two"; await act(async () => savedCallback());
+  expect(current.controller!.scope).toBe("new"); expect(current.controller!.getSnapshot().connection?.revision).toBe("two");
+  expect(old.getSnapshot().sessions).toEqual([]);
+  await act(async () => root.unmount());
+});
 test("streaming text updates the panel store without rerendering the editor's App owner", async () => {
   vi.mocked(loadChatConnection).mockResolvedValue({ endpoint: "http://localhost", model: "reader", revision: "rev" });
   let finish!: (value: { request_id: string; content: string }) => void, deliver!: (event: AiStreamEvent) => void;

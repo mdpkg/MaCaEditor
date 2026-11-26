@@ -2,6 +2,14 @@ import { expect, test } from "vitest";
 import { ChatSessionsController } from "./chatSessionsController";
 import type { AiStreamEvent } from "../types";
 const connection = { endpoint: "http://localhost", model: "reader", revision: "one" };
+test("native rejection before started preserves the question draft for correction", async () => {
+  const controller = new ChatSessionsController("doc", { connection: async () => connection, document: () => "source",
+    send: async () => { throw { kind: "InvalidConfiguration", message: "chat request exceeds 1 MiB" }; }, cancel: async () => false });
+  await controller.refreshConnection(); const id = controller.add("a.md")!;
+  controller.draft(id, "keep this question"); await controller.send(id);
+  expect(controller.getSnapshot().sessions[0].draft).toBe("keep this question");
+  expect(controller.getSnapshot().sessions[0].owner).toBeUndefined(); controller.dispose();
+});
 
 test("controller captures the bound file and ignores completion after document disposal", async () => {
   let finish!: (value: { request_id: string; content: string }) => void;

@@ -6,6 +6,7 @@ use crate::ai::config::{AiConfig, validate_config};
 
 const SERVICE_NAME: &str = "maca-editor";
 const KEY_ENTRY: &str = "ai-api-key";
+static CONFIG_ACCESS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// AI 設定を保存する。
 /// API Key は keyring に保存し、設定 JSON には保存しない。
@@ -25,29 +26,32 @@ pub fn save_ai_config(path: &Path, config: &AiConfig) -> Result<(), String> {
         if key.trim().is_empty() {
             return save_without_api_key(path, &json, &entry);
         }
-        entry.set_password(key).map_err(|e| e.to_string())?;
+        return commit_credential(&entry, key, || crate::atomic_save::atomic_save(path, json.as_bytes()).map_err(|error| error.to_string()));
     }
+    let _access = CONFIG_ACCESS.lock().map_err(|_| "configuration access unavailable")?;
     crate::atomic_save::atomic_save(path, json.as_bytes()).map_err(|e| e.to_string())
 }
 
 fn save_without_api_key(path: &Path, json: &str, entry: &keyring::Entry) -> Result<(), String> {
-    let previous_key = match entry.get_secret() {
-        Ok(secret) => match entry.delete_credential() {
-            Ok(()) => Some(secret),
-            Err(keyring::Error::NoEntry) => None,
-            Err(error) => return Err(error.to_string()),
-        },
+    commit_credential(entry, "", || crate::atomic_save::atomic_save(path, json.as_bytes()).map_err(|error| error.to_string()))
+}
+fn commit_credential(entry: &keyring::Entry, key: &str, commit: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let _access = CONFIG_ACCESS.lock().map_err(|_| "configuration access unavailable")?;
+    let previous = match entry.get_secret() {
+        Ok(secret) => Some(secret),
         Err(keyring::Error::NoEntry) => None,
         Err(error) => return Err(error.to_string()),
     };
-
-    if let Err(error) = crate::atomic_save::atomic_save(path, json.as_bytes()) {
-        if let Some(secret) = previous_key {
-            entry
-                .set_secret(&secret)
-                .map_err(|restore_error| format!("{error}\n{restore_error}"))?;
+    if key.trim().is_empty() {
+        match entry.delete_credential() { Ok(()) | Err(keyring::Error::NoEntry) => {}, Err(error) => return Err(error.to_string()) }
+    } else { entry.set_password(key).map_err(|error| error.to_string())?; }
+    if let Err(error) = commit() {
+        let restored = if let Some(secret) = previous { entry.set_secret(&secret) }
+            else { match entry.delete_credential() { Ok(()) | Err(keyring::Error::NoEntry) => Ok(()), Err(error) => Err(error) } };
+        if restored.is_err() {
+            return Err("configuration save and credential rollback failed".into());
         }
-        return Err(error.to_string());
+        return Err(error);
     }
     Ok(())
 }
@@ -55,10 +59,14 @@ fn save_without_api_key(path: &Path, json: &str, entry: &keyring::Entry) -> Resu
 /// AI 設定を読み込む。
 /// API Key は keyring から取得する。
 pub fn load_ai_config(path: &Path) -> Result<AiConfig, String> {
+    read_snapshot(path, load_api_key)
+}
+fn read_snapshot(path: &Path, key: impl FnOnce() -> Option<String>) -> Result<AiConfig, String> {
+    let _access = CONFIG_ACCESS.lock().map_err(|_| "configuration access unavailable")?;
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut config: AiConfig =
         serde_json::from_str(&json).map_err(|e| e.to_string())?;
-    config.api_key = load_api_key();
+    config.api_key = key();
     Ok(config)
 }
 
@@ -81,6 +89,7 @@ pub fn load_api_key() -> Option<String> {
 
 /// API Key を keyring から削除する。
 pub fn delete_api_key() -> Result<(), String> {
+    let _access = CONFIG_ACCESS.lock().map_err(|_| "configuration access unavailable")?;
     let entry = keyring::Entry::new(SERVICE_NAME, KEY_ENTRY)
         .map_err(|e| e.to_string())?;
     entry.delete_credential().map_err(|e| e.to_string())
@@ -93,6 +102,38 @@ pub fn ai_config_path(config_directory: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_nonblank_key_save_restores_the_previous_credential() {
+        let entry = keyring::Entry::new_with_credential(Box::new(keyring::mock::MockCredential::default()));
+        entry.set_password("old-key").unwrap();
+        assert!(commit_credential(&entry, "new-key", || Err("cannot commit config".into())).is_err());
+        assert_eq!(entry.get_password().unwrap(), "old-key");
+    }
+    #[test]
+    fn a_config_reader_waits_for_the_entire_credential_and_json_commit() {
+        use std::sync::{Arc, mpsc};
+        let path = std::env::temp_dir().join(format!("maca-config-snapshot-{}.json", uuid::Uuid::new_v4()));
+        let entry = Arc::new(keyring::Entry::new_with_credential(Box::new(keyring::mock::MockCredential::default())));
+        entry.set_password("old-key").unwrap();
+        let config = AiConfig::new(crate::ai::config::AiProviderKind::OpenAiCompatible, "https://old.test/v1".into(), None, "old-model".into(), None, None, None, None);
+        std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel(); let (release_tx, release_rx) = mpsc::channel();
+        let writer_entry = entry.clone(); let writer_path = path.clone();
+        let writer = std::thread::spawn(move || commit_credential(&writer_entry, "new-key", || {
+            entered_tx.send(()).unwrap(); release_rx.recv().unwrap();
+            let mut config = config; config.model = "new-model".into();
+            std::fs::write(writer_path, serde_json::to_vec(&config).unwrap()).map_err(|error| error.to_string())
+        }));
+        entered_rx.recv().unwrap();
+        let (read_tx, read_rx) = mpsc::channel(); let reader_entry = entry.clone(); let reader_path = path.clone();
+        let reader = std::thread::spawn(move || { read_tx.send(read_snapshot(&reader_path, || reader_entry.get_password().ok())).unwrap(); });
+        let early = read_rx.recv_timeout(std::time::Duration::from_millis(50));
+        release_tx.send(()).unwrap(); writer.join().unwrap().unwrap();
+        assert!(early.is_err());
+        let loaded = read_rx.recv().unwrap().unwrap(); reader.join().unwrap();
+        assert_eq!(loaded.model, "new-model"); assert_eq!(loaded.api_key.as_deref(), Some("new-key"));
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn config_path_uses_the_application_directory() {

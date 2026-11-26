@@ -809,13 +809,13 @@ pub async fn ai_document_chat(
     history: Vec<crate::ai::types::AiMessage>,
     question: String,
 ) -> Result<crate::ai::commands::ChatCompletion, AiError> {
-    crate::ai::chat::validate_chat_input(&filename, &history, &question)?;
+    crate::ai::chat::validate_document_input(&filename, &current_document, &history, &question)?;
     let config = crate::ai::chat::accept_connection(load_ai_config(app).map_err(|_| AiError::InvalidConfiguration("saved connection unavailable".into()))?, &expected_connection)?;
     let request = crate::ai::prompt::build_document_chat_request(
         &filename, &current_document, &history, &question,
     );
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, None)
-        .with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
+        .with_chat_limits().with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
     crate::ai::commands::run_chat_stream(
         &provider,
         state.registry.clone(),
@@ -842,7 +842,7 @@ pub async fn ai_continue_chacha(
     let request = crate::ai::chat::build_quoted_request(&quote, &history, &question)?;
     let config = crate::ai::chat::accept_connection(load_ai_config(app).map_err(|_| AiError::InvalidConfiguration("saved connection unavailable".into()))?, &expected_connection)?;
     let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, None)
-        .with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
+        .with_chat_limits().with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
     crate::ai::commands::run_chat_stream(&provider, state.registry.clone(), request_id,
         move |event| { let _ = channel.send(event); }, request, config.connect_timeout_seconds, config.request_timeout_seconds).await
 }
@@ -894,11 +894,11 @@ pub async fn ai_chacha(
 ) -> Result<String, crate::ai::chacha::ChachaFailure> {
     use crate::ai::chacha::{ChachaFailure, execute_cancellable, validate_request, try_enter, connection_revision};
     validate_request(&request)?;
-    uuid::Uuid::parse_str(&request_id).map_err(|_| ChachaFailure::new("invalid"))?;
+    crate::ai::commands::validate_chat_request_id(&request_id).map_err(|_| ChachaFailure::new("invalid"))?;
     let config = load_ai_config(app.clone()).map_err(|_| ChachaFailure::new("connection"))?;
     if connection_revision(&config)? != expected_connection { return Err(ChachaFailure::new("connection")); }
     let _permit = try_enter()?;
-    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, config.api_key.as_deref()).with_model(config.model);
+    let provider = crate::ai::openai::OpenAiCompatibleProvider::new(&config.base_url, None).with_explicit_api_key(config.api_key.as_deref()).with_model(config.model);
     let connect = Duration::from_secs(config.connect_timeout_seconds.unwrap_or(10).min(60));
     let result = execute_cancellable(state.registry.clone(), request_id, Duration::from_secs(60), provider.complete_chacha(request, connect)).await;
     let current = load_ai_config(app).map_err(|_| ChachaFailure::new("connection"))?;
@@ -913,6 +913,7 @@ pub fn cancel_ai_request(
     state: tauri::State<'_, crate::ai::commands::AiStreamState>,
     request_id: String,
 ) -> Result<bool, String> {
+    crate::ai::commands::validate_chat_request_id(&request_id).map_err(|_| "invalid request ID".to_owned())?;
     Ok(state.registry.cancel(&request_id))
 }
 
