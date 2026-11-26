@@ -199,15 +199,15 @@ describe("cancelAiRequest", () => {
 
 describe("startAiDocumentChat", () => {
   test("sends current editor document and conversation to the dedicated command", async () => {
-    invokeMock.mockResolvedValue("chat-1");
+    invokeMock.mockResolvedValue({ request_id: "chat-1", content: "full response" });
     const requestId = await startAiDocumentChat({ requestId: "chat-1",
       baseUrl: "http://localhost:11434/v1", apiKey: null, model: "qwen",
       filename: "README.md", currentDocument: "unsaved BBB",
       history: [{ role: "User", content: "first" }], question: "next",
     }, () => {});
-    expect(requestId).toBe("chat-1");
+    expect(requestId).toEqual({ request_id: "chat-1", content: "full response" });
     expect(invokeMock).toHaveBeenCalledWith("ai_document_chat", expect.objectContaining({
-      filename: "README.md", currentDocument: "unsaved BBB", question: "next",
+      requestId: "chat-1", filename: "README.md", currentDocument: "unsaved BBB", question: "next",
       history: [{ role: "User", content: "first" }],
     }));
   });
