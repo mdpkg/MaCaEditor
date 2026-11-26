@@ -56,7 +56,7 @@ export class ChatSessionsController {
     } catch (reason) {
       if (this.disposed || generation !== this.connectionGeneration) return;
       for (const session of this.state.sessions) if (session.owner) this.stop(session.id);
-      this.dispatch({ type: "connectionError", message: String(reason).slice(0, 4096) });
+      this.dispatch({ type: "connectionError", message: String(reason).slice(0, CHAT_LIMITS.errorCodeUnits) });
     }
   }
   async send(sessionId: string, input?: string) {
@@ -84,7 +84,7 @@ export class ChatSessionsController {
       const current = this.state.sessions.find((item) => item.id === sessionId);
       const owned = !!current && sameRequest(current.owner, owner) && !current.terminal && current.generation === owner.generation;
       let error = this.dependencies.error?.(reason) ?? { kind: "Unknown" as const, message: String(reason) };
-      if (error.kind !== "Cancelled") error = { ...error, message: error.message.slice(0, 4096) };
+      if (error.kind !== "Cancelled") error = { ...error, message: error.message.slice(0, CHAT_LIMITS.errorCodeUnits) };
       this.dispatch({ type: "fail", owner, error });
       if (owned && reason && typeof reason === "object" && "message" in reason && reason.message === "chat_connection_changed") {
         if (!this.disposed && this.state.sessions.find((item) => item.id === sessionId)?.draft === "") this.draft(sessionId, question);
