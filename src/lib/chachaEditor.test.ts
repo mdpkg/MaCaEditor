@@ -2,7 +2,7 @@ import { EditorView, basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
-import { createChachaExtension, continueChachaComment, dismissChachaComment } from "./chachaEditor";
+import { createChachaExtension, expandChachaComment, continueChachaComment, dismissChachaComment } from "./chachaEditor";
 import { ChachaSession } from "./chachaSession";
 import { normalizeChachaSettings } from "./chachaSettings";
 
@@ -42,9 +42,12 @@ test("吹き出しはボタンだけ、明示操作で引用会話を開き本�
   const text = h.view.state.doc.toString(), selection = h.view.state.selection.toJSON(), focus = document.activeElement;
   await vi.advanceTimersByTimeAsync(5000);
   expect(h.transport).toHaveBeenCalledOnce();
-  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れから会話を開く"]')).not.toBeNull();
-  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れから会話を開く"]')!.closest('[aria-hidden="true"]')).toBeNull();
+  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れを表示"]')).not.toBeNull();
+  expect(h.view.dom.querySelector('.cm-chacha-gutter [aria-label="茶々入れを表示"]')!.closest('[aria-hidden="true"]')).toBeNull();
   expect(h.view.dom.querySelector(".cm-chacha-tooltip")).toBeNull();
+  expect(continueChachaComment(h.view)).toBe(false);
+  expect(expandChachaComment(h.view)).toBe(true); await vi.advanceTimersByTimeAsync(30);
+  expect(h.handoff).not.toHaveBeenCalled();
   expect(continueChachaComment(h.view)).toBe(true); await vi.advanceTimersByTimeAsync(30);
   expect(h.view.dom.querySelector(".cm-chacha-tooltip")).toBeNull();
   expect(h.handoff).toHaveBeenCalledWith(expect.objectContaining({ reaction: "<img src=https://example.invalid>読者の声" }));
@@ -52,6 +55,21 @@ test("吹き出しはボタンだけ、明示操作で引用会話を開き本�
   expect(dismissChachaComment(h.view)).toBe(false); await vi.advanceTimersByTimeAsync(0);
   expect(h.view.state.doc.toString()).toBe(text); expect(h.view.state.selection.toJSON()).toEqual(selection);
   expect(document.activeElement).toBe(focus); expect(h.view.scrollDOM.scrollTop).toBe(0);
+});
+test("mini icon opens a plain inline bubble before any chat handoff and stale bubble clicks are ignored", async () => {
+  const h = setup(); h.write(); await vi.advanceTimersByTimeAsync(5000);
+  const text = h.view.state.doc.toString(), selection = h.view.state.selection.toJSON();
+  (h.view.dom.querySelector('[aria-label="茶々入れを表示"]') as HTMLButtonElement).click();
+  await vi.advanceTimersByTimeAsync(30);
+  expect(h.session.snapshot.phase).toBe("expanded"); expect(h.handoff).not.toHaveBeenCalled();
+  const bubble = h.view.dom.querySelector('.cm-chacha-tooltip')!;
+  expect(bubble.textContent).toContain("<img src=https://example.invalid>読者の声"); expect(bubble.querySelector("img,a,script")).toBeNull();
+  const open = bubble.querySelector('[aria-label="茶々入れから会話を開く"]') as HTMLButtonElement;
+  open.click(); await vi.advanceTimersByTimeAsync(30);
+  expect(h.handoff).toHaveBeenCalledOnce(); expect(h.session.snapshot.phase).toBe("idle");
+  open.click(); expect(h.handoff).toHaveBeenCalledOnce();
+  expect(h.view.state.doc.toString()).toBe(text); expect(h.view.state.selection.toJSON()).toEqual(selection);
+  expect(h.transport).toHaveBeenCalledOnce();
 });
 test("通常のEscは削除し、IME・検索・他ツールチップのEscは優先する", async () => {
   const h = setup(); h.write(); await vi.advanceTimersByTimeAsync(5000);
@@ -82,7 +100,7 @@ test("専用キーはIME入力を優先し、引用会話をキーボードだ�
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, ctrlKey: true, altKey: true, isComposing: true, bubbles: true, cancelable: true }));
   expect(h.session.snapshot.phase).toBe("collapsed");
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
-  await vi.advanceTimersByTimeAsync(30); expect(h.session.snapshot.phase).toBe("idle"); expect(h.handoff).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(30); expect(h.session.snapshot.phase).toBe("expanded"); expect(h.handoff).not.toHaveBeenCalled();
   h.view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: 8, ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
   expect(h.session.snapshot.phase).toBe("idle");
 });

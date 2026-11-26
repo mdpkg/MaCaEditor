@@ -37,7 +37,7 @@ for (const width of [900, 360]) {
     const before = await page.evaluate(() => window.MacaChacha.inspect());
     const contentBefore = await page.locator(".cm-content").boundingBox();
     await page.clock.runFor(5000);
-    const openChat = page.getByRole("button", { name: "茶々入れから会話を開く", exact: true });
+    const openChat = page.getByRole("button", { name: "茶々入れを表示", exact: true });
     await openChat.waitFor();
     assert.match(await openChat.getAttribute("title"), /読者の声/);
     const after = await page.evaluate(() => window.MacaChacha.inspect());
@@ -50,6 +50,13 @@ for (const width of [900, 360]) {
     assert.ok(box.width >= 24 && box.height >= 24); assert.ok(box.x >= content.x + content.width - 1);
     const requests = []; page.on("request", (request) => requests.push(request.url()));
     await openChat.click(); await page.clock.runFor(50);
+    const bubble = page.locator(".cm-chacha-tooltip"); await bubble.waitFor();
+    assert.match(await bubble.textContent(), /読者の声/); assert.equal(await page.locator(".ai-chat-quote").count(), 0);
+    assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).calls, 1);
+    assert.equal(await bubble.locator("img,a,script").count(), 0);
+    const bubbleBox = await bubble.boundingBox(); assert.ok(bubbleBox.x >= 0 && bubbleBox.x + bubbleBox.width <= width);
+    if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, `chacha-inline-${width}.png`) });
+    await bubble.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
     const card = page.locator(".ai-chat-quote"); await card.waitFor();
     assert.equal(await page.locator(".cm-chacha-tooltip").count(), 0);
     assert.match(await card.textContent(), /<img src=https:\/\/invalid.test>読者の声/);
@@ -64,24 +71,28 @@ for (const width of [900, 360]) {
 test("VimのInsert→NormalのEscはコメントを消さず、専用キーで会話を開ける", async (t) => {
   const page = await fixture(t, undefined, { vim: true });
   await page.evaluate(() => window.MacaChacha.write()); await page.clock.runFor(5050);
-  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).waitFor();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).waitFor();
   await page.locator(".cm-content").focus(); await page.keyboard.press("i"); await page.keyboard.press("Escape");
   assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "collapsed");
   await page.keyboard.press("Control+Alt+Enter"); await page.clock.runFor(50);
+  assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "expanded");
+  await page.keyboard.press("Enter"); await page.clock.runFor(50);
   assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "idle");
   await page.keyboard.press("Escape"); await page.clock.runFor(50);
   assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "idle");
 });
 test("画面外へ移動したコメントを残さない", async (t) => {
   const page = await fixture(t); await page.evaluate(() => window.MacaChacha.write()); await page.clock.runFor(5050);
-  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).waitFor();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).waitFor();
   await page.evaluate(() => window.MacaChacha.scrollAway()); await page.clock.runFor(50);
   assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "idle");
 });
 test("専用キーで開いた会話はEscで閉じて本文へ焦点を戻せる", async (t) => {
   const page = await fixture(t); await page.evaluate(() => window.MacaChacha.write()); await page.clock.runFor(5050);
-  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).waitFor();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).waitFor();
   await page.keyboard.press("Control+Alt+Enter"); await page.clock.runFor(50);
+  assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "expanded");
+  await page.keyboard.press("Enter"); await page.clock.runFor(50);
   assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "idle");
   await page.keyboard.press("Escape"); await page.clock.runFor(50);
   assert.equal((await page.evaluate(() => window.MacaChacha.inspect())).phase, "idle");
@@ -89,7 +100,7 @@ test("専用キーで開いた会話はEscで閉じて本文へ焦点を戻せ�
 });
 test("補完と検索のEscでコメントを同時に削除しない", async (t) => {
   const page = await fixture(t); await page.evaluate(() => window.MacaChacha.write()); await page.clock.runFor(5050);
-  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).waitFor();
+  await page.getByRole("button", { name: "茶々入れを表示", exact: true }).waitFor();
   await page.evaluate(() => window.MacaChacha.complete()); await page.clock.runFor(200);
   await page.getByRole("listbox").waitFor(); await page.keyboard.press("Escape"); await page.clock.runFor(50);
   assert.equal(await page.getByRole("listbox").count(), 0);

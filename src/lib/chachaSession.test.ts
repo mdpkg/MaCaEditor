@@ -20,7 +20,9 @@ test("handoff uses the actual generation snapshot and retains the bubble if sess
   connection = { endpoint: "https://new.test", model: "new", revision: "two" };
   finish(reply); await vi.advanceTimersByTimeAsync(0);
   const id = session.snapshot.comment!.id;
-  expect(session.continue(id)).toBe(false); expect(session.snapshot.phase).toBe("collapsed");
+  expect(session.continue(id)).toBe(false); expect(handoff).not.toHaveBeenCalled();
+  expect(session.expand("stale-id")).toBe(false); expect(session.expand(id)).toBe(true);
+  expect(session.continue(id)).toBe(false); expect(session.snapshot.phase).toBe("expanded");
   expect(handoff).toHaveBeenCalledWith(expect.objectContaining({ commentId: id, personality: "old persona", context: { target: "対象" }, connection: { revision: "one", endpoint: "https://old.test", model: "old" } }));
   handoff.mockReturnValue(true); expect(session.continue(id)).toBe(true);
   expect(session.continue(id)).toBe(false); expect(transport).toHaveBeenCalledOnce();
@@ -63,6 +65,15 @@ test("未展開の寿命・画面外への移動ではコメントを破棄す�
   h.change(h.target() + 2, h.target() + 2, "2"); h.edit(); await vi.advanceTimersByTimeAsync(120000);
   expect(h.session.snapshot.phase).toBe("collapsed");
   h.hide(); expect(h.session.snapshot.phase).toBe("idle");
+});
+test("opened bubbles remain while reading without extra requests and still invalidate when their context changes", async () => {
+  const h = setup(); h.session.enable(); h.edit(); await vi.advanceTimersByTimeAsync(5000);
+  const id = h.session.snapshot.comment!.id;
+  expect(h.session.expand(id)).toBe(true); await vi.advanceTimersByTimeAsync(300000);
+  expect(h.session.snapshot.phase).toBe("expanded"); expect(h.transport).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  h.change(h.target(), h.target() + 1, "変"); expect(h.session.snapshot.phase).toBe("idle");
+  expect(h.session.expand(id)).toBe(false); expect(h.session.continue(id)).toBe(false);
 });
 test("送信中は多重送信せず、停止時はキャンセル失敗後の応答も破棄する", async () => {
   let resolve!: (value: string) => void; let signal!: AbortSignal;

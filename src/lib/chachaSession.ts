@@ -25,7 +25,7 @@ function mayChangeStructure(before: string, after: string, changes: ChangeDesc):
 }
 export interface ChachaSnapshot {
   enabled: boolean; paused: boolean; reason: "auth" | "rate" | "failures" | "manual" | "connection" | null;
-  phase: "idle" | "requesting" | "pending" | "collapsed";
+  phase: "idle" | "requesting" | "pending" | "collapsed" | "expanded";
   comment?: ChachaComment & { id: string; context: ChachaContext; quote?: QuotedChat };
 }
 
@@ -108,9 +108,14 @@ export class ChachaSession {
     this.context = mapped;
     if (this.snapshot.comment) this.emit({ comment: { ...this.snapshot.comment, context: mapped } });
   }
+  expand(commentId: string) {
+    if (this.disposed || this.snapshot.comment?.id !== commentId || !["collapsed", "expanded"].includes(this.snapshot.phase)) return false;
+    if (this.snapshot.phase === "expanded") return true;
+    this.deadline = Infinity; this.clearTimer(); this.emit({ phase: "expanded" }); return true;
+  }
   continue(commentId: string) {
     const comment = this.snapshot.comment;
-    if (this.disposed || this.snapshot.phase !== "collapsed" || comment?.id !== commentId || !comment.quote) return false;
+    if (this.disposed || this.snapshot.phase !== "expanded" || comment?.id !== commentId || !comment.quote) return false;
     if (!this.continuation?.onContinue(comment.quote)) return false;
     this.dismiss(); return true;
   }
