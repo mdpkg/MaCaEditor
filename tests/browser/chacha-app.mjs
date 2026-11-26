@@ -466,3 +466,16 @@ test("チャットの不審な回答は画像・HTML・危険URLを実行せず�
   const popupPromise = page.waitForEvent("popup"); await answer.getByRole("link", { name: "safe", exact: true }).click();
   const popup = await popupPromise; await popup.waitForLoadState(); assert.equal(popup.url(), "https://safe-reader.test/reader"); await popup.close();
 });
+
+test("狭幅の操作ヘルプは現行の引用会話とタブ・IME送信操作を表示する", async (t) => {
+  const page = await fixture(t, 360, 2);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("button", { name: "ヘルプ", exact: true }).click();
+  await page.getByRole("menuitem", { name: "キーボードショートカット", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "キーボードショートカット", exact: true }); await dialog.waitFor();
+  const text = await dialog.textContent();
+  assert.match(text, /茶々入れから会話を開く/); assert.match(text, /チャットのタブ/); assert.match(text, /Shift\+Enter/); assert.ok(!text.includes("茶々入れを展開"));
+  const box = await dialog.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 360); assert.ok(box.y >= 0 && box.y + box.height <= 450);
+  if (process.env.CHACHA_CAPTURE_DIR) await page.screenshot({ path: join(process.env.CHACHA_CAPTURE_DIR, "chat-help-360-dark-2x.png") });
+  await dialog.getByRole("button", { name: "閉じる", exact: true }).click();
+});
