@@ -110,6 +110,7 @@ export class ChatSessionsController {
       let error = this.dependencies.error?.(reason) ?? { kind: "Unknown" as const, message: String(reason) };
       if (error.kind !== "Cancelled") error = { ...error, message: error.message.slice(0, CHAT_LIMITS.errorCodeUnits) };
       this.dispatch({ type: "fail", owner, error });
+      if (owned && current.phase === "starting" && this.state.sessions.find((item) => item.id === sessionId)?.draft === "") this.draft(sessionId, question);
       if (owned && reason && typeof reason === "object" && "message" in reason && reason.message === "chat_connection_changed") {
         if (!this.disposed && this.state.sessions.find((item) => item.id === sessionId)?.draft === "") this.draft(sessionId, question);
         await this.refreshConnection();

@@ -19,7 +19,7 @@ async function fixture(t, width = 1100, scale = 1) {
     let nextCallback = 1;
     const callbacks = new Map();
     const state = window.__chachaTest = {
-      requests: [], chatRequests: [], chatAttempts: [], chatPending: [], chatMode: "normal", cancellations: [], saves: [], preferences: {}, connection: { endpoint: "http://127.0.0.1:9/v1", model: "fixture-reader", revision: "one" },
+      requests: [], chatRequests: [], chatAttempts: [], chatPending: [], chatMode: "normal", chatAnswer: "会話の確定回答", cancellations: [], saves: [], preferences: {}, connection: { endpoint: "http://127.0.0.1:9/v1", model: "fixture-reader", revision: "one" },
       nextPath: "F:/fixture/a.mdpkg", savePath: "F:/fixture/saved.mdpkg",
       connectionUnavailable: false,
       mode: "normal", pending: [],
@@ -59,7 +59,7 @@ async function fixture(t, width = 1100, scale = 1) {
             if (state.chatMode === "delayed") return await new Promise((resolve) => state.chatPending.push({
               id: args.requestId, finish(content) { resolve({ request_id: args.requestId, content }); },
             }));
-            return { request_id: args.requestId, content: "会話の確定回答" };
+            return { request_id: args.requestId, content: state.chatAnswer };
           } finally { callbacks.get(args.channel.id)?.({ end: true, index }); }
         }
         if (command === "ai_chacha") {
@@ -413,4 +413,56 @@ test("実Appは1文字の追加・削除で評価しnone後も30秒待って追�
   await page.clock.runFor(1000); assert.equal((await requests(page)).length, 2);
   assert.equal(JSON.parse((await requests(page))[1].request.messages[2].content).target, "対象");
   await page.clock.runFor(120000); assert.equal((await requests(page)).length, 2);
+});
+
+test("引用会話は外部接続変更を検出し各セッションの確認後だけ新しい接続へ送る", async (t) => {
+  const page = await fixture(t);
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  await page.getByRole("button", { name: "AI チャットを閉じる", exact: true }).click();
+  await page.getByRole("button", { name: "茶々入れをこの文書で有効化", exact: true }).click();
+  await page.getByRole("button", { name: "自動送信を有効にする", exact: true }).click();
+  await write(page); await page.clock.runFor(5050);
+  await page.getByRole("button", { name: "茶々入れから会話を開く", exact: true }).click();
+  await page.locator(".ai-chat-quote").waitFor();
+  await page.evaluate(() => { window.__chachaTest.connection = { endpoint: "https://new.test/v1?secret=hidden", model: "new-reader", revision: "two" }; });
+  await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("kept question");
+  await page.getByRole("button", { name: "送信", exact: true }).click();
+  await page.getByText(/接続先が変更されました/).waitFor();
+  assert.equal(await page.evaluate(() => window.__chachaTest.chatRequests.length), 0);
+  assert.equal(await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).inputValue(), "kept question");
+  assert.ok(!(await page.locator(".ai-chat-panel").textContent()).includes("secret=hidden"));
+  await page.getByRole("button", { name: "この会話の送信先を確認", exact: true }).click();
+  await page.getByRole("button", { name: "送信", exact: true }).click();
+  await page.getByText("会話の確定回答", { exact: true }).waitFor();
+  let sent = await page.evaluate(() => window.__chachaTest.chatRequests);
+  assert.equal(sent.length, 1); assert.equal(sent[0].expectedConnection, "two");
+  assert.equal(sent[0].quote.connection.revision, "one"); assert.deepEqual(sent[0].history, []);
+  await page.getByRole("tab", { name: "文書相談 1", exact: true }).click();
+  await page.getByText(/接続先が変更されました/).waitFor();
+  await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("normal question");
+  assert.equal(await page.getByRole("button", { name: "送信", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "この会話の送信先を確認", exact: true }).click();
+  await page.getByRole("button", { name: "送信", exact: true }).click();
+  await page.getByText("会話の確定回答", { exact: true }).waitFor();
+  sent = await page.evaluate(() => window.__chachaTest.chatRequests);
+  assert.equal(sent.length, 2); assert.deepEqual(sent[1].history, []); assert.equal(sent[1].quote, undefined);
+  assert.ok(sent[1].currentDocument.includes("PRIVATE-CODE"));
+});
+
+test("チャットの不審な回答は画像・HTML・危険URLを実行せず外部リンクは明示クリックだけで開く", async (t) => {
+  const page = await fixture(t);
+  const remote = []; page.on("request", (request) => { if (/image\.invalid|safe-reader\.test/.test(request.url())) remote.push(request.url()); });
+  await page.evaluate(() => { window.__chachaTest.chatAnswer = '![remote](https://image.invalid/pixel) <img src=https://image.invalid/evil onerror=alert(1)>\n\n<script>alert(1)</script>\n\n[bad](javascript:alert(1)) [file](file:///C:/secret) [safe](https://safe-reader.test/reader)'; });
+  await page.getByRole("button", { name: "AI チャット", exact: true }).click();
+  await page.getByRole("textbox", { name: "AI チャットのメッセージ", exact: true }).fill("question");
+  await page.getByRole("button", { name: "送信", exact: true }).click();
+  const answer = page.locator(".ai-chat-assistant"); await answer.getByRole("link", { name: "safe", exact: true }).waitFor();
+  assert.equal(await answer.locator("img,script,iframe,object").count(), 0); assert.deepEqual(remote, []);
+  const hrefs = await answer.getByRole("link").evaluateAll((links) => links.map((link) => link.href));
+  assert.ok(hrefs.every((href) => /^https?:\/\//.test(href)), JSON.stringify(hrefs));
+  assert.equal(await answer.getByRole("link", { name: "bad", exact: true }).count(), 0);
+  assert.equal(await answer.getByRole("link", { name: "file", exact: true }).count(), 0);
+  await page.context().route("https://safe-reader.test/**", (route) => route.fulfill({ body: "explicit external page", contentType: "text/plain" }));
+  const popupPromise = page.waitForEvent("popup"); await answer.getByRole("link", { name: "safe", exact: true }).click();
+  const popup = await popupPromise; await popup.waitForLoadState(); assert.equal(popup.url(), "https://safe-reader.test/reader"); await popup.close();
 });

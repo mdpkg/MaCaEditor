@@ -21,11 +21,18 @@ pub fn validate_chat_input(filename: &str, history: &[AiMessage], question: &str
     let invalid = || AiError::InvalidConfiguration("invalid chat input or history limit; start or clear a conversation".into());
     if filename.is_empty() || filename.starts_with('/') || filename.contains(['\\', ':']) ||
         filename.split('/').any(|part| part == ".." || part == "." || part.is_empty()) ||
-        question.trim().is_empty() || question.chars().count() > 10000 || history.len() > 198 || history.len() % 2 != 0 {
+        question.len() > 40000 || question.trim().is_empty() || question.chars().take(10001).count() > 10000 || history.len() > 198 || history.len() % 2 != 0 {
         return Err(invalid());
     }
     if history.chunks_exact(2).any(|pair| pair[0].role != AiRole::User || pair[1].role != AiRole::Assistant ||
-        pair[0].content.chars().count() > 10000 || pair[1].content.len() > 65536) { return Err(invalid()); }
+        pair[0].content.len() > 40000 || pair[0].content.chars().take(10001).count() > 10000 || pair[1].content.len() > 65536) { return Err(invalid()); }
+    Ok(())
+}
+pub fn validate_document_input(filename: &str, document: &str, history: &[AiMessage], question: &str) -> Result<(), AiError> {
+    validate_chat_input(filename, history, question)?;
+    let size = history.iter().fold(filename.len().saturating_add(document.len()).saturating_add(question.len()),
+        |size, message| size.saturating_add(message.content.len()));
+    if size > 1024 * 1024 { return Err(AiError::InvalidConfiguration("chat request exceeds 1 MiB".into())); }
     Ok(())
 }
 
@@ -63,6 +70,33 @@ mod tests {
     use super::*;
     use crate::ai::config::{AiConfig, AiProviderKind};
     fn config() -> AiConfig { AiConfig::new(AiProviderKind::OpenAiCompatible, "https://user:password@example.test/v1?key=secret".into(), Some("PRIVATE-KEY".into()), "model".into(), None, None, None, None) }
+    #[tokio::test]
+    async fn chat_bounds_raw_events_and_error_bodies_without_echoing_provider_secrets() {
+        let _guard = crate::ai::commands::CHAT_TEST_LOCK.lock().await;
+        use crate::ai::{mock_server::{MockOpenAiServer, Scenario}, openai::OpenAiCompatibleProvider, commands::run_chat_stream, cancel::CancellationRegistry};
+        use std::sync::Arc;
+        static LARGE: [u8; 70 * 1024] = [b'x'; 70 * 1024];
+        let scenarios = [Scenario::StreamEvent(format!("data: {}\n\n", "x".repeat(600 * 1024))),
+            Scenario::HttpBody(400, "text/plain", std::str::from_utf8(&LARGE).unwrap()),
+            Scenario::HttpBody(401, "application/json", r#"{"error":{"message":"PRIVATE-KEY reflected secret","type":"invalid_api_key","code":"invalid_api_key"}}"#)];
+        for scenario in scenarios {
+            let server = MockOpenAiServer::start(scenario).await;
+            let provider = OpenAiCompatibleProvider::new(&server.base_url(), None).with_chat_limits();
+            let result = run_chat_stream(&provider, Arc::new(CancellationRegistry::new()), uuid::Uuid::new_v4().to_string(), |_| {},
+                super::super::types::AiRequest::new(vec![AiMessage::new(AiRole::User,"question")]), Some(2), Some(3)).await;
+            let error = result.unwrap_err();
+            assert!(!serde_json::to_string(&error).unwrap().contains("PRIVATE-KEY"));
+            assert_eq!(server.request_count(), 1);
+        }
+    }
+    #[tokio::test]
+    async fn serialized_chat_http_request_including_model_is_bounded_before_connecting() {
+        use crate::ai::{mock_server::{MockOpenAiServer, Scenario}, openai::OpenAiCompatibleProvider, provider::AiProvider};
+        let server = MockOpenAiServer::start(Scenario::Streaming).await;
+        let provider = OpenAiCompatibleProvider::new(&server.base_url(), None).with_chat_limits().with_model("m".repeat(1024 * 1024));
+        assert!(provider.stream(super::super::types::AiRequest::new(vec![AiMessage::new(AiRole::User,"q")])).await.is_err());
+        assert_eq!(server.request_count(), 0);
+    }
     #[test]
     fn quoted_conversation_has_one_structured_system_and_original_reaction() {
         let quote: QuotedContext = serde_json::from_value(serde_json::json!({
@@ -100,5 +134,6 @@ mod tests {
         assert!(validate_chat_input("index.md", &[], &"😀".repeat(10001)).is_err());
         assert!(validate_chat_input("index.md", &[AiMessage::new(AiRole::User, "orphan")], "q").is_err());
         assert!(validate_chat_input("C:/private/file.md", &[], "q").is_err());
+        assert!(validate_document_input("a.md", &"x".repeat(1024 * 1024), &[], "question").is_err());
     }
 }

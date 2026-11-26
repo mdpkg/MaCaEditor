@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatSessionsController } from "../lib/chatSessionsController";
 import { cancelAiRequest, loadChatConnection, startAiDocumentChat, startAiQuotedChat } from "../lib/tauri";
 import { readAiError } from "../lib/aiSelection";
@@ -8,6 +8,8 @@ export function useAiChatSessions(scope: string | null, document: (scope: string
   const source = useRef(document); source.current = document;
   const [stored, setStored] = useState<ChatSessionsController>();
   const controller = stored?.scope === scope ? stored : undefined;
+  const active = useRef(controller); active.current = controller;
+  const refreshConnection = useCallback(async () => { await active.current?.refreshConnection(); }, []);
   const phase = useSyncExternalStore(controller?.subscribe ?? (() => () => {}), controller?.getActivitySnapshot ?? (() => "idle"));
   const busy = useSyncExternalStore(subscribeChatTransport, isChatTransportBusy);
   useEffect(() => {
@@ -19,5 +21,5 @@ export function useAiChatSessions(scope: string | null, document: (scope: string
     window.addEventListener("focus", refresh);
     return () => { window.removeEventListener("focus", refresh); instance.dispose(); };
   }, [scope]);
-  return { controller, phase, busy };
+  return { controller, phase, busy, refreshConnection };
 }
